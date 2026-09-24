@@ -1,6 +1,27 @@
 import { execFile } from 'node:child_process';
-import { resolve, sep } from 'node:path';
-import { readFile, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { resolve, sep, join } from 'node:path';
+import { readFile, stat, readdir } from 'node:fs/promises';
+
+/** Resolve the workspace root containing AGENTS.md and .agents/standards. */
+export function findWorkspaceRoot(startDir?: string): string {
+  if (process.env.WS_WORKSPACE_ROOT && existsSync(process.env.WS_WORKSPACE_ROOT)) {
+    return resolve(process.env.WS_WORKSPACE_ROOT);
+  }
+  let dir = resolve(startDir ?? import.meta.dirname ?? process.cwd());
+  for (let i = 0; i < 12; i++) {
+    if (
+      existsSync(join(dir, 'AGENTS.md')) &&
+      existsSync(join(dir, '.agents', 'standards'))
+    ) {
+      return dir;
+    }
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
 
 /**
  * Bridge to the `ws` CLI for workspace awareness.
@@ -112,6 +133,54 @@ export class WorkspaceBridge {
     }
     args.push(taskDescription);
     return this.ws(args);
+  }
+
+  /**
+   * Read the authoritative instructions and guidelines for a skill (SKILL.md).
+   * Searches across .agents/skills, projects/donwi/public/Agent-Skills/skills, and context/skills.
+   */
+  async readSkill(skillName: string): Promise<string> {
+    const cleanName = skillName.trim();
+    if (!cleanName || !/^[a-zA-Z0-9_-]+$/.test(cleanName)) {
+      throw new Error(`Invalid skill name: '${skillName}'. Must only contain letters, numbers, hyphens, and underscores.`);
+    }
+
+    const candidates = [
+      resolve(this.workspaceRoot, '.agents', 'skills', cleanName, 'SKILL.md'),
+      resolve(this.workspaceRoot, 'projects', 'donwi', 'public', 'Agent-Skills', 'skills', cleanName, 'SKILL.md'),
+      resolve(this.workspaceRoot, 'context', 'skills', cleanName, 'SKILL.md'),
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        const content = await readFile(candidate, 'utf-8');
+        return content;
+      } catch {
+        // try next candidate
+      }
+    }
+
+    // If not found, list available skills to guide the agent or user
+    const available = new Set<string>();
+    const skillDirs = [
+      resolve(this.workspaceRoot, '.agents', 'skills'),
+      resolve(this.workspaceRoot, 'projects', 'donwi', 'public', 'Agent-Skills', 'skills'),
+    ];
+    for (const dir of skillDirs) {
+      try {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && !entry.name.startsWith('.')) {
+            available.add(entry.name);
+          }
+        }
+      } catch {
+        // ignore missing directory
+      }
+    }
+
+    const suggestions = Array.from(available).sort().join(', ');
+    throw new Error(`Skill '${cleanName}' not found. Available skills:\n${suggestions}`);
   }
 
   /**

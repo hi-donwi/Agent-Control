@@ -9,7 +9,7 @@ import { createOpenAIAdapter } from './providers/openai.js';
 import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
-import { WorkspaceBridge } from './tools/workspace.js';
+import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import {
   generateToken,
   loopbackOnly,
@@ -19,28 +19,6 @@ import {
 } from './middleware/security.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
-function findWorkspaceRoot(): string {
-  if (process.env.WS_WORKSPACE_ROOT && existsSync(process.env.WS_WORKSPACE_ROOT)) {
-    return resolve(process.env.WS_WORKSPACE_ROOT);
-  }
-  // Walk up from this file's location to find the workspace root
-  // (has both AGENTS.md and .agents/standards/)
-  let dir = resolve(import.meta.dirname ?? process.cwd());
-  for (let i = 0; i < 10; i++) {
-    if (
-      existsSync(join(dir, 'AGENTS.md')) &&
-      existsSync(join(dir, '.agents', 'standards'))
-    ) {
-      return dir;
-    }
-    const parent = resolve(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  // Fallback: assume CWD
-  return process.cwd();
-}
-
 const WORKSPACE_ROOT = findWorkspaceRoot();
 const config = loadConfig();
 const TOKEN = generateToken();
@@ -77,6 +55,7 @@ You have access to the following tools:
 - read_file: Read a file within the workspace (sandboxed)
 - search_code: Search for patterns in project files using ripgrep
 - route_skills: Get skill recommendations for a given task
+- get_skill: Read the full instructions and standards for any workspace skill (from Agent-Skills / .agents/skills)
 - diagnose_database: Inspect PostgreSQL health, locks, active queries, invalid/unused indexes, and XID wraparound using dbakit
 - diagnose_infra: Inspect Linux host, Docker, Swarm, and Kubernetes SRE diagnostics using opskit
 - scan_security: Run security audits (secrets, CVEs) on a project using agent-secure
@@ -264,6 +243,23 @@ app.post('/api/chat', async (c) => {
           execute: async ({ taskDescription, projectKey }: { taskDescription: string; projectKey?: string }) => {
             const output = await bridge.route(taskDescription, projectKey);
             return { content: output };
+          },
+        },
+        get_skill: {
+          description: 'Fetch the authoritative instructions and guidelines for a skill from Agent-Skills / .agents/skills (e.g. codebase-onboarding, rest-api-contract, quarkus-service, uidl-runtime)',
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              skillName: {
+                type: 'string' as const,
+                description: 'The name of the skill, e.g. "codebase-onboarding", "rest-api-contract", or "uidl-runtime"',
+              },
+            },
+            required: ['skillName'],
+          },
+          execute: async ({ skillName }: { skillName: string }) => {
+            const content = await bridge.readSkill(skillName);
+            return { content };
           },
         },
         diagnose_database: {

@@ -1,6 +1,7 @@
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useCallback, useState, type ReactNode } from 'react';
+import { UIDLPreview, isUIDLDocument } from '../chat/UIDLPreview';
 
 interface Props {
   content: string;
@@ -41,6 +42,18 @@ function CodeBlock({
 
   if (isInline) {
     return <code {...props}>{children}</code>;
+  }
+
+  // Detect and render UIDL documents interactively
+  if (lang === 'uidl' || lang === 'json') {
+    try {
+      const parsed = JSON.parse(codeStr);
+      if (isUIDLDocument(parsed)) {
+        return <UIDLPreview code={codeStr} />;
+      }
+    } catch {
+      // not valid JSON, fallback to standard code block
+    }
   }
 
   return (

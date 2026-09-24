@@ -1,9 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
-import { WorkspaceBridge } from './workspace.js';
+import { WorkspaceBridge, findWorkspaceRoot } from './workspace.js';
 
-const WORKSPACE_ROOT = resolve(import.meta.dirname, '..', '..', '..', '..', '..');
+const WORKSPACE_ROOT = findWorkspaceRoot(import.meta.dirname);
 
 describe('WorkspaceBridge Diagnostic Tools', () => {
   const bridge = new WorkspaceBridge(WORKSPACE_ROOT);
@@ -49,5 +48,25 @@ describe('WorkspaceBridge Diagnostic Tools', () => {
     } catch (err) {
       assert.ok(err instanceof Error);
     }
+  });
+
+  it('rejects invalid skill names for readSkill', async () => {
+    await assert.rejects(
+      async () => bridge.readSkill('../secret'),
+      /Invalid skill name/
+    );
+  });
+
+  it('reads existing skill instructions via readSkill', async () => {
+    const content = await bridge.readSkill('codebase-onboarding');
+    assert.ok(typeof content === 'string');
+    assert.ok(content.includes('codebase-onboarding') || content.includes('mental model'));
+  });
+
+  it('throws informative error with available suggestions for nonexistent skill', async () => {
+    await assert.rejects(
+      async () => bridge.readSkill('non-existent-skill-xyz'),
+      /Available skills:/
+    );
   });
 });
