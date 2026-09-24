@@ -113,4 +113,171 @@ export class WorkspaceBridge {
     args.push(taskDescription);
     return this.ws(args);
   }
+
+  /**
+   * Resolve an executable binary path across environment, workspace paths, and system PATH.
+   */
+  async resolveBinary(name: string, localCandidates: string[]): Promise<string> {
+    const envVar = `WS_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_BIN`;
+    if (process.env[envVar]) {
+      const p = process.env[envVar]!;
+      try {
+        await stat(p);
+        return p;
+      } catch {
+        // ignore invalid env var path and fallback
+      }
+    }
+
+    for (const rel of localCandidates) {
+      const p = resolve(this.workspaceRoot, rel);
+      try {
+        await stat(p);
+        return p;
+      } catch {
+        // continue
+      }
+    }
+
+    return new Promise((ok, fail) => {
+      execFile('which', [name], (err, stdout) => {
+        if (!err && stdout.trim()) {
+          ok(stdout.trim());
+        } else {
+          fail(new Error(`Binary '${name}' not found. Please install or build it, or set ${envVar}.`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Run dbakit for PostgreSQL health and diagnostics.
+   * Allowed commands: health, diagnose, sessions, locks, replication, databases, indexes, xid, config, rules, version.
+   */
+  async dbakit(command: string = 'health', extraArgs: string[] = []): Promise<string> {
+    const allowed = ['health', 'diagnose', 'sessions', 'locks', 'replication', 'databases', 'indexes', 'xid', 'config', 'rules', 'version'];
+    const cleanCmd = command.trim().toLowerCase();
+    if (!allowed.includes(cleanCmd)) {
+      throw new Error(`Invalid dbakit command '${command}'. Allowed: ${allowed.join(', ')}`);
+    }
+
+    const sanitizedArgs = extraArgs.filter(arg => /^[a-zA-Z0-9_=-]+$/.test(arg));
+    const bin = await this.resolveBinary('dbakit', [
+      'projects/donwi/public/DBA-Toolkit/dbakit',
+      'projects/donwi/public/DBA-Toolkit/bin/dbakit',
+      '.agents/bin/dbakit',
+    ]);
+
+    const args = [cleanCmd, '--json', ...sanitizedArgs];
+    return new Promise((ok, fail) => {
+      execFile(bin, args, {
+        cwd: this.workspaceRoot,
+        timeout: 30_000,
+        maxBuffer: 2 * 1024 * 1024,
+      }, (err, stdout, stderr) => {
+        if (stdout && stdout.trim().startsWith('{')) {
+          ok(stdout);
+        } else if (err) {
+          fail(new Error(`dbakit failed: ${stderr || err.message}`));
+        } else {
+          ok(stdout || 'No output produced.');
+        }
+      });
+    });
+  }
+
+  /**
+   * Run opskit for Linux host, Docker, Swarm, and Kubernetes SRE diagnostics.
+   * Allowed commands: diag, audit, net, metrics, explain, version.
+   */
+  async opskit(command: string = 'diag', target?: string, extraArgs: string[] = []): Promise<string> {
+    const allowedCmds = ['diag', 'audit', 'net', 'metrics', 'explain', 'version'];
+    const cleanCmd = command.trim().toLowerCase();
+    if (!allowedCmds.includes(cleanCmd)) {
+      throw new Error(`Invalid opskit command '${command}'. Allowed: ${allowedCmds.join(', ')}`);
+    }
+
+    const bin = await this.resolveBinary('opskit', [
+      'projects/donwi/public/OPS-Toolkit/bin/opskit',
+      'projects/donwi/public/OPS-Toolkit/opskit',
+      '.agents/bin/opskit',
+    ]);
+
+    const args = [cleanCmd];
+    if (target && /^[a-zA-Z0-9_-]+$/.test(target)) {
+      args.push(target);
+    }
+    args.push('--json');
+
+    const sanitizedArgs = extraArgs.filter(arg => /^[a-zA-Z0-9_=-]+$/.test(arg));
+    args.push(...sanitizedArgs);
+
+    return new Promise((ok, fail) => {
+      execFile(bin, args, {
+        cwd: this.workspaceRoot,
+        timeout: 60_000,
+        maxBuffer: 4 * 1024 * 1024,
+      }, (err, stdout, stderr) => {
+        if (stdout && stdout.trim().startsWith('{')) {
+          ok(stdout);
+        } else if (err) {
+          fail(new Error(`opskit failed: ${stderr || err.message}`));
+        } else {
+          ok(stdout || 'No output produced.');
+        }
+      });
+    });
+  }
+
+  /**
+   * Run security audit using ws scan (which delegates to agent-secure).
+   */
+  async agentSecure(projectKey: string, options?: { doctor?: boolean; policy?: string }): Promise<string> {
+    if (!/^[a-zA-Z0-9_-]+$/.test(projectKey)) {
+      throw new Error('Invalid project key');
+    }
+
+    let secureBin = process.env.WS_SECURE_BIN;
+    if (!secureBin) {
+      try {
+        secureBin = await this.resolveBinary('agent-secure', [
+          'projects/donwi/public/Agent-Secure/Agent-Secure',
+          'projects/donwi/public/Agent-Secure/bin/agent-secure',
+          '.agents/bin/agent-secure',
+        ]);
+      } catch {
+        // ws scan will handle fallback
+      }
+    }
+
+    const wsBin = resolve(this.workspaceRoot, '.agents', 'bin', 'ws');
+    const args = ['scan', projectKey];
+    if (options?.doctor) {
+      args.push('--doctor');
+    }
+    if (options?.policy && /^[a-zA-Z0-9_/.-]+$/.test(options.policy)) {
+      args.push('--policy', options.policy);
+    }
+
+    return new Promise((ok, fail) => {
+      execFile(wsBin, args, {
+        cwd: this.workspaceRoot,
+        timeout: 60_000,
+        maxBuffer: 2 * 1024 * 1024,
+        env: {
+          ...process.env,
+          ...(secureBin ? { WS_SECURE_BIN: secureBin } : {}),
+          PAGER: 'cat',
+        },
+      }, (err, stdout, stderr) => {
+        if (stdout && stdout.trim()) {
+          ok(stdout);
+        } else if (err) {
+          fail(new Error(`Security scan failed: ${stderr || err.message}`));
+        } else {
+          ok('No scan output produced.');
+        }
+      });
+    });
+  }
 }

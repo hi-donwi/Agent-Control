@@ -12,6 +12,7 @@
     "dev:client": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
+    "test": "tsx --test server/tools/workspace.test.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

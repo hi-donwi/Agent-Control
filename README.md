@@ -19,6 +19,7 @@ npm run dev
 
 - **Multi-provider LLM** — GPT-4o, Claude Sonnet/Opus, Gemini Pro/Flash
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
+- **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
 - **Streaming chat** — real-time SSE streaming with markdown rendering
 - **Code-aware** — syntax highlighting, file previews, search results
 - **Secure** — loopback-only, process-token auth, no secrets in source

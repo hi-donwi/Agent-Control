@@ -77,6 +77,9 @@ You have access to the following tools:
 - read_file: Read a file within the workspace (sandboxed)
 - search_code: Search for patterns in project files using ripgrep
 - route_skills: Get skill recommendations for a given task
+- diagnose_database: Inspect PostgreSQL health, locks, active queries, invalid/unused indexes, and XID wraparound using dbakit
+- diagnose_infra: Inspect Linux host, Docker, Swarm, and Kubernetes SRE diagnostics using opskit
+- scan_security: Run security audits (secrets, CVEs) on a project using agent-secure
 
 When answering questions:
 - Be concise but thorough
@@ -239,6 +242,100 @@ app.post('/api/chat', async (c) => {
           },
           execute: async ({ query, folder }: { query: string; folder?: string }) => {
             const output = await bridge.search(query, folder);
+            return { content: output };
+          },
+        },
+        route_skills: {
+          description: 'Get skill recommendations from the workspace skill catalog for a given task',
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              taskDescription: {
+                type: 'string' as const,
+                description: 'Description of the task to find matching skills for',
+              },
+              projectKey: {
+                type: 'string' as const,
+                description: 'Optional project key to search client-specific domain skills as well',
+              },
+            },
+            required: ['taskDescription'],
+          },
+          execute: async ({ taskDescription, projectKey }: { taskDescription: string; projectKey?: string }) => {
+            const output = await bridge.route(taskDescription, projectKey);
+            return { content: output };
+          },
+        },
+        diagnose_database: {
+          description: 'Inspect PostgreSQL database health, performance, active queries, blocking locks, unused/invalid indexes, or XID wraparound using dbakit (strictly read-only)',
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              command: {
+                type: 'string' as const,
+                description: 'The dbakit probe to run: health, diagnose, sessions, locks, indexes, xid, replication, databases, config, rules, version',
+              },
+              flags: {
+                type: 'array' as const,
+                items: { type: 'string' as const },
+                description: 'Optional flags, e.g. ["--unused-min-size=10485760"] or ["--top-tables=10"]',
+              },
+            },
+            required: ['command'],
+          },
+          execute: async ({ command, flags }: { command: string; flags?: string[] }) => {
+            const output = await bridge.dbakit(command, flags);
+            return { content: output };
+          },
+        },
+        diagnose_infra: {
+          description: 'Inspect Linux host, Docker, Swarm, and Kubernetes infrastructure diagnostics using opskit (strictly read-only)',
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              command: {
+                type: 'string' as const,
+                description: 'The opskit command: diag, audit, net, metrics, explain, version',
+              },
+              target: {
+                type: 'string' as const,
+                description: 'Optional target subsystem: host, docker, swarm, k8s, sec',
+              },
+              flags: {
+                type: 'array' as const,
+                items: { type: 'string' as const },
+                description: 'Optional CLI flags',
+              },
+            },
+            required: ['command'],
+          },
+          execute: async ({ command, target, flags }: { command: string; target?: string; flags?: string[] }) => {
+            const output = await bridge.opskit(command, target, flags);
+            return { content: output };
+          },
+        },
+        scan_security: {
+          description: 'Run security scanner and policy verification across a workspace project using agent-secure (ws scan)',
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              projectKey: {
+                type: 'string' as const,
+                description: 'The project key to run security audit against',
+              },
+              doctor: {
+                type: 'boolean' as const,
+                description: 'Set to true to verify scanner installations without running a full scan',
+              },
+              policy: {
+                type: 'string' as const,
+                description: 'Optional custom policy file path',
+              },
+            },
+            required: ['projectKey'],
+          },
+          execute: async ({ projectKey, doctor, policy }: { projectKey: string; doctor?: boolean; policy?: string }) => {
+            const output = await bridge.agentSecure(projectKey, { doctor, policy });
             return { content: output };
           },
         },
