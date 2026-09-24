@@ -20,6 +20,9 @@ npm run dev
 - **Multi-provider LLM** — GPT-4o, Claude Sonnet/Opus, Gemini Pro/Flash
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
 - **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
+- **Authoritative Skill Retrieval** — `get_skill` powered by `Agent-Skills` (48 standardized software engineering workflows)
+- **Generative UIDL UI Preview** — live in-chat interactive rendering of UIDL documents (`uidl-runtime`) for metrics, forms, and cards
+- **Studio Handoff** — one-click `Studio ↗` direct export into `UIDL-Builder` for visual drag-and-drop customization
 - **Streaming chat** — real-time SSE streaming with markdown rendering
 - **Code-aware** — syntax highlighting, file previews, search results
 - **Secure** — loopback-only, process-token auth, no secrets in source
