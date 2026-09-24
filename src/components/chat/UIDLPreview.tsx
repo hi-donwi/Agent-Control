@@ -128,6 +128,29 @@ export function UIDLPreview({ code }: UIDLPreviewProps) {
     });
   }, [code]);
 
+  const handleOpenStudio = useCallback(() => {
+    if (!doc) return;
+    try {
+      localStorage.setItem('uidl_builder_import', code);
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('uidl_builder_sync_v1');
+        bc.postMessage({
+          type: 'SYNC_STATE',
+          tabId: 'agent_control',
+          timestamp: Date.now(),
+          payload: {
+            pages: [{ id: doc.id || 'imported', name: doc.name || 'Imported UI', route: '/', document: doc }],
+            activePageId: doc.id || 'imported',
+          },
+        });
+        bc.close();
+      }
+    } catch (e) {
+      console.warn('Studio broadcast error:', e);
+    }
+    window.open('http://127.0.0.1:5173', '_blank');
+  }, [code, doc]);
+
   // If not a valid UIDL document or has parse error, don't render preview
   if (!doc) {
     return null;
@@ -161,6 +184,14 @@ export function UIDLPreview({ code }: UIDLPreviewProps) {
               JSON
             </button>
           </div>
+          <button
+            type="button"
+            className="uidl-copy-btn"
+            onClick={handleOpenStudio}
+            title="Open in UIDL-Builder Studio (drag-and-drop editor)"
+          >
+            Studio ↗
+          </button>
           <button
             type="button"
             className="uidl-copy-btn"

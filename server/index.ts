@@ -66,6 +66,30 @@ When answering questions:
 - Use markdown formatting for clarity
 - If you don't know something, say so rather than guessing
 
+UIDL Generative UI:
+When the user asks you to design, build, or display a UI (such as dashboards, metric cards, diagnostics summaries, forms, or task lists), you can output an interactive UIDL document inside a \`\`\`uidl code block. The client will automatically render it live as an interactive UI widget!
+Example UIDL format:
+\`\`\`uidl
+{
+  "$schema": "https://agent-workspace.dev/uidl/v1",
+  "version": "1.0",
+  "id": "sample-ui",
+  "name": "Sample UI",
+  "root": {
+    "id": "root",
+    "type": "Container",
+    "props": { "className": "stack" },
+    "children": [
+      { "id": "heading", "type": "Text", "props": { "value": "Dashboard", "heading": 2 } },
+      { "id": "stat-box", "type": "Container", "props": { "className": "stat stat-accent" }, "children": [
+        { "id": "l1", "type": "Text", "props": { "value": "Status", "className": "eyebrow" } },
+        { "id": "v1", "type": "Text", "props": { "value": "Operational", "className": "stat-value" } }
+      ]}
+    ]
+  }
+}
+\`\`\`
+
 You are running locally on the user's machine. This is a private, loopback-only
 session. Treat all workspace data as confidential.`;
 
