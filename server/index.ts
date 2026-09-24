@@ -20,6 +20,9 @@ import {
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 function findWorkspaceRoot(): string {
+  if (process.env.WS_WORKSPACE_ROOT && existsSync(process.env.WS_WORKSPACE_ROOT)) {
+    return resolve(process.env.WS_WORKSPACE_ROOT);
+  }
   // Walk up from this file's location to find the workspace root
   // (has both AGENTS.md and .agents/standards/)
   let dir = resolve(import.meta.dirname ?? process.cwd());
@@ -304,7 +307,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // ── Start server ───────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT ?? '3141', 10);
-const HOST = '127.0.0.1';
+const HOST = process.env.HOST ?? '127.0.0.1';
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT }, () => {
   const url = `http://${HOST}:${PORT}?token=${TOKEN}`;
