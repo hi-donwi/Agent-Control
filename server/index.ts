@@ -9,6 +9,8 @@ import { createOpenAIAdapter } from './providers/openai.js';
 import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
+import { loadEndpoints, type Endpoint } from './endpoints.js';
+import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import {
   generateToken,
@@ -40,6 +42,17 @@ function getAdapters(cfg: AppConfig): Map<string, ProviderAdapter> {
 }
 
 let adapters = getAdapters(config);
+
+// ── Endpoints by wire protocol (ADR-0021): <workspace>/.local/agent/endpoints.json ──
+function safeLoadEndpoints(): Endpoint[] {
+  try {
+    return loadEndpoints(WORKSPACE_ROOT);
+  } catch (err) {
+    console.error(`Endpoints disabled: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+const endpoints = safeLoadEndpoints();
 
 // ── System prompt with workspace awareness ─────────────────────────────
 const SYSTEM_PROMPT = `You are Agent Control, an AI-powered workspace assistant.
@@ -106,15 +119,24 @@ app.use('/api/*', rateLimit(120, 60_000));
 
 // ── API: Providers & models ────────────────────────────────────────────
 app.get('/api/providers', (c) => {
-  const available = availableProviders(config);
-  const providers = available.map((key) => {
-    const adapter = adapters.get(key);
-    return {
-      id: key,
-      name: adapter?.name ?? key,
-      models: adapter?.models() ?? [],
-    };
-  });
+  const endpointIds = new Set(endpoints.map((e) => e.name));
+  const available = availableProviders(config).filter((key) => !endpointIds.has(key));
+  const providers = [
+    ...endpoints.map((e) => ({
+      id: e.name,
+      name: `${e.name} (${e.protocol}, ${e.locality})`,
+      models: e.models,
+      locality: e.locality,
+    })),
+    ...available.map((key) => {
+      const adapter = adapters.get(key);
+      return {
+        id: key,
+        name: adapter?.name ?? key,
+        models: adapter?.models() ?? [],
+      };
+    }),
+  ];
   return c.json({
     providers,
     defaultProvider: config.defaultProvider,
@@ -157,20 +179,21 @@ app.post('/api/chat', async (c) => {
     messages: CoreMessage[];
     provider?: string;
     model?: string;
+    /** Project whose context this chat works with; decides which endpoints may receive it. */
+    project?: string;
   };
 
-  const providerKey = body.provider ?? config.defaultProvider;
-  const modelId = body.model ?? config.defaultModel;
-  const adapter = adapters.get(providerKey);
-
-  if (!adapter) {
-    return c.json({
-      error: `Provider "${providerKey}" is not configured. Add an API key in Settings.`,
-    }, 400);
+  const resolved = resolveChatModel({
+    provider: body.provider ?? config.defaultProvider,
+    model: body.model ?? config.defaultModel,
+    project: body.project,
+  }, { root: WORKSPACE_ROOT, endpoints, adapters });
+  if ('error' in resolved) {
+    return c.json({ error: resolved.error }, resolved.status);
   }
 
   try {
-    const model = adapter.model(modelId);
+    const model = resolved.model;
 
     const result = streamText({
       model,
