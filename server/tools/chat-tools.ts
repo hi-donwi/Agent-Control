@@ -1,5 +1,16 @@
+import { isAbsolute, normalize, sep } from 'node:path';
 import { jsonSchema, type Tool } from 'ai';
 import type { WorkspaceBridge } from './workspace.js';
+
+/** A chat bound to one project (ADR-0011): what its tools may reach. */
+export interface ChatScope {
+  root: string;
+  project: string;
+  /** The project's folder, relative to the workspace root. */
+  folder: string;
+  /** The model is remote: host diagnostics do not leave the machine. */
+  remote: boolean;
+}
 
 interface PlainTool {
   description: string;
@@ -21,8 +32,8 @@ function withJsonSchema(tools: Record<string, PlainTool>): Record<string, Tool> 
 }
 
 /** The workspace tools offered to the model in /api/chat. */
-export function createChatTools(bridge: WorkspaceBridge): Record<string, Tool> {
-  return withJsonSchema({
+export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope): Record<string, Tool> {
+  const tools: Record<string, PlainTool> = {
     list_projects: {
       description: 'List all registered projects in the workspace',
       parameters: {},
@@ -205,5 +216,43 @@ export function createChatTools(bridge: WorkspaceBridge): Record<string, Tool> {
         return { content: output };
       },
     },
+  };
+  return withJsonSchema(scope ? bindToProject(tools, scope) : tools);
+}
+
+/**
+ * The tools of a chat bound to one project. Nothing lists or reads another project,
+ * so a remote model allowed for this project receives only this project's material.
+ */
+function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Record<string, PlainTool> {
+  const allowed = [scope.folder, `context/memory/projects/${scope.project}`, `context/runs/${scope.project}`,
+    '.agents', 'docs', 'AGENTS.md'];
+  const inside = (path: unknown, prefixes: string[]): string => {
+    const relative = typeof path === 'string' ? normalize(path) : '';
+    if (!relative || isAbsolute(relative) || relative.startsWith('..')
+        || !prefixes.some((prefix) => relative === prefix || relative.startsWith(prefix + sep))) {
+      throw new Error(`${String(path)} is outside project ${scope.project}`);
+    }
+    return relative;
+  };
+  const own = (key: unknown) => {
+    if (key !== scope.project) throw new Error(`this chat is bound to ${scope.project}`);
+    return key;
+  };
+  const wrap = <A extends Record<string, unknown>>(tool: PlainTool, adapt: (args: A) => A): PlainTool => ({
+    ...tool,
+    execute: async (args: never) => tool.execute(adapt(args as A) as never),
   });
+  const {
+    list_projects: _list, project_tree: _tree, diagnose_database, diagnose_infra, ...rest
+  } = tools;
+  return {
+    ...rest,
+    ...(scope.remote ? {} : { diagnose_database, diagnose_infra }),
+    context_pack: wrap(tools.context_pack, (a) => ({ ...a, projectKey: own(a.projectKey) })),
+    scan_security: wrap(tools.scan_security, (a) => ({ ...a, projectKey: own(a.projectKey) })),
+    route_skills: wrap(tools.route_skills, (a) => ({ ...a, projectKey: scope.project })),
+    read_file: wrap(tools.read_file, (a) => ({ ...a, path: inside(a.path, allowed) })),
+    search_code: wrap(tools.search_code, (a) => ({ ...a, folder: inside(a.folder ?? scope.folder, [scope.folder]) })),
+  };
 }
