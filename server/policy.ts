@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -52,6 +53,18 @@ export function loadPolicy(workspaceRoot: string, project: string): OperatorPoli
   if (typeof actions !== 'object' || actions === null || Array.isArray(actions)) return null;
   if (!Object.values(actions).every(isLevel)) return null;
   return { schema_version: 1, default: def, actions: actions as Record<string, Level>, llm: policy.llm as OperatorPolicy['llm'] };
+}
+
+/**
+ * A hash of the policy file's raw bytes, whether or not it validates - a sentinel when
+ * it is missing. An approval is bound to this (ADR-0020 §2): if the policy changes
+ * between the request and execution, the hash changes and the approval is voided,
+ * whether the edit made the action stricter or looser.
+ */
+export function policyHash(workspaceRoot: string, project: string): string {
+  const path = policyPath(workspaceRoot, project);
+  const bytes = existsSync(path) ? readFileSync(path) : Buffer.from('(no policy file)');
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 export type PolicyDecision =
