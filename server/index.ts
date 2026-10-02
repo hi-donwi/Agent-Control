@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
-import { streamText, type CoreMessage } from 'ai';
+import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import { resolve, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -13,6 +13,7 @@ import { loadEndpoints, type Endpoint } from './endpoints.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools } from './tools/chat-tools.js';
+import { toLineStream } from './stream-protocol.js';
 import {
   generateToken,
   loopbackOnly,
@@ -177,7 +178,7 @@ app.post('/api/config', async (c) => {
 // ── API: Chat (streaming) ──────────────────────────────────────────────
 app.post('/api/chat', async (c) => {
   const body = await c.req.json() as {
-    messages: CoreMessage[];
+    messages: ModelMessage[];
     provider?: string;
     model?: string;
     /** Project whose context this chat works with; decides which endpoints may receive it. */
@@ -201,12 +202,14 @@ app.post('/api/chat', async (c) => {
       system: SYSTEM_PROMPT,
       messages: body.messages,
       tools: createChatTools(bridge),
-      maxSteps: 5,
+      stopWhen: stepCountIs(5),
     });
 
-    // Stream the response using AI SDK's built-in data stream protocol
-    return result.toDataStreamResponse({
+    // Our own line protocol (server/stream-protocol.ts): the UI does not depend on the
+    // AI SDK's wire format, which changes with every major version.
+    return new Response(toLineStream(result.fullStream), {
       headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
       },
     });

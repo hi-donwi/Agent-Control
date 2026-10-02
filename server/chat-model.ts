@@ -1,4 +1,4 @@
-import type { LanguageModelV1 } from 'ai';
+import type { ChatModel } from './providers/types.js';
 import { egressDecision, loadLlmAllowlist } from './egress.js';
 import { resolveCredential, type CredentialReaders, type Endpoint } from './endpoints.js';
 import { createEndpointModel } from './providers/endpoint-model.js';
@@ -19,7 +19,7 @@ export interface ChatModelDeps {
   keychain?: CredentialReaders['keychain'];
 }
 
-export type ChatModelResult = { model: LanguageModelV1 } | { status: 400 | 403; error: string };
+export type ChatModelResult = { model: ChatModel } | { status: 400 | 403; error: string };
 
 /**
  * The model for a chat request. A configured endpoint wins over a legacy provider of

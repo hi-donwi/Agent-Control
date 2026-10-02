@@ -1,4 +1,4 @@
-import { jsonSchema, type CoreTool } from 'ai';
+import { jsonSchema, type Tool } from 'ai';
 import type { WorkspaceBridge } from './workspace.js';
 
 interface PlainTool {
@@ -9,19 +9,19 @@ interface PlainTool {
 }
 
 /**
- * AI SDK 4 reads a plain object in `parameters` as a zod schema and throws before the
- * first token, on every request. JSON Schema has to be wrapped in `jsonSchema()`.
+ * The AI SDK reads a plain object as a zod schema and throws before the first token,
+ * on every request. JSON Schema has to be wrapped in `jsonSchema()`.
  */
-function withJsonSchema(tools: Record<string, PlainTool>): Record<string, CoreTool> {
-  return Object.fromEntries(Object.entries(tools).map(([name, tool]): [string, CoreTool] => [name, {
+function withJsonSchema(tools: Record<string, PlainTool>): Record<string, Tool> {
+  return Object.fromEntries(Object.entries(tools).map(([name, tool]): [string, Tool] => [name, {
     description: tool.description,
-    parameters: jsonSchema({ type: 'object', properties: {}, ...tool.parameters }),
-    execute: (args) => tool.execute(args as never),
+    inputSchema: jsonSchema({ type: 'object', properties: {}, ...tool.parameters }),
+    execute: (input: unknown) => tool.execute(input as never),
   }]));
 }
 
 /** The workspace tools offered to the model in /api/chat. */
-export function createChatTools(bridge: WorkspaceBridge): Record<string, CoreTool> {
+export function createChatTools(bridge: WorkspaceBridge): Record<string, Tool> {
   return withJsonSchema({
     list_projects: {
       description: 'List all registered projects in the workspace',

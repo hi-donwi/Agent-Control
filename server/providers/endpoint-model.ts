@@ -1,26 +1,27 @@
-import type { LanguageModelV1 } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { Endpoint } from '../endpoints.js';
 import { createMockModel } from './mock.js';
+import type { ChatModel } from './types.js';
 
 /**
  * The SDK model for an endpoint's wire protocol.
  *
- * The key is always passed explicitly. Left undefined, both SDKs fall back to
- * OPENAI_API_KEY / ANTHROPIC_API_KEY from the environment - and would send the
- * operator's OpenAI key to whichever compatible vendor this endpoint points at.
+ * The OpenAI and Anthropic SDKs fall back to OPENAI_API_KEY / ANTHROPIC_API_KEY when no
+ * key is given - and would send the operator's key to whichever host this endpoint
+ * points at. They always get an explicit value. The compatible client reads no
+ * environment, so a keyless local server gets no Authorization header at all.
  */
-export function createEndpointModel(endpoint: Endpoint, modelId: string, apiKey?: string): LanguageModelV1 {
-  const key = apiKey ?? 'none';
+export function createEndpointModel(endpoint: Endpoint, modelId: string, apiKey?: string): ChatModel {
   switch (endpoint.protocol) {
     case 'mock':
       return createMockModel(modelId);
     case 'openai-chat':
-      return createOpenAI({ baseURL: endpoint.baseUrl, apiKey: key, compatibility: 'compatible' }).chat(modelId);
+      return createOpenAICompatible({ name: endpoint.name, baseURL: endpoint.baseUrl!, apiKey }).chatModel(modelId);
     case 'openai-responses':
-      return createOpenAI({ baseURL: endpoint.baseUrl, apiKey: key }).responses(modelId);
+      return createOpenAI({ baseURL: endpoint.baseUrl, apiKey: apiKey ?? 'none' }).responses(modelId);
     case 'anthropic-messages':
-      return createAnthropic({ baseURL: endpoint.baseUrl, apiKey: key })(modelId);
+      return createAnthropic({ baseURL: endpoint.baseUrl, apiKey: apiKey ?? 'none' })(modelId);
   }
 }

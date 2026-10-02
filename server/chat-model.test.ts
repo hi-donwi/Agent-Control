@@ -15,7 +15,7 @@ const mock: Endpoint = { name: 'mock', protocol: 'mock', locality: 'local', mode
 describe('createEndpointModel', () => {
   it('maps each wire protocol to its SDK model', () => {
     const remote = { locality: 'remote' as const, models: [] as string[] };
-    assert.equal(createEndpointModel({ ...remote, name: 'a', protocol: 'openai-chat', baseUrl: 'https://a.example/v1' }, 'm', 'k').provider, 'openai.chat');
+    assert.equal(createEndpointModel({ ...remote, name: 'a', protocol: 'openai-chat', baseUrl: 'https://a.example/v1' }, 'm', 'k').provider, 'a.chat');
     assert.equal(createEndpointModel({ ...remote, name: 'b', protocol: 'openai-responses', baseUrl: 'https://b.example/v1' }, 'm', 'k').provider, 'openai.responses');
     assert.equal(createEndpointModel({ ...remote, name: 'c', protocol: 'anthropic-messages', baseUrl: 'https://c.example/v1' }, 'm', 'k').provider, 'anthropic.messages');
     assert.equal(createEndpointModel(mock, 'echo').provider, 'mock');
@@ -49,7 +49,7 @@ describe('resolveChatModel', () => {
 
   it('uses a remote endpoint only for a project whose policy lists it', () => {
     const allowed = resolveChatModel({ provider: 'xai', model: 'm', project: 'demo' }, deps);
-    assert.ok('model' in allowed && allowed.model.provider === 'openai.chat');
+    assert.ok('model' in allowed && allowed.model.provider === 'xai.chat');
     const noProject = resolveChatModel({ provider: 'xai', model: 'm' }, deps);
     assert.ok('status' in noProject && noProject.status === 403);
     const otherProject = resolveChatModel({ provider: 'xai', model: 'm', project: 'other' }, deps);
