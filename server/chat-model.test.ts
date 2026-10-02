@@ -40,6 +40,8 @@ describe('resolveChatModel', () => {
   mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
   writeFileSync(join(root, '.local', 'agent', 'policies', 'demo.json'),
     JSON.stringify({ schema_version: 1, default: 'read', llm: { endpoints: ['xai'] } }));
+  writeFileSync(join(root, '.local', 'agent', 'policies', 'legacyok.json'),
+    JSON.stringify({ schema_version: 1, default: 'read', llm: { endpoints: ['legacy'] } }));
   const deps = { root, endpoints: [xai, mock], adapters, env: { XAI_API_KEY: 'k' } };
 
   it('uses a local endpoint without a project', () => {
@@ -66,9 +68,14 @@ describe('resolveChatModel', () => {
     assert.ok('status' in result && result.status === 400);
   });
 
-  it('still serves legacy providers, and names an unknown one', () => {
-    const result = resolveChatModel({ provider: 'legacy', model: 'legacy' }, deps);
-    assert.ok('model' in result && result.model.modelId === 'legacy');
+  it('egress-checks legacy providers like remote endpoints, and names an unknown one', () => {
+    const noProject = resolveChatModel({ provider: 'legacy', model: 'legacy' }, deps);
+    assert.ok('status' in noProject && noProject.status === 403);
+    const listed = resolveChatModel({ provider: 'legacy', model: 'legacy', project: 'legacyok' }, deps);
+    assert.ok('model' in listed && listed.model.modelId === 'legacy' && listed.locality === 'remote');
+    const loopback = resolveChatModel({ provider: 'legacy', model: 'legacy' },
+      { ...deps, legacyBaseUrls: { legacy: 'http://127.0.0.1:8080/v1' } });
+    assert.ok('model' in loopback && loopback.locality === 'local');
     const unknown = resolveChatModel({ provider: 'nope', model: 'm' }, deps);
     assert.ok('status' in unknown && unknown.status === 400 && /nope/.test(unknown.error));
   });

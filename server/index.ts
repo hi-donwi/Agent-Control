@@ -12,7 +12,9 @@ import type { ProviderAdapter } from './providers/types.js';
 import { loadEndpoints, type Endpoint } from './endpoints.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
-import { createChatTools } from './tools/chat-tools.js';
+import { createChatTools, type ChatScope } from './tools/chat-tools.js';
+import { parseProjectList } from './projects.js';
+import { loadLlmAllowlist } from './egress.js';
 import { toLineStream } from './stream-protocol.js';
 import {
   generateToken,
@@ -189,9 +191,23 @@ app.post('/api/chat', async (c) => {
     provider: body.provider ?? config.defaultProvider,
     model: body.model ?? config.defaultModel,
     project: body.project,
-  }, { root: WORKSPACE_ROOT, endpoints, adapters });
+  }, {
+    root: WORKSPACE_ROOT,
+    endpoints,
+    adapters,
+    legacyBaseUrls: Object.fromEntries(Object.entries(config.providers).map(([id, p]) => [id, p?.baseUrl])),
+  });
   if ('error' in resolved) {
     return c.json({ error: resolved.error }, resolved.status);
+  }
+
+  // A chat bound to a project sees only that project (ADR-0011): an endpoint allowed for
+  // one project must not be handed another project's files through the tools.
+  let scope: ChatScope | undefined;
+  if (body.project) {
+    const project = parseProjectList(await bridge.listProjects().catch(() => '')).find((p) => p.key === body.project);
+    if (!project) return c.json({ error: `Unknown project "${body.project}".` }, 400);
+    scope = { root: WORKSPACE_ROOT, project: project.key, folder: project.folder, remote: resolved.locality === 'remote' };
   }
 
   try {
@@ -199,9 +215,12 @@ app.post('/api/chat', async (c) => {
 
     const result = streamText({
       model,
-      system: SYSTEM_PROMPT,
+      system: scope
+        ? `${SYSTEM_PROMPT}\n\nThis chat is bound to project "${scope.project}" (folder ${scope.folder}). `
+          + 'Only that project, its memory and runs, and the framework are available; do not ask for other projects.'
+        : SYSTEM_PROMPT,
       messages: body.messages,
-      tools: createChatTools(bridge),
+      tools: createChatTools(bridge, scope),
       stopWhen: stepCountIs(5),
     });
 
@@ -218,6 +237,22 @@ app.post('/api/chat', async (c) => {
     console.error('Chat error:', message);
     return c.json({ error: message }, 500);
   }
+});
+
+// ── API: Projects a chat can be bound to ───────────────────────────────
+app.get('/api/projects', async (c) => {
+  const projects = parseProjectList(await bridge.listProjects().catch(() => ''));
+  return c.json({
+    projects: projects.map((p) => {
+      let allowedEndpoints: string[] | null = null;
+      try {
+        allowedEndpoints = loadLlmAllowlist(WORKSPACE_ROOT, p.key);
+      } catch {
+        // an invalid key never has a policy
+      }
+      return { key: p.key, client: p.client, folder: p.folder, allowedEndpoints };
+    }),
+  });
 });
 
 // ── API: Workspace info ────────────────────────────────────────────────
