@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WorkspaceBridge, findWorkspaceRoot } from './workspace.js';
 
 const WORKSPACE_ROOT = findWorkspaceRoot(import.meta.dirname);
@@ -58,9 +61,12 @@ describe('WorkspaceBridge Diagnostic Tools', () => {
   });
 
   it('reads existing skill instructions via readSkill', async () => {
-    const content = await bridge.readSkill('codebase-onboarding');
-    assert.ok(typeof content === 'string');
-    assert.ok(content.includes('codebase-onboarding') || content.includes('mental model'));
+    // A fixture, not the developer's workspace: CI checks this repository out alone.
+    const root = mkdtempSync(join(tmpdir(), 'ac-skills-'));
+    mkdirSync(join(root, '.agents', 'skills', 'codebase-onboarding'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'skills', 'codebase-onboarding', 'SKILL.md'), '# codebase-onboarding\n');
+    const content = await new WorkspaceBridge(root).readSkill('codebase-onboarding');
+    assert.ok(content.includes('codebase-onboarding'));
   });
 
   it('throws informative error with available suggestions for nonexistent skill', async () => {
