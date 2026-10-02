@@ -1,5 +1,10 @@
 import type { TextStreamPart, ToolSet } from 'ai';
 
+export interface StreamFinish {
+  finishReason: string;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+}
+
 /**
  * Agent-Control's own line protocol, read by src/hooks/useChat.ts. It stays the same
  * whichever AI SDK major produces the stream, so a server upgrade never breaks the UI:
@@ -8,7 +13,10 @@ import type { TextStreamPart, ToolSet } from 'ai';
  *   a:{"toolCallId","result"}               e:"error message"
  *   d:{"finishReason","usage":{"inputTokens","outputTokens"}}
  */
-export function toLineStream(parts: AsyncIterable<TextStreamPart<ToolSet>>): ReadableStream<Uint8Array> {
+export function toLineStream(
+  parts: AsyncIterable<TextStreamPart<ToolSet>>,
+  onFinish?: (finish: StreamFinish) => void,
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const line = (type: string, value: unknown) => encoder.encode(`${type}:${JSON.stringify(value)}\n`);
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -33,6 +41,15 @@ export function toLineStream(parts: AsyncIterable<TextStreamPart<ToolSet>>): Rea
               controller.enqueue(line('e', message(part.error)));
               break;
             case 'finish':
+              onFinish?.({
+                finishReason: part.finishReason,
+                tokens: {
+                  input: part.totalUsage.inputTokens ?? 0,
+                  output: part.totalUsage.outputTokens ?? 0,
+                  cacheRead: part.totalUsage.inputTokenDetails?.cacheReadTokens ?? 0,
+                  cacheWrite: part.totalUsage.inputTokenDetails?.cacheWriteTokens ?? 0,
+                },
+              });
               controller.enqueue(line('d', {
                 finishReason: part.finishReason,
                 usage: { inputTokens: part.totalUsage.inputTokens, outputTokens: part.totalUsage.outputTokens },

@@ -55,6 +55,15 @@ describe('toLineStream', () => {
     assert.deepEqual(JSON.parse(out.find((l) => l.startsWith('a:'))!.slice(2)), { toolCallId: 'c1', result: 'pong' });
   });
 
+  it('reports the finish reason and token totals once, for the usage record', async () => {
+    const finishes: Array<{ finishReason: string; tokens: { input: number; output: number } }> = [];
+    const result = streamText({ model: createMockModel('echo'), prompt: 'count me' });
+    await lines(toLineStream(result.fullStream, (finish) => finishes.push(finish)));
+    assert.equal(finishes.length, 1);
+    assert.equal(finishes[0].finishReason, 'stop');
+    assert.equal(finishes[0].tokens.output, 'mock(echo): count me'.length);
+  });
+
   it('turns a failed stream into an e: line instead of breaking the response', async () => {
     const failing = new MockLanguageModelV4({ doStream: async () => { throw new Error('upstream down'); } });
     const out = await lines(toLineStream(streamText({ model: failing, prompt: 'x' }).fullStream));

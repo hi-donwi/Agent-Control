@@ -15,7 +15,8 @@ import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
 import { parseProjectList } from './projects.js';
 import { loadLlmAllowlist } from './egress.js';
-import { toLineStream } from './stream-protocol.js';
+import { toLineStream, type StreamFinish } from './stream-protocol.js';
+import { recordUsage } from './usage.js';
 import {
   generateToken,
   loopbackOnly,
@@ -215,6 +216,7 @@ app.post('/api/chat', async (c) => {
   try {
     const model = resolved.model;
 
+    const start = new Date().toISOString();
     const result = streamText({
       model,
       system: scope
@@ -228,7 +230,24 @@ app.post('/api/chat', async (c) => {
 
     // Our own line protocol (server/stream-protocol.ts): the UI does not depend on the
     // AI SDK's wire format, which changes with every major version.
-    return new Response(toLineStream(result.fullStream), {
+    const provider = body.provider ?? config.defaultProvider;
+    const usage = (finish: StreamFinish) => {
+      try {
+        recordUsage(WORKSPACE_ROOT, {
+          tool: 'agent-control',
+          endpoint: provider,
+          model: body.model ?? config.defaultModel,
+          locality: resolved.locality,
+          ...(scope ? { project: scope.project, projectRoot: join(WORKSPACE_ROOT, scope.folder) } : {}),
+          start,
+          end: new Date().toISOString(),
+          ...finish,
+        });
+      } catch (err) {
+        console.error('Usage record not written:', err instanceof Error ? err.message : String(err));
+      }
+    };
+    return new Response(toLineStream(result.fullStream, usage), {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
