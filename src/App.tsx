@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useChat } from './hooks/useChat';
 import { useProviders } from './hooks/useProviders';
+import { useProjects } from './hooks/useProjects';
 import { MessageList } from './components/chat/MessageList';
 import { InputBar } from './components/chat/InputBar';
 import { SettingsDialog } from './components/settings/SettingsDialog';
@@ -11,6 +12,10 @@ type ThemePref = 'light' | 'dark' | 'system';
 export function App() {
   const chat = useChat();
   const { providers, defaultProvider, defaultModel, refresh: refreshProviders } = useProviders();
+  const { projects } = useProjects();
+  const [selectedProject, setSelectedProject] = useState(() => {
+    try { return localStorage.getItem('ac-project') ?? ''; } catch { return ''; }
+  });
 
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -48,14 +53,28 @@ export function App() {
     if (provider?.models.length) setSelectedModel(provider.models[0]);
   }, [providers]);
 
+  // A remote provider receives a project's context only when that project's policy
+  // lists it (ADR-0021); without a project, only local providers can be used.
+  const project = projects.find((p) => p.key === selectedProject);
+  const isAllowed = useCallback((p: Provider) =>
+    p.locality === 'local' || Boolean(project?.allowedEndpoints?.includes(p.id)), [project]);
+
+  // Switching project starts a new conversation: messages of one project must not be
+  // sent to an endpoint allowed only for another.
+  const handleProjectChange = useCallback((key: string) => {
+    setSelectedProject(key);
+    try { localStorage.setItem('ac-project', key); } catch { /* noop */ }
+    chat.clearMessages();
+  }, [chat]);
+
   const handleSend = useCallback((content: string) => {
-    chat.sendMessage(content, selectedProvider, selectedModel);
+    chat.sendMessage(content, selectedProvider, selectedModel, project?.key);
     setSidebarOpen(false);
-  }, [chat, selectedProvider, selectedModel]);
+  }, [chat, selectedProvider, selectedModel, project]);
 
   const handleQuickAction = useCallback((prompt: string) => {
-    chat.sendMessage(prompt, selectedProvider, selectedModel);
-  }, [chat, selectedProvider, selectedModel]);
+    chat.sendMessage(prompt, selectedProvider, selectedModel, project?.key);
+  }, [chat, selectedProvider, selectedModel, project]);
 
   const noProviders = providers.length === 0;
 
@@ -83,6 +102,20 @@ export function App() {
         </div>
 
         <div className="model-selector">
+          <label htmlFor="project-select">Project</label>
+          <select
+            id="project-select"
+            value={project ? project.key : ''}
+            onChange={(e) => handleProjectChange(e.target.value)}
+          >
+            <option value="">No project (local models only)</option>
+            {projects.map((p) => (
+              <option key={p.key} value={p.key}>{p.key}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="model-selector">
           <label htmlFor="provider-select">Provider</label>
           <select
             id="provider-select"
@@ -90,10 +123,19 @@ export function App() {
             onChange={(e) => handleProviderChange(e.target.value)}
           >
             {providers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id} disabled={!isAllowed(p)}>
+                {p.name}{isAllowed(p) ? '' : ' (not allowed)'}
+              </option>
             ))}
             {noProviders && <option value="">No providers configured</option>}
           </select>
+          {currentProvider && !isAllowed(currentProvider) && (
+            <p className="selector-note" role="status">
+              {project
+                ? `${currentProvider.id} is remote: list it in llm.endpoints of .local/agent/policies/${project.key}.json`
+                : `${currentProvider.id} is remote: choose a project whose policy allows it`}
+            </p>
+          )}
         </div>
 
         {currentProvider && (

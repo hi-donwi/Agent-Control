@@ -214,6 +214,12 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.selector-note {
+  margin-top: var(--sp-6);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 .model-selector label {
   display: block;
   font-size: var(--text-xs);

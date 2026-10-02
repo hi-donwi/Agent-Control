@@ -9,7 +9,7 @@ import { createOpenAIAdapter } from './providers/openai.js';
 import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
-import { loadEndpoints, type Endpoint } from './endpoints.js';
+import { loadEndpoints, localityOf, type Endpoint } from './endpoints.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
@@ -134,10 +134,12 @@ app.get('/api/providers', (c) => {
     })),
     ...available.map((key) => {
       const adapter = adapters.get(key);
+      const baseUrl = config.providers[key as keyof AppConfig['providers']]?.baseUrl;
       return {
         id: key,
         name: adapter?.name ?? key,
         models: adapter?.models() ?? [],
+        locality: baseUrl ? localityOf(baseUrl) : 'remote',
       };
     }),
   ];
