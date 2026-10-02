@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { stepCountIs, streamText } from 'ai';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createChatTools } from './chat-tools.js';
 import { WorkspaceBridge } from './workspace.js';
 import type { Tool } from 'ai';
@@ -85,5 +89,28 @@ describe('createChatTools bound to a project (ADR-0011)', () => {
     await run(tools, 'search_code', { query: 'q', folder: 'projects/acme/demo/src' });
     await assert.rejects(() => run(tools, 'search_code', { query: 'q', folder: 'projects/acme' }), /outside project demo/);
     assert.deepEqual(calls, ['search:["q","projects/acme/demo"]', 'search:["q","projects/acme/demo/src"]']);
+  });
+});
+
+describe('run_command is scoped to a bound project', () => {
+  it('is not offered to an unbound chat - no project folder to run it in', () => {
+    assert.equal('run_command' in createChatTools(new WorkspaceBridge('/nonexistent-workspace')), false);
+  });
+
+  it('runs in the project folder once its policy allows it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-chattools-runcmd-'));
+    const folder = 'projects/acme/demo';
+    const cwd = join(root, folder);
+    mkdirSync(cwd, { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd });
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd });
+    mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'demo.json'),
+      JSON.stringify({ schema_version: 1, default: 'read', actions: {} }));
+    const tools = createChatTools(new WorkspaceBridge(root), { root, project: 'demo', folder, remote: false });
+    assert.ok('run_command' in tools);
+    const result = await (tools.run_command.execute as (input: unknown, options: unknown) => Promise<unknown>)(
+      { command: 'echo', args: ['from-chat-tools'] }, { toolCallId: 't', messages: [] });
+    assert.ok((result as { content: string }).content.includes('from-chat-tools'));
   });
 });

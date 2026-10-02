@@ -10,6 +10,7 @@ import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
 import { loadEndpoints, localityOf, type Endpoint } from './endpoints.js';
+import { decide, listPending } from './approvals.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
@@ -274,6 +275,32 @@ app.get('/api/projects', async (c) => {
       return { key: p.key, client: p.client, folder: p.folder, allowedEndpoints };
     }),
   });
+});
+
+// ── API: Local approvals (ADR-0020) ─────────────────────────────────────
+// The project key is validated by listPending/decide (policy.ts's policyPath); an
+// invalid one is reported as a 400, not a path a bad request could use to probe disk.
+app.get('/api/approvals', (c) => {
+  const project = c.req.query('project');
+  if (!project) return c.json({ error: 'project is required' }, 400);
+  try {
+    return c.json({ pending: listPending(WORKSPACE_ROOT, project) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post('/api/approvals/decide', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { project?: string; id?: string; decision?: string };
+  if (!body.project || !body.id || (body.decision !== 'approved' && body.decision !== 'denied')) {
+    return c.json({ error: 'project, id, and decision ("approved" or "denied") are required' }, 400);
+  }
+  try {
+    const ok = decide(WORKSPACE_ROOT, body.project, body.id, body.decision);
+    return ok ? c.json({ ok: true }) : c.json({ error: 'unknown, already decided, or expired request' }, 409);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
 
 // ── API: Workspace info ────────────────────────────────────────────────
