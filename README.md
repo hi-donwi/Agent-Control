@@ -98,6 +98,27 @@ projects and the endpoints each one allows.
 `<workspace>/.local/agent/usage/<YYYY-MM>.jsonl`: endpoint, model, locality, project,
 start/end, finish reason, and token totals - never the prompt or the answer.
 
+### `run_command`: policy-gated, approval-aware
+
+A project-bound chat can run a command in its own project folder with the `run_command`
+tool. What it may do without a human is decided by the project's operator policy
+(`.local/agent/policies/<project>.json`, Agent-Workspace ADR-0014):
+
+```json
+{ "schema_version": 1, "default": "approval-required", "actions": { "run_command": "change" } }
+```
+
+- `read` / `change`: the command runs immediately.
+- `approval-required` (the default): the tool returns a request id instead of running.
+  `GET /api/approvals?project=<key>` lists pending requests; `POST /api/approvals/decide`
+  with `{"project", "id", "decision": "approved" | "denied"}` decides one. The model is
+  told to relay the id and wait, then call the tool again with `approvalId` set.
+- Before running, the approval is re-verified against the command, the project
+  repository's current `HEAD`, and the policy file's hash *as they are right now*
+  (Agent-Workspace ADR-0020). Any of the three changing since the request voids it; a
+  decided approval runs at most once.
+- A missing or invalid policy refuses the action - it is never run on uncertain footing.
+
 ## Architecture
 
 - **Frontend**: React 19 + Vite + TypeScript + Vanilla CSS
