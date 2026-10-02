@@ -17,6 +17,10 @@ markdown rendering and syntax highlighting.
   (legacy). Never in source, and never as a literal in endpoints.json.
 - A remote endpoint is called only for a project whose policy lists it (ADR-0021).
   Tests use the `mock` protocol; they never call a real endpoint.
+- A chat with a project gets tools bound to that project (ADR-0011). Any new tool that
+  reads files or project data MUST be scoped in `server/tools/chat-tools.ts` `bindToProject`.
+- Usage records hold counts and names, never prompt or answer text.
+- CI (`test`, `security / gate`) is required on `main`; merge through a PR.
 - File reads MUST be sandboxed: resolved path must start with workspace root.
 - Use `execFile` (not `exec`) for subprocess calls. Validate all arguments.
 - React JSX for rendering — no `dangerouslySetInnerHTML`.

@@ -17,7 +17,7 @@ npm run dev
 
 ## Features
 
-- **Multi-provider LLM** — GPT-4o, Claude Sonnet/Opus, Gemini Pro/Flash
+- **Multi-provider LLM** — any OpenAI-compatible, OpenAI Responses, or Anthropic endpoint by configuration, plus legacy OpenAI/Anthropic/Gemini settings
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
 - **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
 - **Authoritative Skill Retrieval** — `get_skill` powered by `Agent-Skills` (48 standardized software engineering workflows)
@@ -82,14 +82,27 @@ lists it, in `<workspace>/.local/agent/policies/<project>.json`:
 ```
 
 Without that entry the request is refused with 403. `POST /api/chat` accepts
-`"project": "<key>"` next to `provider` and `model`. Legacy providers from
-`~/.agent-control/config.json` are not egress-checked; move them to endpoints.
+`"project": "<key>"` next to `provider` and `model`; the sidebar's **Project** selector
+sends it, and disables providers the project may not use. Legacy providers from
+`~/.agent-control/config.json` are checked the same way: remote unless their base URL is
+loopback.
+
+**A chat bound to a project sees only that project** (Agent-Workspace ADR-0011). Its
+tools cannot list other projects, load another project's context pack, or read outside
+the project's folder, its memory and runs, and the framework (`.agents`, `docs`,
+`AGENTS.md`); search stays in the project folder; host diagnostics are not offered to a
+remote model. Switching project starts a new conversation. `GET /api/projects` lists the
+projects and the endpoints each one allows.
+
+**Usage.** Every finished chat appends one line to
+`<workspace>/.local/agent/usage/<YYYY-MM>.jsonl`: endpoint, model, locality, project,
+start/end, finish reason, and token totals - never the prompt or the answer.
 
 ## Architecture
 
 - **Frontend**: React 19 + Vite + TypeScript + Vanilla CSS
 - **Backend**: Hono (Node.js) with SSE streaming
-- **LLM**: Vercel AI SDK with provider adapters
+- **LLM**: Vercel AI SDK 7; the chat streams Agent-Control's own line protocol (`server/stream-protocol.ts`)
 - **Workspace**: `ws` CLI bridge for project/context awareness
 
 ## Security
