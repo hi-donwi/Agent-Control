@@ -26,9 +26,11 @@ describe('parseEndpoints', () => {
   });
 
   it('refuses a literal key and does not repeat it', () => {
+    // A low-entropy stand-in: a realistic-looking key here is what secret scanners flag.
+    const literal = 'plain-text-value';
     assert.throws(
-      () => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://api.x.ai/v1', apiKey: 'xai-SECRET123' } } }),
-      (error: Error) => /must be a reference/.test(error.message) && !error.message.includes('SECRET123'),
+      () => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://api.x.ai/v1', apiKey: literal } } }),
+      (error: Error) => /must be a reference/.test(error.message) && !error.message.includes(literal),
     );
   });
 
