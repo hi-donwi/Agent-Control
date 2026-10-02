@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classifyAction, loadPolicy } from './policy.js';
+import { classifyAction, loadPolicy, policyHash } from './policy.js';
 
 function workspaceWithPolicy(project: string, policy: unknown): string {
   const root = mkdtempSync(join(tmpdir(), 'ac-policy-'));
@@ -63,5 +63,19 @@ describe('loadPolicy', () => {
   it('carries the llm allowlist through unchanged, for egress.ts to read', () => {
     const root = workspaceWithPolicy('demo', { ...BASIC, llm: { endpoints: ['xai'] } });
     assert.deepEqual(loadPolicy(root, 'demo')?.llm, { endpoints: ['xai'] });
+  });
+});
+
+describe('policyHash', () => {
+  it('changes when the policy content changes', () => {
+    const a = policyHash(workspaceWithPolicy('demo', BASIC), 'demo');
+    const b = policyHash(workspaceWithPolicy('demo', { ...BASIC, default: 'change' }), 'demo');
+    assert.notEqual(a, b);
+  });
+
+  it('is stable and distinct from any real policy when the file is missing', () => {
+    const missing = policyHash(mkdtempSync(join(tmpdir(), 'ac-policy-')), 'demo');
+    assert.equal(missing, policyHash(mkdtempSync(join(tmpdir(), 'ac-policy-')), 'demo'));
+    assert.notEqual(missing, policyHash(workspaceWithPolicy('demo', BASIC), 'demo'));
   });
 });
