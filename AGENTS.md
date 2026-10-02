@@ -12,7 +12,11 @@ markdown rendering and syntax highlighting.
 ## Rules
 
 - Server MUST bind to 127.0.0.1 only. Never 0.0.0.0.
-- API keys MUST live in `~/.agent-control/config.json`, never in source.
+- API keys MUST live outside every repository: as `env:`/`keychain:` references in
+  `<workspace>/.local/agent/endpoints.json`, or in `~/.agent-control/config.json`
+  (legacy). Never in source, and never as a literal in endpoints.json.
+- A remote endpoint is called only for a project whose policy lists it (ADR-0021).
+  Tests use the `mock` protocol; they never call a real endpoint.
 - File reads MUST be sandboxed: resolved path must start with workspace root.
 - Use `execFile` (not `exec`) for subprocess calls. Validate all arguments.
 - React JSX for rendering — no `dangerouslySetInnerHTML`.

@@ -46,6 +46,45 @@ Create `~/.agent-control/config.json` (or use the in-app settings):
 API keys are never stored in this repository. The config file lives outside
 the project directory and is git-ignored.
 
+### Endpoints by wire protocol
+
+Any vendor, router, or local server that speaks one of three protocols is added by
+configuration, not code: `openai-chat` (Chat Completions and compatible APIs, e.g. xAI,
+OpenRouter, Ollama, vLLM), `openai-responses`, and `anthropic-messages`. A `mock`
+protocol answers deterministically and offline, for tests and demos.
+
+`<workspace>/.local/agent/endpoints.json` (outside every repository):
+
+```json
+{
+  "endpoints": {
+    "anthropic": { "protocol": "anthropic-messages", "baseUrl": "https://api.anthropic.com/v1",
+                   "apiKey": "env:ANTHROPIC_API_KEY", "models": ["claude-sonnet-5-5"] },
+    "xai":       { "protocol": "openai-chat", "baseUrl": "https://api.x.ai/v1",
+                   "apiKey": "env:XAI_API_KEY", "models": ["<model>"] },
+    "local":     { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:11434/v1",
+                   "models": ["<model>"] },
+    "mock":      { "protocol": "mock", "models": ["echo"] }
+  }
+}
+```
+
+`apiKey` is a reference, `env:NAME` or `keychain:NAME` (macOS Keychain); a literal key
+is rejected. An endpoint replaces a legacy provider with the same id.
+
+**Egress per project (Agent-Workspace ADR-0021).** Locality is derived from the URL:
+loopback is `local`, everything else `remote`. A local endpoint is always allowed. A
+remote endpoint is called only for a chat that names a `project` whose operator policy
+lists it, in `<workspace>/.local/agent/policies/<project>.json`:
+
+```json
+{ "schema_version": 1, "default": "read", "llm": { "endpoints": ["xai"] } }
+```
+
+Without that entry the request is refused with 403. `POST /api/chat` accepts
+`"project": "<key>"` next to `provider` and `model`. Legacy providers from
+`~/.agent-control/config.json` are not egress-checked; move them to endpoints.
+
 ## Architecture
 
 - **Frontend**: React 19 + Vite + TypeScript + Vanilla CSS
