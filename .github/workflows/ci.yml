@@ -1,0 +1,43 @@
+name: ci
+
+# Agent-Control runs LLM calls and workspace tools on the operator's machine. CI keeps
+# the server typed, linted, tested, and buildable, and scans it like every other
+# public repository of this account. Tests use the offline mock endpoint only.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    uses: hi-donwi/Agent-Secure/.github/workflows/agent-secure-gate.yml@1dffc4ca7e00bb4e9aa108603fcf02cfeb1637a8
+    with:
+      root: .
+      engine_version: v0.1.5
+      engine_sha256: 491c0f4b9b4fe379b13f85be0a8956343a6731694e714763d33b3827e65649c9
+      gitleaks_version: 8.30.1
+      gitleaks_sha256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      osv_scanner_version: 2.5.1
+      osv_scanner_sha256: f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -b
+      - name: Lint
+        run: npm run lint
+      - name: Tests (offline, mock endpoint only)
+        run: npm test
+      - name: Build
+        run: npm run build
