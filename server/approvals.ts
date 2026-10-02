@@ -126,7 +126,8 @@ export function verifyAndConsume(
   const state = stateOf(events, id, now);
   if (!state) return { ok: false, reason: 'unknown request' };
   if (state.status === 'consumed') return { ok: false, reason: 'already consumed' };
-  if (state.status !== 'approved') return { ok: false, reason: 'not approved' };
+  if (state.status === 'denied') return { ok: false, reason: 'denied' };
+  if (state.status === 'pending') return { ok: false, reason: 'awaiting approval' };
   if (now > new Date(state.request.expiresAt).getTime()) return { ok: false, reason: 'expired' };
   const { id: _id, requestedAt: _r, expiresAt: _e, ...bound } = state.request;
   // Field-by-field, not JSON.stringify: object key order must never decide whether an

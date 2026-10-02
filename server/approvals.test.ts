@@ -97,12 +97,12 @@ describe('verifyAndConsume (ADR-0020 §4: independent re-verification)', () => {
     assert.deepEqual(verifyAndConsume(root, req.id, reordered), { ok: true });
   });
 
-  it('refuses a request that was never approved, or was denied', () => {
+  it('distinguishes a still-pending request from one the operator denied', () => {
     const root = tmpRoot();
     const req = requestApproval(root, CTX);
-    assert.deepEqual(verifyAndConsume(root, req.id, CTX), { ok: false, reason: 'not approved' });
+    assert.deepEqual(verifyAndConsume(root, req.id, CTX), { ok: false, reason: 'awaiting approval' });
     decide(root, req.project, req.id, 'denied');
-    assert.deepEqual(verifyAndConsume(root, req.id, CTX), { ok: false, reason: 'not approved' });
+    assert.deepEqual(verifyAndConsume(root, req.id, CTX), { ok: false, reason: 'denied' });
   });
 
   it('refuses an approval that expired before execution', () => {
