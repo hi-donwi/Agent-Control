@@ -1,6 +1,7 @@
-import { isAbsolute, normalize, sep } from 'node:path';
+import { isAbsolute, join, normalize, sep } from 'node:path';
 import { jsonSchema, type Tool } from 'ai';
 import type { WorkspaceBridge } from './workspace.js';
+import { runCommand } from './run-command.js';
 
 /** A chat bound to one project (ADR-0011): what its tools may reach. */
 export interface ChatScope {
@@ -254,5 +255,21 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
     route_skills: wrap(tools.route_skills, (a) => ({ ...a, projectKey: scope.project })),
     read_file: wrap(tools.read_file, (a) => ({ ...a, path: inside(a.path, allowed) })),
     search_code: wrap(tools.search_code, (a) => ({ ...a, folder: inside(a.folder ?? scope.folder, [scope.folder]) })),
+    run_command: {
+      description: 'Run a shell command in the project\'s own folder. A project\'s operator policy decides '
+        + 'whether this runs immediately or needs the operator\'s approval first (Agent-Workspace ADR-0014/0020); '
+        + 'if it does, this returns a request id instead of running - relay it to the person and call this '
+        + 'again with the same command and approvalId once they approve it. Never retry without it.',
+      parameters: {
+        properties: {
+          command: { type: 'string', description: 'The program to run, e.g. "npm" or "git" - not a shell line' },
+          args: { type: 'array', items: { type: 'string' }, description: 'Arguments, e.g. ["test"]' },
+          approvalId: { type: 'string', description: 'The request id from a prior approval-required call, once approved' },
+        },
+        required: ['command'],
+      },
+      execute: (a: { command: string; args?: string[]; approvalId?: string }) =>
+        runCommand({ root: scope.root, project: scope.project, cwd: join(scope.root, scope.folder) }, a),
+    },
   };
 }
