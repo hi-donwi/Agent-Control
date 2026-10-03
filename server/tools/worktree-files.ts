@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, normalize, relative, resolve } from 'node:path';
 
+/** The same cap `WorkspaceBridge.readProjectFile()` applies to the primary checkout. */
 const MAX_FILE = 512 * 1024;
 
 /** The absolute path of `relPath` inside `worktree`, refusing anything that climbs out. */
@@ -22,6 +23,9 @@ export async function writeWorktreeFile(worktree: string, relPath: string, conte
 
 export async function readWorktreeFile(worktree: string, relPath: string): Promise<string> {
   const abs = resolveInside(worktree, relPath);
+  const info = await stat(abs);
+  if (!info.isFile()) throw new Error(`${normalize(relPath)} is not a file`);
+  if (info.size > MAX_FILE) throw new Error(`${normalize(relPath)} is too large (max ${MAX_FILE / 1024}KB)`);
   return readFile(abs, 'utf-8');
 }
 
