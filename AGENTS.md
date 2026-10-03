@@ -24,6 +24,11 @@ markdown rendering and syntax highlighting.
   goes through the same `classifyAction()` + approval flow, never a shortcut around it.
 - A mutating tool for a coding session operates on `ChatScope.worktree`, never the
   primary checkout - see `server/tools/chat-tools.ts`'s `codingSessionTools()`.
+- `read_file`/`search_code` also prefer `ChatScope.worktree` for a path under the
+  project's own folder, once a coding session is active - see `readFileTool()`/
+  `searchCodeTool()` in the same file. Never read a worktree through
+  `WorkspaceBridge.readProjectFile()`/`.search()`; it deliberately refuses `.local/`
+  paths, where every worktree lives - use `worktree-files.ts` instead.
 - CI (`test`, `security / gate`) is required on `main`; merge through a PR.
 - File reads MUST be sandboxed: resolved path must start with workspace root.
 - Use `execFile` (not `exec`) for subprocess calls. Validate all arguments.

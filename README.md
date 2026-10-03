@@ -130,11 +130,12 @@ GET  /api/coding-sessions/<project>         -> the active session, or null
 POST /api/coding-sessions/<project>/stop    -> stops it (the worktree is kept, for review)
 ```
 
-One session per project at a time. Once active, the chat's tools change: `write_file`
-and `edit_file` (both gated like `run_command`) and `git_diff` act in the worktree;
-`run_command`'s commands run there too. `read_file` and `search_code` are not yet
-worktree-aware - they still read the project's primary checkout, not the session's
-edits; ask for `git_diff` to see what has actually been written so far.
+One session per project at a time. Once active, every tool that touches the project's
+source moves to the worktree: `write_file` and `edit_file` (both gated like
+`run_command`), `git_diff`, `run_command`'s commands, and `read_file`/`search_code` -
+the chat sees its own edits, not the unedited primary checkout. Reads of the project's
+memory, runs, or the framework itself are unaffected; a coding session never changes
+those.
 
 ## Architecture
 
