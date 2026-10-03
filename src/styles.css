@@ -308,6 +308,39 @@ body {
   background: var(--bg-accent-soft);
 }
 
+/* ── Coding session panel (ADR-0019) ──────────────────────────────────── */
+.coding-session-panel {
+  margin: var(--sp-8) var(--sp-16);
+  padding: var(--sp-12);
+  border-radius: var(--r-8);
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+}
+
+.coding-session-panel .btn-secondary { width: 100%; }
+
+.coding-session-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--sp-4);
+}
+
+.coding-session-status .status-dot { background: var(--text-success); }
+
+.coding-session-detail {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  margin-bottom: var(--sp-8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Approval inbox (local approval records, ADR-0020) ────────────────── */
 .approval-inbox {
   margin: var(--sp-8) var(--sp-16);
