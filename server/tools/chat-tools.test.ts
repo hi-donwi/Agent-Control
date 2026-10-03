@@ -165,3 +165,59 @@ describe('coding session tools are scoped to the worktree (ADR-0019)', () => {
     assert.ok((result as { content: string }).content.includes('in-worktree'));
   });
 });
+
+
+describe('read_file and search_code prefer the active coding session\'s worktree', () => {
+  function boundWithWorktree() {
+    const root = mkdtempSync(join(tmpdir(), 'ac-wtread-'));
+    const folder = 'projects/acme/demo';
+    mkdirSync(join(root, folder), { recursive: true });
+    writeFileSync(join(root, folder, 'a.ts'), 'PRIMARY_CHECKOUT_CONTENT');
+    mkdirSync(join(root, 'context', 'memory', 'projects', 'demo'), { recursive: true });
+    writeFileSync(join(root, 'context', 'memory', 'projects', 'demo', 'active.md'), 'PRIMARY_MEMORY_CONTENT');
+    mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'demo.json'), JSON.stringify({ schema_version: 1, default: 'change', actions: {} }));
+    const worktree = join(root, '.local', 'worktrees', 'demo', 's1');
+    mkdirSync(worktree, { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd: worktree });
+    writeFileSync(join(worktree, 'a.ts'), 'WORKTREE_EDITED_CONTENT');
+    const tools = createChatTools(new WorkspaceBridge(root), { root, project: 'demo', folder, remote: false, worktree });
+    const run = (name: string, input: unknown) =>
+      (tools[name].execute as (input: unknown, options: unknown) => Promise<unknown>)(input, { toolCallId: 't', messages: [] });
+    return { root, folder, worktree, run };
+  }
+
+  it('reads the worktree\'s version of a project file, not the primary checkout\'s', async () => {
+    const { folder, run } = boundWithWorktree();
+    const result = (await run('read_file', { path: `${folder}/a.ts` })) as { content: string };
+    assert.match(result.content, /WORKTREE_EDITED_CONTENT/);
+    assert.doesNotMatch(result.content, /PRIMARY_CHECKOUT_CONTENT/);
+  });
+
+  it('still reads framework and memory files from the primary checkout, worktree or not', async () => {
+    const { run } = boundWithWorktree();
+    const result = (await run('read_file', { path: 'context/memory/projects/demo/active.md' })) as { content: string };
+    assert.match(result.content, /PRIMARY_MEMORY_CONTENT/);
+  });
+
+  it('finds a match that exists only in the worktree', async () => {
+    const { run } = boundWithWorktree();
+    // ripgrep's own JSON summary always contains the substring "match" (e.g. "matches":0),
+    // whether or not anything was found - check for an actual `"type":"match"` record.
+    const found = (await run('search_code', { query: 'WORKTREE_EDITED_CONTENT' })) as { content: string };
+    assert.match(found.content, /"type":"match"/);
+    const notInPrimary = (await run('search_code', { query: 'PRIMARY_CHECKOUT_CONTENT' })) as { content: string };
+    assert.doesNotMatch(notInPrimary.content, /"type":"match"/);
+  });
+
+  it('behaves exactly as before with no active coding session', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-wtread-'));
+    const folder = 'projects/acme/demo';
+    mkdirSync(join(root, folder), { recursive: true });
+    writeFileSync(join(root, folder, 'a.ts'), 'ONLY_PRIMARY_CONTENT');
+    const tools = createChatTools(new WorkspaceBridge(root), { root, project: 'demo', folder, remote: false });
+    const result = (await (tools.read_file.execute as (input: unknown, options: unknown) => Promise<unknown>)(
+      { path: `${folder}/a.ts` }, { toolCallId: 't', messages: [] })) as { content: string };
+    assert.match(result.content, /ONLY_PRIMARY_CONTENT/);
+  });
+});

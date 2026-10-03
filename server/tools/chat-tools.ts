@@ -3,7 +3,7 @@ import { jsonSchema, type Tool } from 'ai';
 import type { WorkspaceBridge } from './workspace.js';
 import { runCommand } from './run-command.js';
 import { editFileTool, writeFileTool } from './worktree-mutate.js';
-import { gitDiff } from './worktree-files.js';
+import { gitDiff, readWorktreeFile } from './worktree-files.js';
 
 /** A chat bound to one project (ADR-0011): what its tools may reach. */
 export interface ChatScope {
@@ -234,9 +234,56 @@ export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope): Rec
  * The tools of a chat bound to one project. Nothing lists or reads another project,
  * so a remote model allowed for this project receives only this project's material.
  */
+/** Workspace-root-relative paths read_file may reach: the project's own folder, its memory and runs, and the framework. */
+function allowedReadPaths(scope: ChatScope): string[] {
+  return [scope.folder, `context/memory/projects/${scope.project}`, `context/runs/${scope.project}`, '.agents', 'docs', 'AGENTS.md'];
+}
+
+/** True when `rel` (workspace-root-relative, already validated) is scope.folder or inside it. */
+function underProjectFolder(scope: ChatScope, rel: string): boolean {
+  return rel === scope.folder || rel.startsWith(scope.folder + sep);
+}
+
+/** `rel`'s position under scope.folder, as a path relative to it - "" for scope.folder itself. */
+function relativeToFolder(scope: ChatScope, rel: string): string {
+  return rel === scope.folder ? '' : rel.slice(scope.folder.length + 1);
+}
+
+/**
+ * read_file prefers the coding session's worktree for a path under the project's own
+ * folder - the chat's own edits, not the unedited primary checkout. Framework and
+ * memory/run paths are untouched: a coding session never changes those, so they always
+ * come from the primary checkout. bridge.readProjectFile() refuses any `.local/` path on
+ * purpose, so a worktree read goes through readWorktreeFile() instead, never the bridge.
+ */
+function readFileTool(tool: PlainTool, scope: ChatScope, inside: (path: unknown, prefixes: string[]) => string): PlainTool {
+  const allowed = allowedReadPaths(scope);
+  return {
+    ...tool,
+    execute: async (a: never) => {
+      const rel = inside((a as { path: unknown }).path, allowed);
+      if (scope.worktree && underProjectFolder(scope, rel)) {
+        return { content: await readWorktreeFile(scope.worktree, relativeToFolder(scope, rel)) };
+      }
+      return tool.execute({ path: rel } as never);
+    },
+  };
+}
+
+/** search_code searches the worktree in place of the project folder, once a coding session is active - same reasoning as readFileTool. */
+function searchCodeTool(tool: PlainTool, scope: ChatScope, inside: (path: unknown, prefixes: string[]) => string): PlainTool {
+  return {
+    ...tool,
+    execute: async (a: never) => {
+      const { query, folder: requested } = a as { query: string; folder?: string };
+      const rel = inside(requested ?? scope.folder, [scope.folder]);
+      const folder = scope.worktree ? join(scope.worktree, relativeToFolder(scope, rel)) : rel;
+      return tool.execute({ query, folder } as never);
+    },
+  };
+}
+
 function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Record<string, PlainTool> {
-  const allowed = [scope.folder, `context/memory/projects/${scope.project}`, `context/runs/${scope.project}`,
-    '.agents', 'docs', 'AGENTS.md'];
   const inside = (path: unknown, prefixes: string[]): string => {
     const relative = typeof path === 'string' ? normalize(path) : '';
     if (!relative || isAbsolute(relative) || relative.startsWith('..')
@@ -262,8 +309,8 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
     context_pack: wrap(tools.context_pack, (a) => ({ ...a, projectKey: own(a.projectKey) })),
     scan_security: wrap(tools.scan_security, (a) => ({ ...a, projectKey: own(a.projectKey) })),
     route_skills: wrap(tools.route_skills, (a) => ({ ...a, projectKey: scope.project })),
-    read_file: wrap(tools.read_file, (a) => ({ ...a, path: inside(a.path, allowed) })),
-    search_code: wrap(tools.search_code, (a) => ({ ...a, folder: inside(a.folder ?? scope.folder, [scope.folder]) })),
+    read_file: readFileTool(tools.read_file, scope, inside),
+    search_code: searchCodeTool(tools.search_code, scope, inside),
     run_command: {
       description: 'Run a shell command in the project\'s own folder (or its coding session\'s worktree, if '
         + 'one is active). A project\'s operator policy decides whether this runs immediately or needs the '

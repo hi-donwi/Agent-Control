@@ -233,9 +233,9 @@ app.post('/api/chat', async (c) => {
         ? `${SYSTEM_PROMPT}\n\nThis chat is bound to project "${scope.project}" (folder ${scope.folder}). `
           + 'Only that project, its memory and runs, and the framework are available; do not ask for other projects.'
           + (scope.worktree
-            ? ` A coding session is active in ${scope.worktree}. write_file, edit_file, and run_command act `
-              + 'there, not in the project\'s main checkout. read_file and search_code still show the '
-              + 'unedited project, not this session\'s changes - use git_diff to see what you have written so far.'
+            ? ` A coding session is active in ${scope.worktree}. write_file, edit_file, run_command, `
+              + 'read_file, and search_code all act there, not in the project\'s main checkout; git_diff shows '
+              + 'the session\'s changes so far.'
             : '')
         : SYSTEM_PROMPT,
       messages: body.messages,
