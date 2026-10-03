@@ -1,7 +1,5 @@
 import { execFile } from 'node:child_process';
-import { sha256Hex, requestApproval, verifyAndConsume } from '../approvals.js';
-import { headSha } from '../git-head.js';
-import { classifyAction, policyHash } from '../policy.js';
+import { gate } from './gate.js';
 
 export interface RunCommandDeps {
   root: string;
@@ -36,48 +34,17 @@ function execute(command: string, args: string[], cwd: string): Promise<{ conten
 
 /**
  * Runs a command in the chat's project folder, gated by the project's operator policy
- * (ADR-0014) and, when it requires one, a local approval (ADR-0020).
- *
- * `read`/`change`: runs immediately. `approval-required`, no `approvalId` yet: records a
- * request and returns its id instead of running - the model relays this to the person
- * and must not retry blindly. `approval-required` with `approvalId`: re-verifies the
- * exact command, the project's current HEAD, and the current policy against what the
- * operator approved; any difference voids it. An invalid or missing policy is
- * `incomplete`, refused like a denial - never run.
+ * (ADR-0014) and, when it requires one, a local approval (ADR-0020). See gate.ts for
+ * the classify -> request-or-verify -> run flow this and every other mutating tool uses.
  */
 export async function runCommand(deps: RunCommandDeps, input: RunCommandInput): Promise<RunCommandResult> {
-  const action = 'run_command';
-  const decision = classifyAction(deps.root, deps.project, action);
-  if (decision.decision === 'incomplete') {
-    return { error: `cannot classify this action: ${decision.reason}` };
-  }
-  if (decision.decision === 'allow') {
-    return execute(input.command, input.args ?? [], deps.cwd);
-  }
-
-  const sha = await headSha(deps.cwd);
-  if (!sha) return { error: 'the project folder is not a git repository: an approval cannot be bound to a revision' };
-  const context = {
-    project: deps.project,
-    headSha: sha,
-    action,
-    inputHash: sha256Hex(JSON.stringify({ command: input.command, args: input.args ?? [] })),
-    policyHash: policyHash(deps.root, deps.project),
-  };
-
-  if (input.approvalId) {
-    const result = verifyAndConsume(deps.root, input.approvalId, context);
-    if (!result.ok) return { error: `approval ${input.approvalId}: ${result.reason}` };
-    return execute(input.command, input.args ?? [], deps.cwd);
-  }
-
-  const request = requestApproval(deps.root, context);
-  return {
-    approvalRequired: true,
-    requestId: request.id,
-    expiresAt: request.expiresAt,
-    message: `This action needs the operator's approval. Ask them to approve request ${request.id} `
-      + `in Agent-Control, then call run_command again with the same command and approvalId "${request.id}". `
-      + `Do not retry without it - the request will not execute on its own.`,
-  };
+  const outcome = await gate(
+    { root: deps.root, project: deps.project, cwd: deps.cwd, action: 'run_command' },
+    input.approvalId,
+    { command: input.command, args: input.args ?? [] },
+    () => execute(input.command, input.args ?? [], deps.cwd),
+  );
+  if (outcome.ran) return outcome.result;
+  if ('approvalRequired' in outcome) return outcome;
+  return { error: outcome.error };
 }
