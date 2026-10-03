@@ -4,6 +4,8 @@ import { useProviders } from './hooks/useProviders';
 import { useProjects } from './hooks/useProjects';
 import { useApprovals } from './hooks/useApprovals';
 import { ApprovalInbox } from './components/approvals/ApprovalInbox';
+import { useCodingSession } from './hooks/useCodingSession';
+import { CodingSessionPanel } from './components/coding-session/CodingSessionPanel';
 import { MessageList } from './components/chat/MessageList';
 import { InputBar } from './components/chat/InputBar';
 import { SettingsDialog } from './components/settings/SettingsDialog';
@@ -70,6 +72,7 @@ export function App() {
   }, [chat]);
 
   const { pending: pendingApprovals, decide: decideApproval, decidingIds } = useApprovals(project?.key);
+  const coding = useCodingSession(project?.key);
 
   const handleSend = useCallback((content: string) => {
     chat.sendMessage(content, selectedProvider, selectedModel, project?.key);
@@ -158,6 +161,16 @@ export function App() {
         )}
 
         <ApprovalInbox requests={pendingApprovals} onDecide={decideApproval} decidingIds={decidingIds} />
+
+        {project && (
+          <CodingSessionPanel
+            session={coding.session}
+            busy={coding.busy}
+            error={coding.error}
+            onStart={coding.start}
+            onStop={coding.stop}
+          />
+        )}
 
         <div className="sidebar-section">
           <div className="sidebar-section-title">Conversations</div>

@@ -59,3 +59,11 @@ export interface ApprovalRequest {
   requestedAt: string;
   expiresAt: string;
 }
+
+export interface CodingSession {
+  id: string;
+  project: string;
+  worktree: string;
+  branch: string;
+  startedAt: string;
+}
