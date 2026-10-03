@@ -8,6 +8,10 @@ Google Gemini — all from one unified interface.
 
 ## Quick start
 
+Requires [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH` - `search_code`
+shells out to it. Without it, `search_code` silently reports "No results found." rather
+than failing loudly; CI installs it explicitly for the same reason.
+
 ```bash
 # From the workspace root or this directory:
 npm install
