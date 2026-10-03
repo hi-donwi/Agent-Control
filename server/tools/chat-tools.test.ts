@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { stepCountIs, streamText } from 'ai';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createChatTools } from './chat-tools.js';
@@ -112,5 +112,56 @@ describe('run_command is scoped to a bound project', () => {
     const result = await (tools.run_command.execute as (input: unknown, options: unknown) => Promise<unknown>)(
       { command: 'echo', args: ['from-chat-tools'] }, { toolCallId: 't', messages: [] });
     assert.ok((result as { content: string }).content.includes('from-chat-tools'));
+  });
+});
+
+
+describe('coding session tools are scoped to the worktree (ADR-0019)', () => {
+  function bound(root: string, worktree?: string) {
+    const folder = 'projects/acme/demo';
+    mkdirSync(join(root, folder), { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd: join(root, folder) });
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: join(root, folder) });
+    mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'demo.json'), JSON.stringify({ schema_version: 1, default: 'change', actions: {} }));
+    return createChatTools(new WorkspaceBridge(root), { root, project: 'demo', folder, remote: false, worktree });
+  }
+
+  it('are absent with no active coding session', () => {
+    const tools = bound(mkdtempSync(join(tmpdir(), 'ac-session-')));
+    for (const name of ['write_file', 'edit_file', 'git_diff']) assert.equal(name in tools, false, name);
+  });
+
+  it('write, edit, and diff a worktree once a session is active', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-session-'));
+    const worktree = join(root, '.local', 'worktrees', 'demo', 's1');
+    mkdirSync(worktree, { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd: worktree });
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: worktree });
+    const tools = bound(root, worktree);
+    const run = (name: string, input: unknown) =>
+      (tools[name].execute as (input: unknown, options: unknown) => Promise<unknown>)(input, { toolCallId: 't', messages: [] });
+
+    await run('write_file', { path: 'a.ts', content: 'const x = 1;\n' });
+    assert.equal(readFileSync(join(worktree, 'a.ts'), 'utf-8'), 'const x = 1;\n');
+
+    await run('edit_file', { path: 'a.ts', oldString: 'x = 1', newString: 'x = 2' });
+    assert.equal(readFileSync(join(worktree, 'a.ts'), 'utf-8'), 'const x = 2;\n');
+
+    const diff = (await run('git_diff', {})) as { content: string };
+    assert.match(diff.content, /x = 2/);
+  });
+
+  it('runs run_command in the worktree, not the primary checkout, once a session is active', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-session-')); 
+    const worktree = join(root, '.local', 'worktrees', 'demo', 's1');
+    mkdirSync(worktree, { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd: worktree });
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: worktree });
+    writeFileSync(join(worktree, 'marker.txt'), 'in-worktree');
+    const tools = bound(root, worktree);
+    const result = await (tools.run_command.execute as (input: unknown, options: unknown) => Promise<unknown>)(
+      { command: 'cat', args: ['marker.txt'] }, { toolCallId: 't', messages: [] });
+    assert.ok((result as { content: string }).content.includes('in-worktree'));
   });
 });
