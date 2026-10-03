@@ -2,6 +2,8 @@ import { isAbsolute, join, normalize, sep } from 'node:path';
 import { jsonSchema, type Tool } from 'ai';
 import type { WorkspaceBridge } from './workspace.js';
 import { runCommand } from './run-command.js';
+import { editFileTool, writeFileTool } from './worktree-mutate.js';
+import { gitDiff } from './worktree-files.js';
 
 /** A chat bound to one project (ADR-0011): what its tools may reach. */
 export interface ChatScope {
@@ -11,6 +13,13 @@ export interface ChatScope {
   folder: string;
   /** The model is remote: host diagnostics do not leave the machine. */
   remote: boolean;
+  /**
+   * The active coding session's worktree (Agent-Workspace ADR-0019), when one exists.
+   * write_file/edit_file/git_diff operate here, never the primary checkout. read_file
+   * and search_code still read the primary checkout, not this worktree's edits - until
+   * that gap closes, tell the model to use git_diff, not read_file, to see its own work.
+   */
+  worktree?: string;
 }
 
 interface PlainTool {
@@ -256,10 +265,11 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
     read_file: wrap(tools.read_file, (a) => ({ ...a, path: inside(a.path, allowed) })),
     search_code: wrap(tools.search_code, (a) => ({ ...a, folder: inside(a.folder ?? scope.folder, [scope.folder]) })),
     run_command: {
-      description: 'Run a shell command in the project\'s own folder. A project\'s operator policy decides '
-        + 'whether this runs immediately or needs the operator\'s approval first (Agent-Workspace ADR-0014/0020); '
-        + 'if it does, this returns a request id instead of running - relay it to the person and call this '
-        + 'again with the same command and approvalId once they approve it. Never retry without it.',
+      description: 'Run a shell command in the project\'s own folder (or its coding session\'s worktree, if '
+        + 'one is active). A project\'s operator policy decides whether this runs immediately or needs the '
+        + 'operator\'s approval first (Agent-Workspace ADR-0014/0020); if it does, this returns a request id '
+        + 'instead of running - relay it to the person and call this again with the same command and approvalId '
+        + 'once they approve it. Never retry without it.',
       parameters: {
         properties: {
           command: { type: 'string', description: 'The program to run, e.g. "npm" or "git" - not a shell line' },
@@ -269,7 +279,55 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
         required: ['command'],
       },
       execute: (a: { command: string; args?: string[]; approvalId?: string }) =>
-        runCommand({ root: scope.root, project: scope.project, cwd: join(scope.root, scope.folder) }, a),
+        runCommand({ root: scope.root, project: scope.project, cwd: scope.worktree ?? join(scope.root, scope.folder) }, a),
+    },
+    ...(scope.worktree ? codingSessionTools(scope.root, scope.project, scope.worktree) : {}),
+  };
+}
+
+/**
+ * The tools a chat's coding session adds on top of run_command: write, edit, and see a
+ * diff of the worktree. Gated the same way as run_command (ADR-0014/0020).
+ */
+function codingSessionTools(root: string, project: string, worktree: string): Record<string, PlainTool> {
+  return {
+    write_file: {
+      description: 'Create or overwrite a file in the coding session\'s worktree. Gated like run_command: may '
+        + 'return a request id instead of writing, needing the operator\'s approval first.',
+      parameters: {
+        properties: {
+          path: { type: 'string', description: 'Path relative to the worktree root' },
+          content: { type: 'string', description: 'The file\'s full new content' },
+          approvalId: { type: 'string', description: 'The request id from a prior approval-required call, once approved' },
+        },
+        required: ['path', 'content'],
+      },
+      execute: (a: { path: string; content: string; approvalId?: string }) => writeFileTool({ root, project, worktree }, a),
+    },
+    edit_file: {
+      description: 'Replace one exact, unique occurrence of oldString with newString in a worktree file. Refused, '
+        + 'without writing, if oldString is missing or matches more than once - include more surrounding context '
+        + 'and try again. Gated like run_command.',
+      parameters: {
+        properties: {
+          path: { type: 'string', description: 'Path relative to the worktree root' },
+          oldString: { type: 'string', description: 'The exact text to replace - must match exactly once' },
+          newString: { type: 'string', description: 'Its replacement' },
+          approvalId: { type: 'string', description: 'The request id from a prior approval-required call, once approved' },
+        },
+        required: ['path', 'oldString', 'newString'],
+      },
+      execute: (a: { path: string; oldString: string; newString: string; approvalId?: string }) => editFileTool({ root, project, worktree }, a),
+    },
+    git_diff: {
+      description: 'Show the coding session\'s current unstaged changes (git diff), optionally scoped to one '
+        + 'path. Use this, not read_file or search_code, to see the effect of write_file/edit_file calls so far.',
+      parameters: {
+        properties: {
+          path: { type: 'string', description: 'Optional: scope the diff to one path, relative to the worktree root' },
+        },
+      },
+      execute: async (a: { path?: string }) => ({ content: (await gitDiff(worktree, a.path)) || '(no changes)' }),
     },
   };
 }

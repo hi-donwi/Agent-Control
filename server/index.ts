@@ -11,6 +11,8 @@ import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
 import { loadEndpoints, localityOf, type Endpoint } from './endpoints.js';
 import { decide, listPending } from './approvals.js';
+import { readCodingSession, startCodingSession, stopCodingSession } from './coding-sessions.js';
+import { realSessionRunner } from './ws-runner.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
@@ -211,7 +213,14 @@ app.post('/api/chat', async (c) => {
   if (body.project) {
     const project = parseProjectList(await bridge.listProjects().catch(() => '')).find((p) => p.key === body.project);
     if (!project) return c.json({ error: `Unknown project "${body.project}".` }, 400);
-    scope = { root: WORKSPACE_ROOT, project: project.key, folder: project.folder, remote: resolved.locality === 'remote' };
+    const coding = readCodingSession(WORKSPACE_ROOT, project.key);
+    scope = {
+      root: WORKSPACE_ROOT,
+      project: project.key,
+      folder: project.folder,
+      remote: resolved.locality === 'remote',
+      worktree: coding?.worktree,
+    };
   }
 
   try {
@@ -223,6 +232,11 @@ app.post('/api/chat', async (c) => {
       system: scope
         ? `${SYSTEM_PROMPT}\n\nThis chat is bound to project "${scope.project}" (folder ${scope.folder}). `
           + 'Only that project, its memory and runs, and the framework are available; do not ask for other projects.'
+          + (scope.worktree
+            ? ` A coding session is active in ${scope.worktree}. write_file, edit_file, and run_command act `
+              + 'there, not in the project\'s main checkout. read_file and search_code still show the '
+              + 'unedited project, not this session\'s changes - use git_diff to see what you have written so far.'
+            : '')
         : SYSTEM_PROMPT,
       messages: body.messages,
       tools: createChatTools(bridge, scope),
@@ -298,6 +312,35 @@ app.post('/api/approvals/decide', async (c) => {
   try {
     const ok = decide(WORKSPACE_ROOT, body.project, body.id, body.decision);
     return ok ? c.json({ ok: true }) : c.json({ error: 'unknown, already decided, or expired request' }, 409);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+// ── API: Coding sessions (ADR-0019) ─────────────────────────────────────
+// One active session per project; its worktree is where write_file/edit_file/git_diff
+// and run_command then act, in place of the primary checkout.
+app.get('/api/coding-sessions/:project', (c) => {
+  try {
+    return c.json({ session: readCodingSession(WORKSPACE_ROOT, c.req.param('project')) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post('/api/coding-sessions/:project/start', async (c) => {
+  try {
+    const session = await startCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
+    return c.json({ session });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post('/api/coding-sessions/:project/stop', async (c) => {
+  try {
+    const stopped = await stopCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
+    return c.json({ stopped });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
