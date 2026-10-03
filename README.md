@@ -119,6 +119,23 @@ tool. What it may do without a human is decided by the project's operator policy
   decided approval runs at most once.
 - A missing or invalid policy refuses the action - it is never run on uncertain footing.
 
+### Coding sessions
+
+A chat can work inside a `ws agent start` worktree instead of the project's primary
+checkout (Agent-Workspace ADR-0019):
+
+```
+POST /api/coding-sessions/<project>/start   -> starts one, or returns the active one
+GET  /api/coding-sessions/<project>         -> the active session, or null
+POST /api/coding-sessions/<project>/stop    -> stops it (the worktree is kept, for review)
+```
+
+One session per project at a time. Once active, the chat's tools change: `write_file`
+and `edit_file` (both gated like `run_command`) and `git_diff` act in the worktree;
+`run_command`'s commands run there too. `read_file` and `search_code` are not yet
+worktree-aware - they still read the project's primary checkout, not the session's
+edits; ask for `git_diff` to see what has actually been written so far.
+
 ## Architecture
 
 - **Frontend**: React 19 + Vite + TypeScript + Vanilla CSS
