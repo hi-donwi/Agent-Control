@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { editWorktreeFile, gitDiff, readWorktreeFile, writeWorktreeFile } from './worktree-files.js';
+import { MAX_FILE, editWorktreeFile, gitDiff, readWorktreeFile, writeWorktreeFile } from './worktree-files.js';
 
 function tmpWorktree(): string {
   return mkdtempSync(join(tmpdir(), 'ac-worktree-'));
@@ -41,6 +41,24 @@ describe('readWorktreeFile', () => {
   it('refuses a path outside the worktree', async () => {
     const wt = tmpWorktree();
     await assert.rejects(() => readWorktreeFile(wt, '../../etc/passwd'), /outside the worktree/);
+  });
+
+  it('refuses a directory - the same "must be a file" guard bridge.readProjectFile has', async () => {
+    const wt = tmpWorktree();
+    mkdirSync(join(wt, 'adir'));
+    await assert.rejects(() => readWorktreeFile(wt, 'adir'), /not a file/i);
+  });
+
+  it('refuses a file over the size cap, naming it', async () => {
+    const wt = tmpWorktree();
+    writeFileSync(join(wt, 'big.txt'), 'x'.repeat(MAX_FILE + 1));
+    await assert.rejects(() => readWorktreeFile(wt, 'big.txt'), /too large/i);
+  });
+
+  it('accepts a file exactly at the cap', async () => {
+    const wt = tmpWorktree();
+    writeFileSync(join(wt, 'exact.txt'), 'x'.repeat(MAX_FILE));
+    assert.equal((await readWorktreeFile(wt, 'exact.txt')).length, MAX_FILE);
   });
 });
 
