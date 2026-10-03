@@ -20,8 +20,10 @@ markdown rendering and syntax highlighting.
 - A chat with a project gets tools bound to that project (ADR-0011). Any new tool that
   reads files or project data MUST be scoped in `server/tools/chat-tools.ts` `bindToProject`.
 - Usage records hold counts and names, never prompt or answer text.
-- `run_command` MUST stay the one tool that mutates anything; any new mutating tool
+- Every mutating tool (`run_command`, `write_file`, `edit_file`); any new mutating tool
   goes through the same `classifyAction()` + approval flow, never a shortcut around it.
+- A mutating tool for a coding session operates on `ChatScope.worktree`, never the
+  primary checkout - see `server/tools/chat-tools.ts`'s `codingSessionTools()`.
 - CI (`test`, `security / gate`) is required on `main`; merge through a PR.
 - File reads MUST be sandboxed: resolved path must start with workspace root.
 - Use `execFile` (not `exec`) for subprocess calls. Validate all arguments.
