@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useChat } from './hooks/useChat';
 import { useProviders } from './hooks/useProviders';
 import { useProjects } from './hooks/useProjects';
+import { useApprovals } from './hooks/useApprovals';
+import { ApprovalInbox } from './components/approvals/ApprovalInbox';
 import { MessageList } from './components/chat/MessageList';
 import { InputBar } from './components/chat/InputBar';
 import { SettingsDialog } from './components/settings/SettingsDialog';
@@ -66,6 +68,8 @@ export function App() {
     try { localStorage.setItem('ac-project', key); } catch { /* noop */ }
     chat.clearMessages();
   }, [chat]);
+
+  const { pending: pendingApprovals, decide: decideApproval, decidingIds } = useApprovals(project?.key);
 
   const handleSend = useCallback((content: string) => {
     chat.sendMessage(content, selectedProvider, selectedModel, project?.key);
@@ -152,6 +156,8 @@ export function App() {
             </select>
           </div>
         )}
+
+        <ApprovalInbox requests={pendingApprovals} onDecide={decideApproval} decidingIds={decidingIds} />
 
         <div className="sidebar-section">
           <div className="sidebar-section-title">Conversations</div>

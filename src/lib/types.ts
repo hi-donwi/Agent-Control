@@ -48,3 +48,14 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ApprovalRequest {
+  id: string;
+  project: string;
+  headSha: string;
+  action: string;
+  inputHash: string;
+  policyHash: string;
+  requestedAt: string;
+  expiresAt: string;
+}
