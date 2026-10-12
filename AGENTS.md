@@ -12,6 +12,9 @@ markdown rendering and syntax highlighting.
 ## Rules
 
 - Server MUST bind to 127.0.0.1 only. Never 0.0.0.0.
+- The host's own API lives under `/api/agent/*`. `/api/*` is reserved: in agent mode
+  (`WS_AGENT_MODE=1`) the host serves the desk and proxies `/api/*` to the control plane,
+  so a new own endpoint never goes under bare `/api/`.
 - API keys MUST live outside every repository: as `env:`/`keychain:` references in
   `<workspace>/.local/agent/endpoints.json`, or in `~/.agent-control/config.json`
   (legacy). Never in source, and never as a literal in endpoints.json.

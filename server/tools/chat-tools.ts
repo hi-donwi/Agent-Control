@@ -41,7 +41,7 @@ function withJsonSchema(tools: Record<string, PlainTool>): Record<string, Tool> 
   }]));
 }
 
-/** The workspace tools offered to the model in /api/chat. */
+/** The workspace tools offered to the model in /api/agent/chat. */
 export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope): Record<string, Tool> {
   const tools: Record<string, PlainTool> = {
     list_projects: {

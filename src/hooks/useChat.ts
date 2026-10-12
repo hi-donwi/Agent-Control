@@ -52,7 +52,7 @@ export function useChat() {
           content: m.content,
         }));
 
-        const response = await fetch('/api/chat', {
+        const response = await fetch('/api/agent/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
