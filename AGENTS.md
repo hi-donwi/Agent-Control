@@ -52,7 +52,7 @@ src/              Frontend (React)
 ## Develop
 
 ```bash
-npm run dev       # concurrent server + client
-npm run build     # production build
-npm start         # production server
+pnpm run dev       # concurrent server + client
+pnpm run build     # production build
+pnpm start         # production server
 ```
