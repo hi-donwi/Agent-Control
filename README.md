@@ -163,6 +163,20 @@ answers its API at `/api/agent/*`.
 - **LLM**: Vercel AI SDK 7; the chat streams Agent-Control's own line protocol (`server/stream-protocol.ts`)
 - **Workspace**: `ws` CLI bridge for project/context awareness
 
+## Testing
+
+```bash
+pnpm test      # node:test through tsx; makes no network call
+pnpm lint
+pnpm build
+```
+
+`server/chat.e2e.test.ts` starts the real entry point (`server/index.ts`) against a
+disposable workspace whose `mock` endpoint answers deterministically and offline, then
+drives `POST /api/agent/chat` over HTTP. The whole chat path - loopback gate, token,
+endpoint load, egress policy, the AI SDK stream, and the line protocol - runs with no
+network call and no real provider. That is also the seam a browser harness would drive.
+
 ## Security
 
 - Server binds to `127.0.0.1` only — no network exposure
