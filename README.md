@@ -85,7 +85,7 @@ lists it, in `<workspace>/.local/agent/policies/<project>.json`:
 { "schema_version": 1, "default": "read", "llm": { "endpoints": ["xai"] } }
 ```
 
-Without that entry the request is refused with 403. `POST /api/chat` accepts
+Without that entry the request is refused with 403. `POST /api/agent/chat` accepts
 `"project": "<key>"` next to `provider` and `model`; the sidebar's **Project** selector
 sends it, and disables providers the project may not use. Legacy providers from
 `~/.agent-control/config.json` are checked the same way: remote unless their base URL is
@@ -95,7 +95,7 @@ loopback.
 tools cannot list other projects, load another project's context pack, or read outside
 the project's folder, its memory and runs, and the framework (`.agents`, `docs`,
 `AGENTS.md`); search stays in the project folder; host diagnostics are not offered to a
-remote model. Switching project starts a new conversation. `GET /api/projects` lists the
+remote model. Switching project starts a new conversation. `GET /api/agent/projects` lists the
 projects and the endpoints each one allows.
 
 **Usage.** Every finished chat appends one line to
@@ -114,7 +114,7 @@ tool. What it may do without a human is decided by the project's operator policy
 
 - `read` / `change`: the command runs immediately.
 - `approval-required` (the default): the tool returns a request id instead of running.
-  `GET /api/approvals?project=<key>` lists pending requests; `POST /api/approvals/decide`
+  `GET /api/agent/approvals?project=<key>` lists pending requests; `POST /api/agent/approvals/decide`
   with `{"project", "id", "decision": "approved" | "denied"}` decides one. The model is
   told to relay the id and wait, then call the tool again with `approvalId` set.
 - Before running, the approval is re-verified against the command, the project
@@ -129,9 +129,9 @@ A chat can work inside a `ws agent start` worktree instead of the project's prim
 checkout (Agent-Workspace ADR-0019):
 
 ```
-POST /api/coding-sessions/<project>/start   -> starts one, or returns the active one
-GET  /api/coding-sessions/<project>         -> the active session, or null
-POST /api/coding-sessions/<project>/stop    -> stops it (the worktree is kept, for review)
+POST /api/agent/coding-sessions/<project>/start   -> starts one, or returns the active one
+GET  /api/agent/coding-sessions/<project>         -> the active session, or null
+POST /api/agent/coding-sessions/<project>/stop    -> stops it (the worktree is kept, for review)
 ```
 
 One session per project at a time. Once active, every tool that touches the project's
@@ -140,6 +140,21 @@ source moves to the worktree: `write_file` and `edit_file` (both gated like
 the chat sees its own edits, not the unedited primary checkout. Reads of the project's
 memory, runs, or the framework itself are unaffected; a coding session never changes
 those.
+
+## Web control desk mode
+
+`ws web --agent` starts this host beside the Agent-Workspace control plane (ADR-0019) and
+makes it the single browser-facing origin:
+
+- `/` serves the workspace control desk (`WS_DESK_DIST`).
+- `/api/agent/*` is this host's own API (chat, providers, projects, approvals, coding
+  sessions, workspace).
+- every other `/api/*` is proxied to the control plane (`WS_CONTROL_URL`) with the internal
+  token (`WS_CONTROL_TOKEN`), rewriting `Host` and dropping the browser's `Origin` and
+  `Sec-Fetch-*` headers. The browser never receives the control-plane token.
+
+Without `WS_AGENT_MODE=1` the host is a standalone app: it serves its own UI at `/` and
+answers its API at `/api/agent/*`.
 
 ## Architecture
 

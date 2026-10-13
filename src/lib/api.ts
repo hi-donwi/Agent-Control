@@ -16,7 +16,7 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`/api/${path}`, {
+  const response = await fetch(`/api/agent/${path}`, {
     ...options,
     cache: 'no-store',
     headers: {

@@ -27,12 +27,23 @@ import {
   securityHeaders,
   rateLimit,
 } from './middleware/security.js';
+import { forwardToControl } from './proxy.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
 const config = loadConfig();
 const TOKEN = generateToken();
 const bridge = new WorkspaceBridge(WORKSPACE_ROOT);
+
+// ── Agent mode (ADR-0019 §4): the host is the single browser-facing origin ──
+// `ws web --agent` sets these. Without them the host is a standalone app as before.
+const AGENT_MODE = process.env.WS_AGENT_MODE === '1';
+const CONTROL_URL = process.env.WS_CONTROL_URL ?? '';
+const CONTROL_TOKEN = process.env.WS_CONTROL_TOKEN ?? '';
+const DESK_DIST = process.env.WS_DESK_DIST ?? '';
+// The host's own API lives under this prefix, so it never collides with the control-plane
+// `/api/*` the host proxies.
+const AGENT_API = '/api/agent';
 
 // ── Provider registry ──────────────────────────────────────────────────
 function getAdapters(cfg: AppConfig): Map<string, ProviderAdapter> {
@@ -122,11 +133,11 @@ app.use('*', loopbackOnly());
 app.use('*', securityHeaders());
 
 // API routes require token
-app.use('/api/*', tokenAuth(TOKEN));
-app.use('/api/*', rateLimit(120, 60_000));
+app.use('/api/agent/*', tokenAuth(TOKEN));
+app.use('/api/agent/*', rateLimit(120, 60_000));
 
 // ── API: Providers & models ────────────────────────────────────────────
-app.get('/api/providers', (c) => {
+app.get(`${AGENT_API}/providers`, (c) => {
   const endpointIds = new Set(endpoints.map((e) => e.name));
   const available = availableProviders(config).filter((key) => !endpointIds.has(key));
   const providers = [
@@ -155,7 +166,7 @@ app.get('/api/providers', (c) => {
 });
 
 // ── API: Config management ─────────────────────────────────────────────
-app.get('/api/config', (c) => {
+app.get(`${AGENT_API}/config`, (c) => {
   // Return config without exposing full API keys
   const masked = { ...config };
   masked.providers = Object.fromEntries(
@@ -167,7 +178,7 @@ app.get('/api/config', (c) => {
   return c.json(masked);
 });
 
-app.post('/api/config', async (c) => {
+app.post(`${AGENT_API}/config`, async (c) => {
   const body = await c.req.json() as Partial<AppConfig>;
   if (body.providers) {
     for (const [key, val] of Object.entries(body.providers)) {
@@ -184,7 +195,7 @@ app.post('/api/config', async (c) => {
 });
 
 // ── API: Chat (streaming) ──────────────────────────────────────────────
-app.post('/api/chat', async (c) => {
+app.post(`${AGENT_API}/chat`, async (c) => {
   const body = await c.req.json() as {
     messages: ModelMessage[];
     provider?: string;
@@ -276,7 +287,7 @@ app.post('/api/chat', async (c) => {
 });
 
 // ── API: Projects a chat can be bound to ───────────────────────────────
-app.get('/api/projects', async (c) => {
+app.get(`${AGENT_API}/projects`, async (c) => {
   const projects = parseProjectList(await bridge.listProjects().catch(() => ''));
   return c.json({
     projects: projects.map((p) => {
@@ -294,7 +305,7 @@ app.get('/api/projects', async (c) => {
 // ── API: Local approvals (ADR-0020) ─────────────────────────────────────
 // The project key is validated by listPending/decide (policy.ts's policyPath); an
 // invalid one is reported as a 400, not a path a bad request could use to probe disk.
-app.get('/api/approvals', (c) => {
+app.get(`${AGENT_API}/approvals`, (c) => {
   const project = c.req.query('project');
   if (!project) return c.json({ error: 'project is required' }, 400);
   try {
@@ -304,7 +315,7 @@ app.get('/api/approvals', (c) => {
   }
 });
 
-app.post('/api/approvals/decide', async (c) => {
+app.post(`${AGENT_API}/approvals/decide`, async (c) => {
   const body = await c.req.json().catch(() => ({})) as { project?: string; id?: string; decision?: string };
   if (!body.project || !body.id || (body.decision !== 'approved' && body.decision !== 'denied')) {
     return c.json({ error: 'project, id, and decision ("approved" or "denied") are required' }, 400);
@@ -320,7 +331,7 @@ app.post('/api/approvals/decide', async (c) => {
 // ── API: Coding sessions (ADR-0019) ─────────────────────────────────────
 // One active session per project; its worktree is where write_file/edit_file/git_diff
 // and run_command then act, in place of the primary checkout.
-app.get('/api/coding-sessions/:project', (c) => {
+app.get(`${AGENT_API}/coding-sessions/:project`, (c) => {
   try {
     return c.json({ session: readCodingSession(WORKSPACE_ROOT, c.req.param('project')) });
   } catch (err) {
@@ -328,7 +339,7 @@ app.get('/api/coding-sessions/:project', (c) => {
   }
 });
 
-app.post('/api/coding-sessions/:project/start', async (c) => {
+app.post(`${AGENT_API}/coding-sessions/:project/start`, async (c) => {
   try {
     const session = await startCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
     return c.json({ session });
@@ -337,7 +348,7 @@ app.post('/api/coding-sessions/:project/start', async (c) => {
   }
 });
 
-app.post('/api/coding-sessions/:project/stop', async (c) => {
+app.post(`${AGENT_API}/coding-sessions/:project/stop`, async (c) => {
   try {
     const stopped = await stopCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
     return c.json({ stopped });
@@ -347,7 +358,7 @@ app.post('/api/coding-sessions/:project/stop', async (c) => {
 });
 
 // ── API: Workspace info ────────────────────────────────────────────────
-app.get('/api/workspace', async (c) => {
+app.get(`${AGENT_API}/workspace`, async (c) => {
   try {
     const [projects, tree] = await Promise.all([
       bridge.listProjects().catch(() => 'Could not load projects'),
@@ -359,9 +370,22 @@ app.get('/api/workspace', async (c) => {
   }
 });
 
+// ── Agent mode: proxy the control-plane API (ADR-0019 §4) ──────────────
+// Registered after the host's own /api/agent/* routes, so they always win. The browser
+// never holds the control-plane token: the proxy presents it and rewrites Host/Origin.
+if (AGENT_MODE && CONTROL_URL) {
+  app.all('/api/*', (c) =>
+    forwardToControl(c.req.raw, { controlUrl: CONTROL_URL, controlToken: CONTROL_TOKEN }),
+  );
+}
+
 // ── Serve static files in production ───────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
-  const distPath = resolve(import.meta.dirname ?? '.', '..', 'dist');
+  const ownDist = resolve(import.meta.dirname ?? '.', '..', 'dist');
+  // In agent mode the browser loads the workspace desk (WS_DESK_DIST); otherwise the host
+  // serves its own UI. Falls back to its own dist if the desk build is missing.
+  const deskDist = AGENT_MODE && DESK_DIST && existsSync(DESK_DIST) ? DESK_DIST : '';
+  const distPath = deskDist || ownDist;
   if (existsSync(distPath)) {
     app.get('*', (c) => {
       const url = new URL(c.req.url);
