@@ -17,6 +17,8 @@ export interface ServerState {
    * scripts, so that script never runs - the printed `?token=` URL is what works.
    */
   token: string;
+  /** The isolated `HOME` the server ran with - where its `~/.agent-control/config.json` lives. */
+  home: string;
 }
 
 export const serverEntry = () => join(REPO_ROOT, 'server', 'index.ts');
