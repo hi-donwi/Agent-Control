@@ -188,8 +188,8 @@ pnpm test:ui
 (`test/ui/workspace.ts` - endpoint config, policy, seeded approvals and coding session, a
 stub `ws`), and drives it in Chromium: the chat transcript, the approval inbox, the
 coding-session control, the settings dialog (masked keys, and a save that keeps the stored
-ones), and the in-chat UIDL preview. No network call and no real provider, exactly like the
-server test.
+ones), the in-chat UIDL preview, and the token the server injects into a page whose URL has
+none. No network call and no real provider, exactly like the server test.
 It needs `git` on `PATH`, because a started session's branch is read from the fixture
 worktree. CI runs `pnpm test`, not this, so the browser download stays off the runner; it is
 typechecked all the same, since `tsc -b` covers `test/ui`.
@@ -197,9 +197,10 @@ typechecked all the same, since `tsc -b` covers `test/ui`.
 ## Security
 
 - Server binds to `127.0.0.1` only — no network exposure
-- Bearer token generated per process — never stored in browser
+- Bearer token generated per process — handed to the page it serves, never persisted
 - File reads sandboxed to workspace root
-- CSP headers prevent script injection
+- CSP headers prevent script injection; the one injected token script runs behind a fresh
+  per-response nonce, and the HTML that carries it is not cacheable
 - API keys stored outside project in user home directory
 
 ## License

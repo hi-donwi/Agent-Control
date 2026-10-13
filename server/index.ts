@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import { resolve, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
+import crypto from 'node:crypto';
 
 import { loadConfig, saveConfig, availableProviders, type AppConfig } from './config.js';
 import { createOpenAIAdapter } from './providers/openai.js';
@@ -26,6 +27,7 @@ import {
   tokenAuth,
   securityHeaders,
   rateLimit,
+  setScriptNonce,
 } from './middleware/security.js';
 import { forwardToControl } from './proxy.js';
 
@@ -394,10 +396,16 @@ if (process.env.NODE_ENV === 'production') {
       // Inject token into HTML
       if (filePath.endsWith('.html')) {
         let html = readFileSync(filePath, 'utf-8');
+        // The inline script needs a nonce to run under the response's own CSP, which
+        // `securityHeaders()` reads back from here. A fresh one per response, and the HTML
+        // is not cacheable: a cached copy would carry a stale nonce and lose the token.
+        const nonce = crypto.randomBytes(16).toString('base64');
+        setScriptNonce(c, nonce);
         html = html.replace(
           '</head>',
-          `<script>window.__AC_TOKEN__="${TOKEN}";</script></head>`
+          `<script nonce="${nonce}">window.__AC_TOKEN__="${TOKEN}";</script></head>`
         );
+        c.header('Cache-Control', 'no-store');
         return c.html(html);
       }
       const content = readFileSync(filePath);
