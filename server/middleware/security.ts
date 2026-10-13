@@ -37,6 +37,40 @@ export function tokenAuth(token: string) {
   };
 }
 
+/**
+ * Context key for a per-response script nonce (`index.ts` sets it when it injects the token
+ * into HTML). Without it, `script-src 'self'` would block the injection and the page would
+ * only work when its URL carries `?token=`.
+ */
+const SCRIPT_NONCE = 'scriptNonce';
+
+type NonceContext = Context<{ Variables: Record<string, string> }>;
+
+/** Record the nonce the inline script in this response carries. */
+export function setScriptNonce(c: Context, nonce: string): void {
+  (c as NonceContext).set(SCRIPT_NONCE, nonce);
+}
+
+/** The nonce recorded for this response, if the handler set one. */
+function scriptNonceOf(c: Context): string | undefined {
+  return (c as NonceContext).get(SCRIPT_NONCE);
+}
+
+/** Build the Content-Security-Policy, optionally allowing one nonce'd inline script. */
+export function contentSecurityPolicy(scriptNonce?: string): string {
+  return [
+    "default-src 'self'",
+    scriptNonce ? `script-src 'self' 'nonce-${scriptNonce}'` : "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "connect-src 'self'",
+    "img-src 'self' data:",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+  ].join('; ');
+}
+
 /** Middleware: set security headers on every response. */
 export function securityHeaders() {
   return async (c: Context, next: Next) => {
@@ -45,17 +79,7 @@ export function securityHeaders() {
     c.header('X-Frame-Options', 'DENY');
     c.header('Referrer-Policy', 'no-referrer');
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    c.header('Content-Security-Policy', [
-      "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
-      "connect-src 'self'",
-      "img-src 'self' data:",
-      "frame-ancestors 'none'",
-      "object-src 'none'",
-      "base-uri 'self'",
-    ].join('; '));
+    c.header('Content-Security-Policy', contentSecurityPolicy(scriptNonceOf(c)));
   };
 }
 
