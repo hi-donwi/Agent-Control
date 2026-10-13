@@ -14,8 +14,8 @@ than failing loudly; CI installs it explicitly for the same reason.
 
 ```bash
 # From the workspace root or this directory:
-npm install
-npm run dev
+corepack pnpm install --frozen-lockfile
+pnpm run dev
 # Open the URL printed in the terminal (includes auth token)
 ```
 
