@@ -186,8 +186,10 @@ pnpm test:ui
 
 `test:ui` builds the UI, starts the same real entry point against a disposable workspace
 (`test/ui/workspace.ts` - endpoint config, policy, seeded approvals and coding session, a
-stub `ws`), and drives it in Chromium: the chat transcript, the approval inbox, and the
-coding-session control. No network call and no real provider, exactly like the server test.
+stub `ws`), and drives it in Chromium: the chat transcript, the approval inbox, the
+coding-session control, the settings dialog (masked keys, and a save that keeps the stored
+ones), and the in-chat UIDL preview. No network call and no real provider, exactly like the
+server test.
 It needs `git` on `PATH`, because a started session's branch is read from the fixture
 worktree. CI runs `pnpm test`, not this, so the browser download stays off the runner; it is
 typechecked all the same, since `tsc -b` covers `test/ui`.

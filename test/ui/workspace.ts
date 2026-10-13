@@ -20,6 +20,14 @@ export const APPROVALS = {
 /** A revision the inbox prints as its first eight characters. */
 export const HEAD_SHA = 'a1b2c3d4' + '5'.repeat(32);
 
+/** Seeded legacy provider keys, and the mask the API must answer with (first eight + `...`). */
+export const OPENAI_KEY = 'sk-fixture-openai-key';
+export const ANTHROPIC_KEY = 'sk-ant-fixture-key';
+export const MASKED_OPENAI_KEY = 'sk-fixtu...';
+export const MASKED_ANTHROPIC_KEY = 'sk-ant-f...';
+/** What the settings spec saves as a new Google key. */
+export const NEW_GOOGLE_KEY = 'AIza-fixture-google-key';
+
 export interface Workspace {
   /** `WS_WORKSPACE_ROOT`: the disposable workspace every fixture file lives in. */
   root: string;
@@ -84,6 +92,16 @@ export function createWorkspace(): Workspace {
   writeFileSync(join(root, 'AGENTS.md'), '# fixture workspace\n');
   writeFileSync(join(root, 'context', 'registry.tsv'),
     `key\tclient\tgroup\tfolder\n${PROJECT}\tframework\t-\tprojects/mock/${PROJECT}\n`);
+
+  // The legacy config lives outside the workspace, in the isolated home: a real (but fake)
+  // key per provider, so the settings spec can assert the API masks it and a save does not
+  // write the mask back.
+  mkdirSync(join(home, '.agent-control'), { recursive: true });
+  writeFileSync(join(home, '.agent-control', 'config.json'), JSON.stringify({
+    providers: { openai: { apiKey: OPENAI_KEY }, anthropic: { apiKey: ANTHROPIC_KEY } },
+    defaultProvider: 'anthropic',
+    defaultModel: 'claude-sonnet-4-20250514',
+  }, null, 2));
 
   // `mock` answers offline; `remote` is declared to prove the UI disables it unless the
   // project's policy allows it. Neither is ever called with a credential.

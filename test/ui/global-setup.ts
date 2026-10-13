@@ -70,7 +70,7 @@ export default async function globalSetup(): Promise<() => void> {
   if (!token) throw new Error(`server did not print its token:\n${log}`);
 
   mkdirSync(dirname(STATE_FILE), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify({ origin, token } satisfies ServerState) + '\n');
+  writeFileSync(STATE_FILE, JSON.stringify({ origin, token, home: workspace.home } satisfies ServerState) + '\n');
 
   return () => {
     child.kill('SIGKILL');
