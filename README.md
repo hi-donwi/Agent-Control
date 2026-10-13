@@ -175,7 +175,22 @@ pnpm build
 disposable workspace whose `mock` endpoint answers deterministically and offline, then
 drives `POST /api/agent/chat` over HTTP. The whole chat path - loopback gate, token,
 endpoint load, egress policy, the AI SDK stream, and the line protocol - runs with no
-network call and no real provider. That is also the seam a browser harness would drive.
+network call and no real provider. That is also the seam the browser harness drives.
+
+### Browser harness (local only)
+
+```bash
+pnpm exec playwright install chromium   # once
+pnpm test:ui
+```
+
+`test:ui` builds the UI, starts the same real entry point against a disposable workspace
+(`test/ui/workspace.ts` - endpoint config, policy, seeded approvals and coding session, a
+stub `ws`), and drives it in Chromium: the chat transcript, the approval inbox, and the
+coding-session control. No network call and no real provider, exactly like the server test.
+It needs `git` on `PATH`, because a started session's branch is read from the fixture
+worktree. CI runs `pnpm test`, not this, so the browser download stays off the runner; it is
+typechecked all the same, since `tsc -b` covers `test/ui`.
 
 ## Security
 
