@@ -27,9 +27,11 @@ export interface Endpoint {
   models: string[];
 }
 
+import { homedir } from 'node:os';
+
 const PROTOCOLS: readonly Protocol[] = ['openai-chat', 'openai-responses', 'anthropic-messages', 'mock'];
 const NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
-const CREDENTIAL_RE = /^(env|keychain):[A-Za-z0-9_.-]+$/;
+const CREDENTIAL_RE = /^(env|keychain|file):[A-Za-z0-9_.~/-]+$/;
 
 export class EndpointConfigError extends Error {}
 
@@ -114,6 +116,11 @@ export function resolveCredential(
     const value = readers.env[name];
     if (!value) throw new EndpointConfigError(`${name} is not set`);
     return value;
+  }
+  if (kind === 'file') {
+    const p = name.startsWith('~/') ? join(homedir(), name.slice(2)) : name;
+    if (!existsSync(p)) throw new EndpointConfigError(`file '${name}' does not exist`);
+    return readFileSync(p, 'utf-8').trim();
   }
   try {
     return (readers.keychain ?? readKeychain)(name);

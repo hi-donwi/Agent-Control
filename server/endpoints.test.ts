@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadEndpoints, localityOf, parseEndpoints, resolveCredential } from './endpoints.js';
@@ -68,6 +68,14 @@ describe('resolveCredential', () => {
     assert.equal(resolveCredential('env:K', { env: { K: 'v' } }), 'v');
     assert.equal(resolveCredential('keychain:svc', { env: {}, keychain: (name) => `kc-${name}` }), 'kc-svc');
     assert.equal(resolveCredential(undefined, { env: {} }), undefined);
+  });
+
+  it('reads file references when existing and throws when missing', () => {
+    const tmp = join(tmpdir(), `token-${Date.now()}.txt`);
+    writeFileSync(tmp, 'secret-token-from-file\n');
+    assert.equal(resolveCredential(`file:${tmp}`), 'secret-token-from-file');
+    rmSync(tmp);
+    assert.throws(() => resolveCredential(`file:${tmp}`), /does not exist/);
   });
 
   it('says which variable is missing, never a value', () => {

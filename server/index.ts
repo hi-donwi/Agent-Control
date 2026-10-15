@@ -64,14 +64,37 @@ function getAdapters(cfg: AppConfig): Map<string, ProviderAdapter> {
 
 let adapters = getAdapters(config);
 
+import { homedir } from 'node:os';
+
 // ── Endpoints by wire protocol (ADR-0021): <workspace>/.local/agent/endpoints.json ──
 function safeLoadEndpoints(): Endpoint[] {
+  let list: Endpoint[] = [];
   try {
-    return loadEndpoints(WORKSPACE_ROOT);
+    list = loadEndpoints(WORKSPACE_ROOT);
   } catch (err) {
     console.error(`Endpoints disabled: ${err instanceof Error ? err.message : String(err)}`);
-    return [];
   }
+
+  // Auto-discover Agent-Brain AI Gateway on loopback if available
+  if (!list.some((e) => e.name === 'brain')) {
+    const tokenPath = [
+      join(homedir(), '.brain', 'serve.token'),
+      join(homedir(), '.lokal', 'serve.token'),
+    ].find((p) => existsSync(p));
+
+    if (tokenPath) {
+      list.push({
+        name: 'brain',
+        protocol: 'openai-chat',
+        baseUrl: 'http://127.0.0.1:52140/v1',
+        credential: `file:${tokenPath}`,
+        locality: 'local',
+        models: ['code', 'chat', 'fast', 'plan'],
+      });
+    }
+  }
+
+  return list;
 }
 const endpoints = safeLoadEndpoints();
 
