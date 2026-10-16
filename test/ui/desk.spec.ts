@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Locator } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { HEAD_SHA, PROJECT, SESSION_BRANCH } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
@@ -144,6 +145,51 @@ test('keeps a project conversation across a reload', async ({ page, deskUrl }) =
   // A new conversation starts empty; the old one stays in the history on disk.
   await drawer.getByRole('button', { name: 'New conversation' }).click();
   await expect(drawer.getByText('mock(echo): persist me')).toHaveCount(0);
+});
+
+test('lists the earlier conversations of a scope and continues one', async ({ page, deskUrl }) => {
+  const open = async () => {
+    await page.getByRole('button', { name: 'Assistant' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Assistant' });
+    await drawer.getByRole('combobox', { name: 'Assistant scope' }).selectOption(PROJECT);
+    await expect(drawer.getByRole('combobox', { name: 'Model' })).toHaveValue('mock::echo');
+    return drawer;
+  };
+  const say = async (drawer: Locator, text: string) => {
+    await drawer.locator('#chat-input').fill(text);
+    await drawer.getByRole('button', { name: 'Send message' }).click();
+    await expect(drawer.getByText(`mock(echo): ${text}`)).toBeVisible();
+    // The answer is written to the history when the turn ends.
+    await expect(drawer.getByRole('button', { name: 'Send message' })).toBeVisible();
+  };
+
+  await page.goto(deskUrl);
+  let drawer = await open();
+  await drawer.getByRole('button', { name: 'New conversation' }).click();
+  await say(drawer, 'first topic');
+  await drawer.getByRole('button', { name: 'New conversation' }).click();
+  await say(drawer, 'second topic');
+
+  await drawer.getByRole('button', { name: 'Earlier conversations' }).click();
+  const list = drawer.getByRole('navigation', { name: 'Earlier conversations' });
+  await expect(list.getByRole('button', { name: /^second topic/ })).toHaveAttribute('aria-current', 'true');
+  await expect(list.getByRole('button', { name: /^first topic/ })).toContainText('2 messages');
+  await list.getByRole('button', { name: /^first topic/ }).click();
+  await expect(list).toHaveCount(0);
+  await expect(drawer.getByText('mock(echo): first topic')).toBeVisible();
+  await expect(drawer.getByText('mock(echo): second topic')).toHaveCount(0);
+
+  // The next turn joins the conversation it continued, so a reload brings that one back.
+  await say(drawer, 'more on the first');
+  await page.reload();
+  drawer = await open();
+  await expect(drawer.getByText('mock(echo): first topic')).toBeVisible();
+  await expect(drawer.getByText('mock(echo): more on the first')).toBeVisible();
+
+  // The workspace scope lists none of this project's conversations.
+  await drawer.getByRole('combobox', { name: 'Assistant scope' }).selectOption('');
+  await drawer.getByRole('button', { name: 'Earlier conversations' }).click();
+  await expect(drawer.getByRole('navigation', { name: 'Earlier conversations' }).getByText('first topic')).toHaveCount(0);
 });
 
 test('adds a note from the Notes section, written by ws note', async ({ page, deskUrl }) => {

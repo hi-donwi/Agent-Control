@@ -649,6 +649,29 @@
 .suggestion:disabled { opacity: 0.5; cursor: not-allowed; }
 .assistant-error { margin: 0 16px; color: var(--d-warn); font-size: 13px; }
 
+/* Earlier conversations: a quiet list, the open one marked by the accent rail. */
+.history-empty { margin: 12px 0; font-size: 13px; color: var(--d-ink-3); }
+.history-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.history-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--d-line);
+  border-left: 3px solid var(--d-line);
+  background: var(--d-room);
+  color: var(--d-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.history-item:hover { border-color: var(--d-accent); }
+.history-item[aria-current="true"] { border-left-color: var(--d-accent); }
+.history-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-meta { font-size: 11.5px; color: var(--d-ink-3); }
+
 .session-bar {
   display: flex;
   flex-wrap: wrap;

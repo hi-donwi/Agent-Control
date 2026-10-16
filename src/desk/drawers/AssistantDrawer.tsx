@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
-import { CloseIcon, NewChatIcon } from '../icons';
+import { CloseIcon, HistoryIcon, NewChatIcon } from '../icons';
 import { AgentFigure } from '../floor/AgentFigure';
 import { SectionView } from '../uidl/SectionView';
 import { sectionDocument } from '../uidl/documents';
@@ -13,6 +13,7 @@ import { useProjects } from '../../hooks/useProjects';
 import { useApprovals } from '../../hooks/useApprovals';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { ChangesView } from './ChangesView';
+import { HistoryList } from './HistoryList';
 import type { useScopedChat } from '../useScopedChat';
 import type { ApprovalRequest, Provider } from '../../lib/types';
 
@@ -41,6 +42,8 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
   const approvals = useApprovals(scope || undefined);
   const coding = useCodingSession(scope || undefined);
   const [tab, setTab] = useState<'chat' | 'changes' | 'runs'>('chat');
+  /** The scope's earlier conversations, shown in place of the tabs and the chat. */
+  const [history, setHistory] = useState(false);
 
   const allowed = useMemo(() => {
     const policy = projects.find((p) => p.key === scope);
@@ -58,7 +61,13 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
     setChoice((preferred ?? options.find((o) => o.allowed))?.value ?? '');
   }, [options, choice, defaultProvider, defaultModel]);
 
-  useEffect(() => setTab('chat'), [scope]);
+  useEffect(() => { setTab('chat'); setHistory(false); }, [scope]);
+
+  const openEarlier = async (id: string) => {
+    await chat.openConversation(id);
+    setTab('chat');
+    setHistory(false);
+  };
 
   const send = (text: string) => {
     const [provider, model] = choice.split(SEP);
@@ -92,7 +101,16 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         <h2 className="drawer-title">
           Assistant<span className="drawer-subtitle"> · {scope || 'Workspace'}</span>
         </h2>
-        <button type="button" className="icon-btn" onClick={chat.newConversation} aria-label="New conversation">
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => setHistory((open) => !open)}
+          aria-label="Earlier conversations"
+          aria-pressed={history}
+        >
+          <HistoryIcon />
+        </button>
+        <button type="button" className="icon-btn" onClick={() => { chat.newConversation(); setHistory(false); }} aria-label="New conversation">
           <NewChatIcon />
         </button>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close assistant">
@@ -152,7 +170,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         </label>
       </div>
 
-      {scope && (
+      {scope && !history && (
         <div className="tabs" role="tablist" aria-label="Agent views">
           <button type="button" role="tab" aria-selected={tab === 'chat'} onClick={() => setTab('chat')}>Chat</button>
           {coding.session && (
@@ -162,7 +180,11 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         </div>
       )}
 
-      {tab === 'runs' && scope ? (
+      {history ? (
+        <div className="drawer-body">
+          <HistoryList scope={scope} current={chat.conversationId} onOpen={openEarlier} />
+        </div>
+      ) : tab === 'runs' && scope ? (
         <div className="drawer-body">
           <SectionView document={sectionDocument('runs', scope)} dark={dark} />
         </div>

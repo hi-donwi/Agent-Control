@@ -47,3 +47,12 @@ export const ChevronIcon = () => (
 export const NewChatIcon = () => (
   <Icon><path d="M12 5v14M5 12h14" /></Icon>
 );
+
+/** A clock with a turning-back arrow: earlier conversations. */
+export const HistoryIcon = () => (
+  <Icon>
+    <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+    <path d="M3.5 4v4h4" />
+    <path d="M12 8v4l3 2" />
+  </Icon>
+);
