@@ -35,6 +35,7 @@ import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isS
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
 import { addNote, realWsInputRunner } from './desk/notes.js';
 import { TaskConflictError, addTask, setTaskStatus } from './desk/tasks.js';
+import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
@@ -443,6 +444,16 @@ app.post(`${AGENT_API}/desk/tasks/status`, async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, err instanceof TaskConflictError ? 409 : 400);
+  }
+});
+
+app.post(`${AGENT_API}/desk/plan/status`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    return c.json(await setPlanStatus(realWsInputRunner(WORKSPACE_ROOT), body));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, err instanceof PlanConflictError ? 409 : 400);
   }
 });
 

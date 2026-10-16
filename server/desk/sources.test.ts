@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ACTIVE_WINDOW_MS, clockState, parseOpenClock, readOpenClocks } from './clocks.js';
@@ -154,6 +154,10 @@ describe('deskFloor and readCollection on a disposable workspace', () => {
     assert.deepEqual(read('notes').map((r) => r.name), ['idea']);
     assert.deepEqual(read('runs').map((r) => [r.title, r.state]), [['Add export', 'in progress'], ['2026-10-01-090000-dev-x-old-work', 'done']]);
     assert.deepEqual(read('tasks').map((r) => [r.task, r.status, r.run]), [['CSV writer', 'in_progress', 'Add export']]);
+    const plan = join(root, 'ctx', 'runs', 'alpha', '2026-10-16-090000-dev-x-add-export', 'plan.md');
+    const stat = statSync(plan, { bigint: true });
+    assert.deepEqual([read('tasks')[0].runId, read('tasks')[0].revision],
+      ['2026-10-16-090000-dev-x-add-export', `mtime:${stat.mtimeNs}:size:${stat.size}`]);
     assert.deepEqual(readCollection(root, 'projects', undefined, floor).map((r) => [r.key, r.agents]), [['alpha', 1]]);
   });
 
