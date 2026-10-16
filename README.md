@@ -82,8 +82,21 @@ protocol answers deterministically and offline, for tests and demos.
 }
 ```
 
-`apiKey` is a reference, `env:NAME` or `keychain:NAME` (macOS Keychain); a literal key
-is rejected. An endpoint replaces a legacy provider with the same id.
+`apiKey` is a reference: `env:NAME`, `keychain:NAME` (macOS Keychain), or `file:PATH` for
+a token file that only its owner can read (`chmod 600`; an absolute path or `~/...`). A
+literal key is rejected. An endpoint replaces a legacy provider with the same id.
+
+**A gateway that forwards to the cloud is remote.** Agent-Brain's `brain serve` listens on
+loopback but sends requests to cloud accounts, so declare it remote; a project's context
+then reaches it only when that project's policy lists it (below). `locality` can only
+tighten - a remote URL declared `local` is refused. List real model ids from
+`GET /v1/models`; the `code`/`chat` aliases need a local backend.
+
+```json
+"brain": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52140/v1",
+           "apiKey": "file:~/.lokal/serve.token", "locality": "remote",
+           "models": ["antigravity/claude-sonnet-4-6", "antigravity/gemini-3-flash", "codex/gpt-5.5"] }
+```
 
 **Egress per project (Agent-Workspace ADR-0021).** Locality is derived from the URL:
 loopback is `local`, everything else `remote`. A local endpoint is always allowed. A

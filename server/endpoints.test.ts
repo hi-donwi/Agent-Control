@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadEndpoints, localityOf, parseEndpoints, resolveCredential } from './endpoints.js';
@@ -39,6 +39,37 @@ describe('parseEndpoints', () => {
     assert.throws(() => parseEndpoints({ endpoints: { 'Bad Name': { protocol: 'mock' } } }), /name/);
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat' } } }), /baseUrl/);
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'file:///etc/passwd' } } }), /baseUrl/);
+  });
+});
+
+describe('file credentials and declared locality', () => {
+  const gateway = { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1' };
+
+  it('accepts an absolute or home file reference and refuses a relative or escaping one', () => {
+    assert.equal(parseEndpoints({ endpoints: { b: { ...gateway, apiKey: 'file:~/.lokal/serve.token' } } })[0].credential, 'file:~/.lokal/serve.token');
+    assert.equal(parseEndpoints({ endpoints: { b: { ...gateway, apiKey: 'file:/etc/brain/token' } } })[0].credential, 'file:/etc/brain/token');
+    assert.throws(() => parseEndpoints({ endpoints: { b: { ...gateway, apiKey: 'file:token' } } }), /must be a reference/);
+    assert.throws(() => parseEndpoints({ endpoints: { b: { ...gateway, apiKey: 'file:~/../../etc/passwd' } } }), /must be a reference/);
+  });
+
+  it('lets a loopback gateway be declared remote, and never a remote URL local', () => {
+    assert.equal(parseEndpoints({ endpoints: { b: { ...gateway, locality: 'remote' } } })[0].locality, 'remote');
+    assert.equal(parseEndpoints({ endpoints: { b: { ...gateway, locality: 'local' } } })[0].locality, 'local');
+    assert.equal(parseEndpoints({ endpoints: { b: gateway } })[0].locality, 'local');
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://api.x.ai/v1', locality: 'local' } } }), /never local/);
+    assert.throws(() => parseEndpoints({ endpoints: { b: { ...gateway, locality: 'nearby' } } }), /locality/);
+  });
+
+  it('reads a token file only when its owner alone can read it', () => {
+    const home = mkdtempSync(join(tmpdir(), 'ac-home-'));
+    mkdirSync(join(home, '.lokal'));
+    const token = join(home, '.lokal', 'serve.token');
+    writeFileSync(token, 'gateway-token\n');
+    chmodSync(token, 0o600);
+    assert.equal(resolveCredential('file:~/.lokal/serve.token', { env: {}, home }), 'gateway-token');
+    chmodSync(token, 0o644);
+    assert.throws(() => resolveCredential('file:~/.lokal/serve.token', { env: {}, home }), /readable only by its owner/);
+    assert.throws(() => resolveCredential('file:~/.lokal/missing', { env: {}, home }), /does not exist/);
   });
 });
 
