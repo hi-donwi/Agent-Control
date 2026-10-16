@@ -23,7 +23,7 @@ test('renders a UIDL document as an interactive preview, with its raw JSON on th
 
   const card = assistant(page).locator('.uidl-preview-card');
   await expect(card).toHaveCount(1);
-  await expect(card.locator('.uidl-badge')).toHaveText('✦ UIDL');
+  await expect(card.locator('.uidl-badge')).toHaveText('UIDL');
   await expect(card.locator('.uidl-doc-id')).toHaveText('metrics');
   // The default registry renders a Container/Text document: the value comes from props.
   await expect(card.locator('.uidl-rendered-container')).toContainText('Operational');
