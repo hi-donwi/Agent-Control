@@ -1,0 +1,130 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { test, expect } from './fixtures.js';
+import { PROJECT } from './workspace.js';
+import { STATE_FILE, type ServerState } from './state.js';
+
+/**
+ * The project room: one project's memory, mission board, crew, blockers, and context,
+ * opened from its room on the floor. Every change it makes goes through the stub `ws`, so
+ * the spec asserts on the files that stub writes.
+ */
+
+const workspaceRoot = () => (JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root;
+
+const ACTIVE = `# ${PROJECT} - active
+
+- **Updated:** 2026-10-16
+- **Stage:** Desk review
+- **Current focus:** The project room
+
+## Next up
+
+- Wire the room into the floor
+
+## Blocked on
+
+| Item | Waiting for | Since |
+|---|---|---|
+| Release notes | Operator sign-off | 2026-10-15 |
+`;
+
+const DECISIONS = `# Decisions
+
+| Date | Decision | Why |
+|---|---|---|
+| 2026-10-14 | Stations replace columns | Work moves through an agent's day |
+`;
+
+test.beforeAll(() => {
+  const memory = join(workspaceRoot(), 'context', 'memory', 'projects', PROJECT);
+  mkdirSync(memory, { recursive: true });
+  writeFileSync(join(memory, 'active.md'), ACTIVE);
+  writeFileSync(join(memory, 'decisions.md'), DECISIONS);
+});
+
+test('opens a project room from the floor with its memory, blockers, and context', async ({ page, deskUrl }) => {
+  await page.goto(deskUrl);
+  await page.getByRole('article', { name: `Project ${PROJECT}` }).getByRole('button', { name: PROJECT, exact: true }).click();
+
+  const room = page.getByLabel(`Project room ${PROJECT}`);
+  await expect(room.getByRole('heading', { level: 1, name: PROJECT })).toBeVisible();
+  await expect(room.getByText('Desk review')).toBeVisible();
+  await expect(room.getByText('The project room')).toBeVisible();
+
+  const memory = room.getByRole('region', { name: 'Memory' });
+  await expect(memory.getByText('Wire the room into the floor')).toBeVisible();
+  await expect(memory.getByText('Stations replace columns')).toBeVisible();
+
+  // What memory says the project is blocked on is a blocker like any other.
+  const blockers = room.getByRole('region', { name: 'Blockers' });
+  await expect(blockers.getByText('Release notes')).toBeVisible();
+  await expect(blockers.getByText(/Operator sign-off/)).toBeVisible();
+
+  // The pack an agent bound here loads, and what its policy lets it reach.
+  const context = room.getByRole('region', { name: 'Context' });
+  await expect(context.getByText(`context/memory/projects/${PROJECT}/active.md`)).toBeVisible();
+  await expect(context.getByText(/Autonomy: read/)).toBeVisible();
+
+  // Escape leaves the room for the floor.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('article', { name: `Project ${PROJECT}` })).toBeVisible();
+});
+
+test('adds a mission, moves it to In hands, and blocks it with a reason, through ws task', async ({ page, deskUrl }) => {
+  const file = join(workspaceRoot(), 'context', 'tasks', PROJECT, 'task_map_the_room.md');
+  await page.goto(deskUrl);
+  await page.getByRole('article', { name: `Project ${PROJECT}` }).getByRole('button', { name: PROJECT, exact: true }).click();
+  const board = page.getByRole('region', { name: 'Mission board' });
+
+  // Refused before anything runs.
+  await board.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(board.getByRole('alert')).toHaveText('[ERROR] a task needs a title');
+
+  await board.getByRole('textbox', { name: 'New mission' }).fill('Map the room');
+  await board.getByRole('combobox', { name: 'Priority' }).selectOption('high');
+  await board.getByRole('button', { name: 'Add', exact: true }).click();
+  const card = board.getByRole('listitem', { name: /^Task: Map the room/ });
+  await expect(board.getByRole('region', { name: /^Queue, / }).getByRole('listitem', { name: /^Task: Map the room/ })).toBeVisible();
+  expect(readFileSync(file, 'utf-8')).toContain('priority: high');
+
+  // The keyboard path: a card's own menu moves it, with the revision it was read at.
+  await card.getByRole('combobox', { name: 'Move Map the room' }).selectOption('hands');
+  await expect.poll(() => readFileSync(file, 'utf-8')).toContain('status: in_progress');
+  await expect(board.getByRole('region', { name: /^In hands, / }).getByRole('listitem', { name: /^Task: Map the room/ })).toBeVisible();
+
+  // A block needs a reason; the card raises its hand and the Blockers panel lists it.
+  await card.getByRole('button', { name: 'Block', exact: true }).click();
+  await card.getByRole('textbox', { name: 'What blocks Map the room' }).fill('Waiting for the API key');
+  await card.locator('form').getByRole('button', { name: 'Block' }).click();
+  await expect.poll(() => readFileSync(file, 'utf-8')).toContain('blocked_reason: "Waiting for the API key"');
+  await expect(board.getByRole('listitem', { name: 'Task: Map the room, blocked: Waiting for the API key' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Blockers' }).getByText('Waiting for the API key')).toBeVisible();
+
+  await card.getByRole('button', { name: 'Unblock' }).click();
+  await expect.poll(() => readFileSync(file, 'utf-8')).not.toContain('blocked');
+  await expect(board.getByRole('listitem', { name: 'Task: Map the room', exact: true })).toBeVisible();
+});
+
+test('moves a run step along the board, through ws plan', async ({ page, deskUrl }) => {
+  const run = '2026-10-16-100000-tester-room-step';
+  const dir = join(workspaceRoot(), 'context', 'runs', PROJECT, run);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'brief.md'), '# Room step\n\n- **Owner:** tester (desk)\n');
+  writeFileSync(join(dir, 'handoff.md'), '## State\n\n`in progress`\n');
+  writeFileSync(join(dir, 'plan.md'), '| # | Task | Status | Notes |\n|---|---|---|---|\n| 1 | Draw the stations | `pending` | |\n');
+
+  await page.goto(deskUrl);
+  await page.getByRole('article', { name: `Project ${PROJECT}` }).getByRole('button', { name: PROJECT, exact: true }).click();
+  const board = page.getByRole('region', { name: 'Mission board' });
+  const step = board.getByRole('listitem', { name: 'Run step: Draw the stations' });
+  await expect(step).toBeVisible();
+
+  // A plan row has no ready or review status, so its menu offers only the stations it can reach.
+  const menu = step.getByRole('combobox', { name: 'Move Draw the stations' });
+  await expect(menu.getByRole('option')).toHaveText(['Move to...', 'In hands', 'Shipped']);
+
+  await menu.selectOption('shipped');
+  await expect.poll(() => readFileSync(join(dir, 'plan.md'), 'utf-8')).toContain('| 1 | Draw the stations | `done` |');
+  await expect(board.getByRole('region', { name: /^Shipped, / }).getByRole('listitem', { name: 'Run step: Draw the stations' })).toBeVisible();
+});

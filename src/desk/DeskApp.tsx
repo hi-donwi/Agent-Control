@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FloorView, zoneLabel } from './floor/FloorView';
+import { ProjectRoom } from './room/ProjectRoom';
 import { MenuDrawer, rooms, type MenuSection } from './drawers/MenuDrawer';
 import { AssistantDrawer } from './drawers/AssistantDrawer';
 import { AssistantIcon, MenuIcon } from './icons';
@@ -33,6 +34,8 @@ export function DeskApp() {
   const { theme, setTheme, dark } = useTheme();
   const { floor, error, live } = useFloor();
   const [focusClient, setFocusClient] = useState<string | null>(null);
+  /** The project whose room fills the main area, or null for the floor. */
+  const [room, setRoom] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [project, setProjectState] = useState(storedProject);
   const [showEndpoints, setShowEndpoints] = useState(false);
@@ -50,10 +53,20 @@ export function DeskApp() {
     setDrawer({ kind: 'assistant', scope: agent.project, agent });
   }, [setProject]);
 
-  const openRoom = useCallback((room: FloorRoom) => {
-    setProject(room.key);
-    setDrawer({ kind: 'menu', section: 'context' });
+  const openRoom = useCallback((target: FloorRoom) => {
+    setProject(target.key);
+    setRoom(target.key);
   }, [setProject]);
+
+  // Escape leaves a room for the floor, unless a drawer is open: then it closes the drawer.
+  useEffect(() => {
+    if (!room) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !drawer) setRoom(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [room, drawer]);
 
   const close = useCallback(() => setDrawer(null), []);
 
@@ -61,7 +74,13 @@ export function DeskApp() {
   const agent = drawer?.kind === 'assistant' && drawer.agent
     ? findAgent(floor, drawer.agent.id) ?? drawer.agent
     : null;
-  const projectKeys = useMemo(() => rooms(floor).map((room) => room.key), [floor]);
+  const projectKeys = useMemo(() => rooms(floor).map((r) => r.key), [floor]);
+  const roomClient = floor?.zones.find((z) => z.rooms.some((r) => r.key === room))?.client ?? '-';
+  // The room reloads when its own corner of the floor moves, not when another project's does.
+  const roomVersion = useMemo(() => {
+    const entry = floor?.zones.flatMap((z) => z.rooms).find((r) => r.key === room);
+    return entry ? JSON.stringify(entry) : '';
+  }, [floor, room]);
   const waiting = floor?.totals.waiting ?? 0;
 
   return (
@@ -69,7 +88,15 @@ export function DeskApp() {
       <header className="desk-bar">
         <div className="desk-crumbs">
           <span className="desk-mark" aria-hidden="true" />
-          {focusClient ? (
+          {room ? (
+            <nav aria-label="Floor position" className="crumbs">
+              <button type="button" onClick={() => { setRoom(null); setFocusClient(null); }}>All</button>
+              <span aria-hidden="true">/</span>
+              <button type="button" onClick={() => { setRoom(null); setFocusClient(roomClient); }}>{zoneLabel(roomClient)}</button>
+              <span aria-hidden="true">/</span>
+              <span aria-current="location">{room}</span>
+            </nav>
+          ) : focusClient ? (
             <nav aria-label="Floor position" className="crumbs">
               <button type="button" onClick={() => setFocusClient(null)}>All</button>
               <span aria-hidden="true">/</span>
@@ -103,7 +130,15 @@ export function DeskApp() {
       </header>
 
       <main className="desk-main">
-        {floor ? (
+        {room ? (
+          <ProjectRoom
+            project={room}
+            version={roomVersion}
+            onAgent={openAgent}
+            onAssistant={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
+            onNotes={(key) => { setProject(key); setDrawer({ kind: 'menu', section: 'notes' }); }}
+          />
+        ) : floor ? (
           <FloorView
             floor={floor}
             focusClient={focusClient}
