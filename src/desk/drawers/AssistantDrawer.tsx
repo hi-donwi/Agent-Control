@@ -59,7 +59,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
 
   const send = (text: string) => {
     const [provider, model] = choice.split(SEP);
-    if (provider && model) chat.sendMessage(text, provider, model, scope || undefined);
+    if (provider && model) chat.send(text, provider, model);
   };
 
   const suggestions = scope
@@ -72,7 +72,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         <h2 className="drawer-title">
           Assistant<span className="drawer-subtitle"> · {scope || 'Workspace'}</span>
         </h2>
-        <button type="button" className="icon-btn" onClick={chat.clearMessages} aria-label="New conversation">
+        <button type="button" className="icon-btn" onClick={chat.newConversation} aria-label="New conversation">
           <NewChatIcon />
         </button>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close assistant">
@@ -123,7 +123,9 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         </div>
       ) : (
         <div className="assistant-chat">
-          {chat.messages.length === 0 ? (
+          {chat.loading && chat.messages.length === 0 ? (
+            <p className="assistant-empty" role="status">Loading this conversation...</p>
+          ) : chat.messages.length === 0 ? (
             <div className="assistant-empty">
               <p>{scope ? `Ask about ${scope}: its memory, runs, tasks, or code.` : 'Ask about projects, agents, runs, or memory.'}</p>
               {!choice && (
@@ -146,7 +148,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
           {chat.error && <p className="assistant-error" role="alert">[ERROR] {chat.error}</p>}
           <InputBar
             onSend={send}
-            disabled={!choice}
+            disabled={!choice || chat.loading}
             isStreaming={chat.isStreaming}
             onStop={chat.stopStreaming}
             placeholder={scope ? `Message about ${scope}...` : 'Ask about your workspace...'}

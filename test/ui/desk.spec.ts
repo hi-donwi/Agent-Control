@@ -118,3 +118,28 @@ test('moves an outside agent live as its activity record changes, with no reload
   rmSync(join(root, '.local', 'agent', 'activity', 'live-session.json'));
   await expect(seat).toHaveCount(0);
 });
+
+test('keeps a project conversation across a reload', async ({ page, deskUrl }) => {
+  const open = async () => {
+    await page.getByRole('button', { name: 'Assistant' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Assistant' });
+    await drawer.getByRole('combobox', { name: 'Assistant scope' }).selectOption(PROJECT);
+    return drawer;
+  };
+
+  await page.goto(deskUrl);
+  let drawer = await open();
+  await expect(drawer.getByRole('combobox', { name: 'Model' })).toHaveValue('mock::echo');
+  await drawer.locator('#chat-input').fill('persist me');
+  await drawer.getByRole('button', { name: 'Send message' }).click();
+  await expect(drawer.getByText('mock(echo): persist me')).toBeVisible();
+
+  await page.reload();
+  drawer = await open();
+  await expect(drawer.getByText('mock(echo): persist me')).toBeVisible();
+  await expect(drawer.getByText('persist me', { exact: true })).toBeVisible();
+
+  // A new conversation starts empty; the old one stays in the history on disk.
+  await drawer.getByRole('button', { name: 'New conversation' }).click();
+  await expect(drawer.getByText('mock(echo): persist me')).toHaveCount(0);
+});
