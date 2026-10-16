@@ -156,9 +156,14 @@ function taskRows(root: string, project: string): Row[] {
     .flatMap((run) => {
       const plan = join(dir, String(run.id), 'plan.md');
       if (!existsSync(plan)) return [];
+      // The revision `ws plan status --revision` checks, as ws_plan.py computes it.
+      const stat = statSync(plan, { bigint: true });
+      const revision = `mtime:${stat.mtimeNs}:size:${stat.size}`;
       return planRows(readFileSync(plan, 'utf-8')).map((row) => ({
         id: `${run.id}#${row.n}`,
         run: String(run.title),
+        runId: String(run.id),
+        revision,
         ...row,
       }));
     });
