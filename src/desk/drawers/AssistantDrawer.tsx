@@ -11,6 +11,8 @@ import { InputBar } from '../../components/chat/InputBar';
 import { useProviders } from '../../hooks/useProviders';
 import { useProjects } from '../../hooks/useProjects';
 import { useApprovals } from '../../hooks/useApprovals';
+import { useCodingSession } from '../../hooks/useCodingSession';
+import { ChangesView } from './ChangesView';
 import type { useScopedChat } from '../useScopedChat';
 import type { ApprovalRequest, Provider } from '../../lib/types';
 
@@ -37,7 +39,8 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
   const { providers, defaultProvider, defaultModel } = useProviders();
   const { projects } = useProjects();
   const approvals = useApprovals(scope || undefined);
-  const [tab, setTab] = useState<'chat' | 'runs'>('chat');
+  const coding = useCodingSession(scope || undefined);
+  const [tab, setTab] = useState<'chat' | 'changes' | 'runs'>('chat');
 
   const allowed = useMemo(() => {
     const policy = projects.find((p) => p.key === scope);
@@ -62,6 +65,23 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
     if (provider && model) chat.send(text, provider, model);
   };
 
+  // An approved action runs only when the agent calls its tool again with the approval, so
+  // the decision goes back into the conversation as a visible message, never silently.
+  const decide = async (id: string, decision: 'approved' | 'denied') => {
+    try {
+      await approvals.decide(id, decision);
+    } catch {
+      return;
+    }
+    if (!choice || chat.isStreaming) return;
+    send(decision === 'approved'
+      ? `Approved request ${id}. Continue: call the tool again with approvalId ${id}.`
+      : `Denied request ${id}. Do not run it; tell me another way, or stop.`);
+  };
+
+  // The Changes view reloads after every finished turn.
+  const turnVersion = chat.isStreaming ? -1 : chat.messages.length;
+
   const suggestions = scope
     ? [`Summarize where ${scope} stands`, `List the open tasks in ${scope}`, `What changed recently in ${scope}?`]
     : ['What is every agent working on right now?', 'Which projects have open runs?', 'Summarize the rules in AGENTS.md'];
@@ -82,7 +102,29 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
 
       {agent && <AgentCard agent={agent} />}
       {scope && approvals.pending.length > 0 && (
-        <Approvals requests={approvals.pending} deciding={approvals.decidingIds} onDecide={approvals.decide} />
+        <Approvals requests={approvals.pending} deciding={approvals.decidingIds} onDecide={decide} />
+      )}
+      {scope && (
+        <section className="session-bar" aria-label="Coding session">
+          {coding.session ? (
+            <>
+              <span className="session-dot" aria-hidden="true" />
+              <span className="session-text">Coding on <code>{coding.session.branch}</code></span>
+              <button type="button" className="btn" onClick={() => setTab('changes')}>Changes</button>
+              <button type="button" className="btn" onClick={coding.stop} disabled={coding.busy}>
+                {coding.busy ? 'Stopping...' : 'Stop'}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="session-text">The agent edits a separate worktree, never the checkout.</span>
+              <button type="button" className="btn" onClick={coding.start} disabled={coding.busy}>
+                {coding.busy ? 'Starting...' : 'Start coding session'}
+              </button>
+            </>
+          )}
+          {coding.error && <p className="session-error" role="alert">[ERROR] {coding.error}</p>}
+        </section>
       )}
 
       <div className="drawer-scope assistant-controls">
@@ -113,6 +155,9 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
       {scope && (
         <div className="tabs" role="tablist" aria-label="Agent views">
           <button type="button" role="tab" aria-selected={tab === 'chat'} onClick={() => setTab('chat')}>Chat</button>
+          {coding.session && (
+            <button type="button" role="tab" aria-selected={tab === 'changes'} onClick={() => setTab('changes')}>Changes</button>
+          )}
           <button type="button" role="tab" aria-selected={tab === 'runs'} onClick={() => setTab('runs')}>Runs</button>
         </div>
       )}
@@ -120,6 +165,10 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
       {tab === 'runs' && scope ? (
         <div className="drawer-body">
           <SectionView document={sectionDocument('runs', scope)} dark={dark} />
+        </div>
+      ) : tab === 'changes' && scope && coding.session ? (
+        <div className="drawer-body">
+          <ChangesView project={scope} version={turnVersion} />
         </div>
       ) : (
         <div className="assistant-chat">
