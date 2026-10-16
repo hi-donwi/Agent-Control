@@ -1,6 +1,7 @@
-import { execFile } from 'node:child_process';
-import { join } from 'node:path';
 import { KEY_RE } from './workspace-files.js';
+import { reportedLine, type WsInputRunner } from './ws-input.js';
+
+export { realWsInputRunner, type WsInputRunner } from './ws-input.js';
 
 /**
  * The desk's first write: a project note, written by `ws note` and never by this host
@@ -9,17 +10,12 @@ import { KEY_RE } from './workspace-files.js';
 export const NOTE_TITLE_MAX = 120;
 export const NOTE_BODY_MAX = 65_536;
 
-/** Runs `ws <args>` with `input` on stdin and returns stdout; rejects with stderr. */
-export type WsInputRunner = (args: string[], input: string) => Promise<string>;
-
 export interface NoteRequest {
   project: unknown;
   title: unknown;
   body?: unknown;
 }
 
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\u001b\[[0-9;]*m/g;
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 
@@ -40,25 +36,7 @@ export function validateNote(request: NoteRequest): { project: string; title: st
 export async function addNote(run: WsInputRunner, request: NoteRequest): Promise<{ path: string }> {
   const note = validateNote(request);
   const output = await run(['note', note.project, note.title, '-'], note.body);
-  const path = output.replace(ANSI_RE, '').split('\n').map((line) => line.trim())
-    .find((line) => line.startsWith('note '))?.slice(5) ?? '';
+  const path = reportedLine(output, 'note');
   if (!path) throw new Error('ws note did not report the note it wrote');
   return { path };
-}
-
-/** The real `ws`, run as the desk acting for the operator. */
-export function realWsInputRunner(workspaceRoot: string): WsInputRunner {
-  const wsBin = join(workspaceRoot, '.agents', 'bin', 'ws');
-  return (args, input) => new Promise((resolve, reject) => {
-    const child = execFile(wsBin, args, {
-      cwd: workspaceRoot,
-      timeout: 15_000,
-      maxBuffer: 256 * 1024,
-      env: { ...process.env, PAGER: 'cat', WS_AGENT: 'agent-control' },
-    }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || err.message).replace(ANSI_RE, '').trim()));
-      else resolve(stdout);
-    });
-    child.stdin?.end(input);
-  });
 }

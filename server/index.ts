@@ -34,6 +34,7 @@ import { forwardToControl } from './proxy.js';
 import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
 import { addNote, realWsInputRunner } from './desk/notes.js';
+import { TaskConflictError, addTask, setTaskStatus } from './desk/tasks.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
@@ -423,6 +424,25 @@ app.post(`${AGENT_API}/desk/notes`, async (c) => {
     return c.json(await addNote(realWsInputRunner(WORKSPACE_ROOT), { project: body.project, title: body.title, body: body.body }));
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post(`${AGENT_API}/desk/tasks`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    return c.json(await addTask(realWsInputRunner(WORKSPACE_ROOT), body));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+app.post(`${AGENT_API}/desk/tasks/status`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    return c.json(await setTaskStatus(realWsInputRunner(WORKSPACE_ROOT), body));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, err instanceof TaskConflictError ? 409 : 400);
   }
 });
 
