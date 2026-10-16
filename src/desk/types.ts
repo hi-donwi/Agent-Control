@@ -10,7 +10,7 @@ export interface FloorAgent {
   state: ActivityState;
   detail: string;
   since: string;
-  source: 'host' | 'clock';
+  source: 'host' | 'clock' | 'activity';
 }
 
 export interface FloorRoom {
