@@ -51,14 +51,22 @@ loopback server.
 | `typing` | Writing an answer or a file | Host text stream; `write_file`, `edit_file` | Keyboard, hands tap |
 | `running` | Running a command or a check | Host `run_command`, `diagnose_*`, `scan_security` | Terminal with a cursor |
 | `learning` | Loading skills or routing | Host `get_skill`, `route_skills` | Open book, sparks |
-| `waiting` | Needs a human | A pending approval for the project | Raised hand, badge on the menu icon |
+| `waiting` | Needs a human | A pending approval for the project; an outside agent's permission prompt or idle-input notice | Raised hand, badge on the menu icon |
 | `warning` | Something failed | Host stream error | Amber mark |
 | `offline` | Gone | Open clock older than the session cap | Grey, still |
 
-External agents (Claude Code, opencode, Codex, Antigravity) appear through their
-Agent-Workspace agent clocks: `context/works/.open-agent-*.json`, whose modification time
-is the heartbeat `ws` touches on every call. Phase 2 lets them report finer activity
-through `ws hooks`, so their poses become as precise as the host's own.
+Agents outside this host (Claude Code, opencode, Codex, Antigravity) appear through two
+Agent-Workspace records:
+
+- their open agent clock, `context/works/.open-agent-*.json`, whose modification time is a
+  heartbeat: presence only (`working`, `idle`, `offline`);
+- their activity record, `.local/agent/activity/<session>.json`, written by the Claude Code
+  hooks `ws hooks install` adds, or by `ws agent activity <state>` from any other agent:
+  the same states as the host, with a tool name as the detail.
+
+A record speaks for ten minutes; after that the clock speaks again (`server/desk/agents.ts`).
+A raised hand is the exception: it stays up until the agent reports again or its session
+passes the cap, because a person who stepped away must still find it.
 
 ## API
 
@@ -67,6 +75,7 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | Endpoint | Returns |
 |---|---|
 | `GET floor` | `{ generatedAt, zones: [{ client, rooms: [{ key, group, description, agents, pendingApprovals, codingSession }] }], totals }` |
+| `GET events` | Server-sent events: `floor` with the same body whenever something on it changes (checked every second), `ping` after fifteen quiet seconds. The desk reads it with fetch, so the token stays in a header. |
 | `GET collections/:name?project=<key>` | `{ rows, total, page, pageSize }`, the shape of a UIDL `QueryResult` |
 
 Collections: `projects`, `agents`, `approvals`, `memory`, `runs`, `tasks`, `notes`.
@@ -79,8 +88,11 @@ validated project key and checked to stay inside the workspace.
 server/desk/
   registry.ts       registry.tsv by header name
   clocks.ts         open agent clocks and their heartbeat
+  activity-files.ts outside agents' activity records
+  agents.ts         pure: clocks + activity records -> outside agents
   activity.ts       the host's own per-project activity, fed by the chat stream
-  floor.ts          pure: registry + clocks + approvals + activity -> floor
+  floor.ts          pure: registry + agents + approvals + host activity -> floor
+  stream.ts         the floor as events, sent only on change
   collections.ts    read-only drawer collections
 src/desk/
   DeskApp.tsx       the shell: floor, two icons, drawers
@@ -94,11 +106,28 @@ src/desk/
 
 | Phase | Theme | Deliverables |
 |---|---|---|
-| 1 | Skeleton | This document, the floor, both drawers, UIDL sections, polling every five seconds |
-| 2 | Live floor | Server-sent events; activity events from `ws hooks` for external agents; persisted per-project chat history in the host's session log |
-| 3 | Manage context | `ws note`, `ws task`, run edits through `ws`; UIDL forms and commands in the drawers |
+| 1 | Skeleton (done) | This document, the floor, both drawers, UIDL sections |
+| 2a | Live floor (done) | `GET events`; activity records from `ws hooks` and `ws agent activity` for outside agents; pose transitions; large zones span two columns |
+| 2b | Chat history | Per-project conversations persisted in the host's session log, so an agent drawer shows its history after a reload |
+| 3 | Manage context | In this order: notes (`ws note`), tasks (`ws task`, status changes first), run plans; UIDL forms and commands in the drawers, every write through `ws` |
 | 4 | Agent work | Start a coding session from the agent drawer, review its diff, approve inline, verify with `ws verify`; Agent-Brain as an endpoint preset and MCP client |
 | 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
+
+## Wireframe review decisions (2026-10-16)
+
+The wireframe was approved with three questions open; the answers:
+
+1. **Zone width follows size, not activity.** A zone with five or more rooms spans two
+   columns on a wide screen. Width that grew with activity would move the layout every
+   time an agent woke up; activity already shows as poses, wall color, and the caption.
+2. **Editing comes in the order notes, tasks, run plans.** Notes are a new folder with no
+   format to break and the most daily use. Tasks start with status changes only. Run
+   plans are Markdown tables other agents edit by hand, so they come last and only
+   through `ws`, with a revision check.
+3. **An outside agent's drawer shows its activity and its project's runs; the chat there
+   is Agent Control's.** The desk cannot send a message into a Claude Code or opencode
+   session - they are separate processes with no inbound API - and pretending otherwise
+   would lose messages. The drawer says so plainly.
 
 ## Desktop
 
