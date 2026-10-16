@@ -5,14 +5,18 @@ import type { CodingSession } from '../lib/types';
 /** The selected project's coding session (Agent-Workspace ADR-0019): a `ws agent start` worktree its mutating tools then work in. */
 export function useCodingSession(project: string | undefined) {
   const [session, setSession] = useState<CodingSession | null>(null);
+  /** False until the first answer for `project`: until then neither Start nor Stop is true. */
+  const [known, setKnown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const refresh = useCallback(() => {
+    setKnown(false);
     if (!project) { setSession(null); return; }
     apiFetch<{ session: CodingSession | null }>(`coding-sessions/${encodeURIComponent(project)}`)
       .then((data) => setSession(data.session))
-      .catch(() => setSession(null));
+      .catch(() => setSession(null))
+      .finally(() => setKnown(true));
   }, [project]);
 
   useEffect(refresh, [refresh]);
@@ -45,5 +49,5 @@ export function useCodingSession(project: string | undefined) {
     }
   }, [project, busy]);
 
-  return { session, start, stop, busy, error };
+  return { session, known, start, stop, busy, error };
 }
