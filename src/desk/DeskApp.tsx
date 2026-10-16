@@ -31,7 +31,7 @@ function findAgent(floor: Floor | null, id: string): FloorAgent | undefined {
  */
 export function DeskApp() {
   const { theme, setTheme, dark } = useTheme();
-  const { floor, error } = useFloor();
+  const { floor, error, live } = useFloor();
   const [focusClient, setFocusClient] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [project, setProjectState] = useState(storedProject);
@@ -119,6 +119,8 @@ export function DeskApp() {
 
       {floor && (
         <footer className="desk-caption" role="status">
+          <span className={`live-dot${live ? ' is-live' : ''}`} aria-hidden="true" />
+          <span className="visually-hidden">{live ? 'Live. ' : 'Reconnecting. '}</span>
           {floor.totals.agents} {floor.totals.agents === 1 ? 'agent' : 'agents'}
           {floor.totals.active > 0 && ` · ${floor.totals.active} active`}
           {waiting > 0 && <strong className="caption-attn"> · {waiting} waiting for you</strong>}

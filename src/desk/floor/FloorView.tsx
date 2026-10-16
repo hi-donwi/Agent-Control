@@ -11,6 +11,9 @@ interface Props {
 }
 
 const QUIET = new Set(['idle', 'offline']);
+/** A zone this size takes two columns on a wide screen. Size, not activity, decides: a
+ *  layout that moved every time an agent woke up would be impossible to read. */
+const LARGE_ZONE_ROOMS = 5;
 
 export function zoneLabel(client: string): string {
   return client === UNREGISTERED_ZONE ? 'unregistered' : client;
@@ -54,7 +57,10 @@ function Zone({ zone, focused, selectedAgentId, onFocus, onAgent, onRoom }: {
   const agents = zone.rooms.reduce((n, room) => n + room.agents.length, 0);
   const headingId = `zone-${zone.client}`;
   return (
-    <section className={`zone${agents ? '' : ' is-quiet'}`} aria-labelledby={headingId}>
+    <section
+      className={`zone${agents ? '' : ' is-quiet'}${zone.rooms.length >= LARGE_ZONE_ROOMS ? ' is-large' : ''}`}
+      aria-labelledby={headingId}
+    >
       <header className="zone-head">
         <h2 id={headingId} className="zone-title">
           <button type="button" className="zone-name" onClick={onFocus} aria-pressed={focused}>
@@ -122,7 +128,8 @@ function Seat({ agent, selected, onClick }: { agent: FloorAgent; selected: boole
       title={agent.detail || undefined}
       onClick={onClick}
     >
-      <AgentFigure state={agent.state} tool={agent.tool} size={68} />
+      {/* Keyed by state: a new pose mounts fresh and plays its entrance. */}
+      <AgentFigure key={agent.state} state={agent.state} tool={agent.tool} size={68} />
       <span className="seat-name">{agent.tool}</span>
       <span className="seat-state">{label}</span>
     </button>

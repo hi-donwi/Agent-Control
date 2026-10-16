@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from './fixtures.js';
 import { HEAD_SHA, PROJECT } from './workspace.js';
@@ -29,7 +29,18 @@ function seedApproval(root: string): void {
   appendFileSync(file, JSON.stringify(event) + '\n');
 }
 
-test.beforeAll(() => seedApproval((JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root));
+const workspaceRoot = () => (JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root;
+
+/** What `ws agent activity` or the Claude Code hooks write for an outside agent session. */
+function reportActivity(root: string, session: string, state: string, detail: string): void {
+  const dir = join(root, '.local', 'agent', 'activity');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${session}.json`), JSON.stringify({
+    version: 1, session, project: PROJECT, tool: 'claude', state, detail, at: new Date().toISOString(),
+  }));
+}
+
+test.beforeAll(() => seedApproval(workspaceRoot()));
 
 test('shows each project as a room, with the host agent raising its hand', async ({ page, deskUrl }) => {
   await page.goto(deskUrl);
@@ -86,4 +97,24 @@ test('opens the agent drawer bound to its project: approval, chat, and a live po
   await expect(waiting).toHaveCount(0);
   await expect(page.getByRole('button', { name: `agent-control in ${PROJECT}: idle, turn finished` }))
     .toBeVisible({ timeout: 10_000 });
+});
+
+test('moves an outside agent live as its activity record changes, with no reload', async ({ page, deskUrl }) => {
+  const root = workspaceRoot();
+  await page.goto(deskUrl);
+  await expect(page.getByRole('status').filter({ hasText: 'Live.' })).toBeAttached();
+
+  reportActivity(root, 'live-session', 'reading', 'Read');
+  const seat = page.getByRole('button', { name: new RegExp(`^claude in ${PROJECT}: `) });
+  await expect(seat).toHaveAccessibleName(`claude in ${PROJECT}: reading, Read`);
+
+  reportActivity(root, 'live-session', 'waiting', 'Claude needs your permission to use Bash');
+  await expect(seat).toHaveAccessibleName(`claude in ${PROJECT}: needs you, Claude needs your permission to use Bash`);
+
+  // Its drawer says the chat there is this host's, not a line into that session.
+  await seat.click();
+  await expect(page.getByRole('dialog', { name: 'Assistant' }).getByText('Works in its own claude session')).toBeVisible();
+
+  rmSync(join(root, '.local', 'agent', 'activity', 'live-session.json'));
+  await expect(seat).toHaveCount(0);
 });
