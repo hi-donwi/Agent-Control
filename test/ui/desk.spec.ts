@@ -143,3 +143,26 @@ test('keeps a project conversation across a reload', async ({ page, deskUrl }) =
   await drawer.getByRole('button', { name: 'New conversation' }).click();
   await expect(drawer.getByText('mock(echo): persist me')).toHaveCount(0);
 });
+
+test('adds a note from the Notes section, written by ws note', async ({ page, deskUrl }) => {
+  await page.goto(deskUrl);
+  await page.getByRole('button', { name: /^Menu/ }).click();
+  await page.locator('#desk-project').selectOption(PROJECT);
+  await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Notes' }).click();
+  const notes = page.getByRole('dialog', { name: 'Notes' });
+  const title = notes.getByRole('textbox', { name: 'Title' });
+
+  // Refused before anything runs, with the reason in the form.
+  await notes.getByRole('button', { name: 'Add note' }).click();
+  await expect(notes.getByText('a note needs a title')).toBeVisible();
+
+  await title.fill('Desk note');
+  await notes.getByRole('textbox', { name: 'Note' }).fill('Written from the desk.\nSecond line.');
+  await notes.getByRole('button', { name: 'Add note' }).click();
+  await expect(notes.locator('.section-doc').getByText('Desk note', { exact: true })).toBeVisible();
+  await expect(title).toHaveValue('');
+
+  // The host ran `ws note <key> <title> -` with the body on stdin; the stub wrote the file.
+  const file = join(workspaceRoot(), 'context', 'memory', 'projects', PROJECT, 'notes', 'desk-note.md');
+  expect(readFileSync(file, 'utf-8')).toContain('Written from the desk.\nSecond line.');
+});

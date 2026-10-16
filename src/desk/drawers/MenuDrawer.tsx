@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { Drawer } from './Drawer';
+import { apiFetch } from '../../lib/api';
 import { BackIcon, ChevronIcon, CloseIcon } from '../icons';
-import { SectionView } from '../uidl/SectionView';
+import { SectionView, type SectionCommands } from '../uidl/SectionView';
 import { SECTIONS, sectionDocument, type SectionId } from '../uidl/documents';
 import type { Floor, FloorRoom } from '../types';
 import type { ThemePref } from '../useTheme';
@@ -31,6 +33,13 @@ export function rooms(floor: Floor | null): FloorRoom[] {
 /** All navigation in one list; a section opens in place and the drawer widens. */
 export function MenuDrawer(props: Props) {
   const { floor, project, section, onSection, onClose } = props;
+  // Every write goes through the host to a `ws` command (ADR-0023); the section only names it.
+  const commands = useMemo<SectionCommands>(() => ({
+    'notes.add': (state) => {
+      const note = (state.note ?? {}) as { title?: string; body?: string };
+      return apiFetch('desk/notes', { method: 'POST', body: JSON.stringify({ project, title: note.title ?? '', body: note.body ?? '' }) });
+    },
+  }), [project]);
   const title = section ? (section === 'settings' ? 'Settings' : SECTIONS[section].title) : 'Menu';
   return (
     <Drawer label={title} wide={section !== null && section !== 'settings'} onClose={onClose}>
@@ -57,7 +66,13 @@ export function MenuDrawer(props: Props) {
         {section && section !== 'settings' && (
           SECTIONS[section].scope === 'project' && !project
             ? <p className="drawer-empty">Choose a project above, or click a room on the floor.</p>
-            : <SectionView document={sectionDocument(section, project || undefined, rooms(floor).find((r) => r.key === project))} dark={props.dark} />
+            : (
+              <SectionView
+                document={sectionDocument(section, project || undefined, rooms(floor).find((r) => r.key === project))}
+                dark={props.dark}
+                commands={commands}
+              />
+            )
         )}
       </div>
     </Drawer>

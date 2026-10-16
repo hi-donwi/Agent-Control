@@ -2,6 +2,11 @@ import type { UIDLDocument, UIDLNode } from 'uidl-runtime';
 import type { FloorRoom } from '../types';
 
 /**
+ * Node ids follow a convention desk.css styles by, because uidl-runtime 0.1.4 renders a
+ * node's `style` values as class names rather than CSS: `<doc>-root` stacks its children,
+ * `*-form` is a form panel whose button is primary, `*-error` is an error line hidden when
+ * empty.
+ *
  * Drawer sections as UIDL documents. Each one binds a `DataTable` to a `$query` data
  * source, so the same document renders against the desk endpoint here, against an
  * in-memory adapter in a test, or in UIDL-Builder for editing.
@@ -77,6 +82,55 @@ const APPROVAL_COLUMNS: Column[] = [
   { key: 'expiresAt', label: 'Expires' },
 ];
 
+/** A form field whose value lives at `state.<path>` and follows every change. */
+function field(id: string, type: 'TextField' | 'Textarea', label: string, path: string, extra: Record<string, unknown> = {}): UIDLNode {
+  return {
+    id,
+    type,
+    props: { label, value: { $bind: `state.${path}` }, ...extra },
+    events: { onChange: [{ setState: { path, value: null } }] },
+  } as UIDLNode;
+}
+
+/**
+ * The note form. The button runs the host command `notes.add`, which reads `state.note`
+ * and writes through `ws note`; on success the form clears and the table reloads.
+ */
+function noteForm(): UIDLNode {
+  return {
+    id: 'note-form',
+    type: 'Column',
+    style: { gap: '8px' },
+    children: [
+      field('note-title', 'TextField', 'Title', 'note.title', { placeholder: 'What is this note about?' }),
+      field('note-body', 'Textarea', 'Note', 'note.body', { rows: 4, placeholder: 'Markdown is fine.' }),
+      { id: 'note-error', type: 'Text', props: { value: { $bind: 'state.note.error' } } },
+      {
+        id: 'note-add',
+        type: 'Button',
+        props: { label: 'Add note' },
+        events: {
+          onClick: [{
+            command: {
+              name: 'notes.add',
+              statusPath: 'note.status',
+              errorPath: 'note.error',
+              onSuccess: {
+                sequence: [
+                  { setState: { path: 'note.title', value: '' } },
+                  { setState: { path: 'note.body', value: '' } },
+                  { query: { target: 'rows' } },
+                  { showSnackbar: { message: 'Note added' } },
+                ],
+              },
+            },
+          }],
+        },
+      } as UIDLNode,
+    ],
+  };
+}
+
 /** The document for one section; `project` scopes it (required for project sections). */
 export function sectionDocument(section: SectionId, project: string | undefined, room?: FloorRoom): UIDLDocument {
   const id = `desk-${section}${project ? `-${project}` : ''}`;
@@ -143,13 +197,17 @@ export function sectionDocument(section: SectionId, project: string | undefined,
         ], 'No open tasks.'),
       ], { rows: query('tasks', project) });
     case 'notes':
-      return document(id, name, [
-        text('notes-hint', 'Notes are Markdown files in this project\'s memory notes folder.'),
-        table('notes', 'rows', [
-          { key: 'name', label: 'Note' },
-          { key: 'updated', label: 'Updated' },
-          { key: 'excerpt', label: 'First line' },
-        ], 'No notes yet.'),
-      ], { rows: query('notes', project) });
+      return {
+        ...document(id, name, [
+          text('notes-hint', 'Notes are Markdown files in this project\'s memory, written by ws note.'),
+          noteForm(),
+          table('notes', 'rows', [
+            { key: 'name', label: 'Note' },
+            { key: 'updated', label: 'Updated' },
+            { key: 'excerpt', label: 'First line' },
+          ], 'No notes yet.'),
+        ], { rows: query('notes', project, { field: 'updated', dir: 'desc' }) }),
+        state: { note: { title: '', body: '' } },
+      };
   }
 }

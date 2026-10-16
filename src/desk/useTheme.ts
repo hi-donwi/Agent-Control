@@ -30,6 +30,8 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    // uidl-runtime's widgets switch on a `dark` class (Tailwind's class strategy), not data-theme.
+    document.documentElement.classList.toggle('dark', dark);
     try { localStorage.setItem(KEY, theme); } catch { /* storage unavailable: the choice lasts this page */ }
   }, [theme, dark]);
 

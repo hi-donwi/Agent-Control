@@ -65,6 +65,13 @@ if [ "$1" = "agent" ]; then
   else
     echo "session stopped"
   fi
+elif [ "$1" = "note" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  dir="$root/context/memory/projects/$2/notes"
+  slug="$(printf '%s' "$3" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')"
+  mkdir -p "$dir"
+  { printf '# %s\\n\\n' "$3"; cat; } > "$dir/$slug.md"
+  printf 'note context/memory/projects/%s/notes/%s.md\\n' "$2" "$slug"
 else
   printf '${PROJECT}\\tframework\\t-\\tprojects/mock/${PROJECT}\\t-\\t-\\t-\\n'
 fi

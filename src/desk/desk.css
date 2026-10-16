@@ -540,6 +540,42 @@
 .btn-primary { background: var(--d-accent); border-color: transparent; color: #fff; }
 
 .section-doc { padding-top: 8px; }
+/* Section documents (see the id convention in src/desk/uidl/documents.ts). */
+.section-doc > [data-node-id$="-root"] { display: flex; flex-direction: column; gap: 16px; }
+.section-doc [data-node-id$="-form"] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--d-line);
+  border-radius: 12px;
+  background: var(--d-room);
+}
+.section-doc [data-node-id$="-form"] label { margin-bottom: 4px; font-size: 12px; color: var(--d-ink-3); }
+.section-doc [data-node-id$="-form"] input,
+.section-doc [data-node-id$="-form"] textarea {
+  font: inherit;
+  font-size: 14px;
+  color: var(--d-ink);
+  background: var(--d-panel);
+  border: 1px solid var(--d-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.section-doc [data-node-id$="-form"] input:focus,
+.section-doc [data-node-id$="-form"] textarea:focus { border-color: var(--d-accent); background: var(--d-panel); }
+.section-doc [data-node-id$="-form"] button {
+  align-self: flex-start;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--d-accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.section-doc [data-node-id$="-error"] { color: var(--d-warn); font-size: 13px; }
+.section-doc [data-node-id$="-error"]:empty { display: none; }
 .section-error { color: var(--d-warn); padding: 16px 0; }
 
 /* ── Assistant drawer ────────────────────────────────────────────────── */
