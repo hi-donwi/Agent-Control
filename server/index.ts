@@ -18,6 +18,7 @@ import { realSessionRunner } from './ws-runner.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
+import { gitDiff } from './tools/worktree-files.js';
 import { parseProjectList } from './projects.js';
 import { loadLlmAllowlist } from './egress.js';
 import { toLineStream, type StreamFinish } from './stream-protocol.js';
@@ -387,6 +388,20 @@ app.post(`${AGENT_API}/coding-sessions/:project/start`, async (c) => {
   try {
     const session = await startCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
     return c.json({ session });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+// The session's changes so far, for the person reviewing them: read-only and capped, so a
+// generated file cannot flood the browser. The worktree is the session's, never the checkout.
+const DIFF_MAX = 400_000;
+app.get(`${AGENT_API}/coding-sessions/:project/diff`, async (c) => {
+  try {
+    const session = readCodingSession(WORKSPACE_ROOT, c.req.param('project'));
+    if (!session) return c.json({ session: null, diff: '', truncated: false });
+    const diff = await gitDiff(session.worktree);
+    return c.json({ session, diff: diff.slice(0, DIFF_MAX), truncated: diff.length > DIFF_MAX });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
