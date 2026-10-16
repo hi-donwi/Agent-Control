@@ -98,4 +98,14 @@ src/desk/
 | 2 | Live floor | Server-sent events; activity events from `ws hooks` for external agents; persisted per-project chat history in the host's session log |
 | 3 | Manage context | `ws note`, `ws task`, run edits through `ws`; UIDL forms and commands in the drawers |
 | 4 | Agent work | Start a coding session from the agent drawer, review its diff, approve inline, verify with `ws verify`; Agent-Brain as an endpoint preset and MCP client |
-| 5 | Desktop | A desktop shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
+| 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
+
+## Desktop
+
+The desktop app is a Tauri v2 shell, chosen over Electron for its size and memory on small
+machines. It changes no UI code: the shell starts the host as a sidecar binary (the Node
+server compiled to a single executable), waits for its loopback port, and opens the desk in
+its webview with the token the host prints. The browser rules stay as they are - loopback
+only, `Host` and `Origin` checks, no cross-origin access - so the web and desktop builds
+share one security envelope. The cost is a Rust toolchain for whoever builds the desktop
+app; the web build does not need it.
