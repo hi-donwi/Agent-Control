@@ -185,3 +185,23 @@ test('adds an operator task and moves it, through ws task', async ({ page, deskU
   await expect.poll(() => readFileSync(file, 'utf-8')).toContain('status: in_progress');
   await expect(doc.getByText(/in.progress/i).first()).toBeVisible();
 });
+
+test('starts a run plan row from the Tasks section, through ws plan', async ({ page, deskUrl }) => {
+  const run = '2026-10-16-090000-tester-desk-ship-it';
+  const dir = join(workspaceRoot(), 'context', 'runs', PROJECT, run);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'brief.md'), '# Ship it\n\n- **Owner:** tester (desk)\n');
+  writeFileSync(join(dir, 'handoff.md'), '## State\n\n`in progress`\n');
+  writeFileSync(join(dir, 'plan.md'), '| # | Task | Status | Notes |\n|---|---|---|---|\n| 1 | Write the parser | `pending` | |\n');
+
+  await page.goto(deskUrl);
+  await page.getByRole('button', { name: /^Menu/ }).click();
+  await page.locator('#desk-project').selectOption(PROJECT);
+  await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Tasks' }).click();
+  const plans = page.getByRole('dialog', { name: 'Tasks' }).locator('[data-node-id="tasks"]');
+  await expect(plans.getByText('Write the parser', { exact: true })).toBeVisible();
+
+  await plans.getByRole('button', { name: 'Start' }).first().click();
+  await expect.poll(() => readFileSync(join(dir, 'plan.md'), 'utf-8')).toContain('| 1 | Write the parser | `in_progress` |');
+  await expect(plans.getByText(/in.progress/i).first()).toBeVisible();
+});
