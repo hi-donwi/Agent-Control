@@ -27,7 +27,7 @@ const CLOSED_RUN_STATES = new Set(['done', 'dropped']);
 export function excerpt(text: string): string {
   for (const raw of text.split('\n')) {
     const line = raw.trim().replace(/^([-*>]\s+)+/, '');
-    if (!line || line.startsWith('#') || line.startsWith('|') || line.startsWith('```')) continue;
+    if (!line || line.startsWith('#') || line.startsWith('|') || line.startsWith('```') || line.startsWith('<!--')) continue;
     return line.length > EXCERPT_CHARS ? `${line.slice(0, EXCERPT_CHARS - 3)}...` : line;
   }
   return '';
@@ -74,7 +74,7 @@ function projectDir(root: string, ...parts: string[]): string {
   return inside(contextDir(root), ...parts);
 }
 
-function markdownFiles(dir: string): Row[] {
+function markdownFiles(dir: string, titled = false): Row[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((name) => name.endsWith('.md'))
@@ -82,12 +82,13 @@ function markdownFiles(dir: string): Row[] {
       const path = join(dir, name);
       const stat = lstatSync(path);
       if (!stat.isFile()) return [];
+      const head = readHead(path);
       return [{
         id: name,
-        name: name.replace(/\.md$/, ''),
+        name: titled ? briefTitle(head, name.replace(/\.md$/, '')) : name.replace(/\.md$/, ''),
         updated: stat.mtime.toISOString().slice(0, 16).replace('T', ' '),
         size: stat.size,
-        excerpt: excerpt(readHead(path)),
+        excerpt: excerpt(head),
       }];
     })
     .sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
@@ -164,7 +165,7 @@ export function readCollection(root: string, name: CollectionName, project: stri
     case 'memory':
       return markdownFiles(projectDir(root, 'memory', 'projects', project!));
     case 'notes':
-      return markdownFiles(projectDir(root, 'memory', 'projects', project!, 'notes'));
+      return markdownFiles(projectDir(root, 'memory', 'projects', project!, 'notes'), true);
     case 'runs':
       return runRows(root, project!);
     case 'tasks':

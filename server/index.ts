@@ -33,6 +33,7 @@ import {
 import { forwardToControl } from './proxy.js';
 import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
+import { addNote, realWsInputRunner } from './desk/notes.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
@@ -414,6 +415,16 @@ app.get(`${AGENT_API}/workspace`, async (c) => {
 // ── API: Desk (docs/desk/README.md) ────────────────────────────────────
 // Read-only: the floor, and the record sets the drawer sections bind UIDL tables to.
 app.get(`${AGENT_API}/desk/floor`, (c) => c.json(deskFloor(WORKSPACE_ROOT, activity)));
+
+// The desk's writes go through `ws`, never straight to a file (ADR-0019 §2, ADR-0023).
+app.post(`${AGENT_API}/desk/notes`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    return c.json(await addNote(realWsInputRunner(WORKSPACE_ROOT), { project: body.project, title: body.title, body: body.body }));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
 
 // The live floor: a new floor only when something on it changed, as server-sent events.
 // The desk reads it with fetch, so the bearer token stays in a header, never in a URL.
