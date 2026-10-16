@@ -32,6 +32,11 @@ markdown rendering and syntax highlighting.
   `searchCodeTool()` in the same file. Never read a worktree through
   `WorkspaceBridge.readProjectFile()`/`.search()`; it deliberately refuses `.local/`
   paths, where every worktree lives - use `worktree-files.ts` instead.
+- The desk's endpoints (`/api/agent/desk/*`, `server/desk/`) are read-only. Changes to
+  context, memory, notes, tasks, or runs go through `ws` via `execFile` (ADR-0019 §2), never a
+  direct file write. A floor pose comes from a recorded event, never a guess - see
+  `docs/desk/README.md`.
+- No emojis in UI, logs, or docs; use SVG icons or text badges such as `[WARN]`.
 - CI (`test`, `security / gate`) is required on `main`; merge through a PR.
 - File reads MUST be sandboxed: resolved path must start with workspace root.
 - Use `execFile` (not `exec`) for subprocess calls. Validate all arguments.
@@ -45,8 +50,10 @@ markdown rendering and syntax highlighting.
 server/           Backend (Hono, loopback, SSE streaming)
   providers/      LLM provider adapters
   tools/          Workspace bridge, file reader, search
+  desk/           Read-only floor model and drawer collections
   middleware/     Security, rate limiting
 src/              Frontend (React)
+  desk/           The desk: floor, drawers, UIDL sections (default UI)
   components/     Chat, sidebar, workspace, UI primitives
   hooks/          State management
   lib/            API client, types

@@ -15,5 +15,6 @@ test('authenticates a page opened without the token in its URL', async ({ page, 
   expect(
     await page.evaluate(() => (globalThis as unknown as { __AC_TOKEN__?: string }).__AC_TOKEN__),
   ).toMatch(/^[a-f0-9]{64}$/);
-  await expect(page.locator('#provider-select option[value="mock"]')).toHaveCount(1);
+  // The floor is an authenticated request; its room appears only if the token worked.
+  await expect(page.getByRole('article', { name: 'Project mockproj' })).toBeVisible();
 });

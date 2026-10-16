@@ -5,9 +5,10 @@ interface Props {
   disabled: boolean;
   isStreaming: boolean;
   onStop: () => void;
+  placeholder?: string;
 }
 
-export function InputBar({ onSend, disabled, isStreaming, onStop }: Props) {
+export function InputBar({ onSend, disabled, isStreaming, onStop, placeholder = 'Ask about your workspace...' }: Props) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -46,7 +47,7 @@ export function InputBar({ onSend, disabled, isStreaming, onStop }: Props) {
           value={value}
           onChange={(e) => { setValue(e.target.value); handleInput(); }}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about your workspace..."
+          placeholder={placeholder}
           rows={1}
           disabled={disabled}
           aria-label="Message input"
