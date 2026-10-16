@@ -128,3 +128,40 @@ test('moves a run step along the board, through ws plan', async ({ page, deskUrl
   await expect.poll(() => readFileSync(join(dir, 'plan.md'), 'utf-8')).toContain('| 1 | Draw the stations | `done` |');
   await expect(board.getByRole('region', { name: /^Shipped, / }).getByRole('listitem', { name: 'Run step: Draw the stations' })).toBeVisible();
 });
+
+test('blocks a run step with a reason, frees it, and drops another, through ws plan', async ({ page, deskUrl }) => {
+  const run = '2026-10-17-090000-tester-room-holds';
+  const dir = join(workspaceRoot(), 'context', 'runs', PROJECT, run);
+  const plan = () => readFileSync(join(dir, 'plan.md'), 'utf-8');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'brief.md'), '# Room holds\n\n- **Owner:** tester (desk)\n');
+  writeFileSync(join(dir, 'handoff.md'), '## State\n\n`in progress`\n');
+  writeFileSync(join(dir, 'plan.md'), '| # | Task | Status | Notes |\n|---|---|---|---|\n| 1 | Define the schema | `pending` | |\n| 2 | Old approach | `pending` | |\n');
+
+  await page.goto(deskUrl);
+  await page.getByRole('article', { name: `Project ${PROJECT}` }).getByRole('button', { name: PROJECT, exact: true }).click();
+  const board = page.getByRole('region', { name: 'Mission board' });
+  const schema = board.getByRole('listitem', { name: /^Run step: Define the schema/ });
+
+  // The reason becomes the row's Notes, and the room lists the step as a blocker.
+  await schema.getByRole('button', { name: 'Block', exact: true }).click();
+  await schema.getByRole('textbox', { name: 'What blocks Define the schema' }).fill('Waits on the API contract');
+  await schema.locator('form').getByRole('button', { name: 'Block' }).click();
+  await expect.poll(plan).toContain('| 1 | Define the schema | `blocked` | Waits on the API contract |');
+  await expect(board.getByRole('listitem', { name: 'Run step: Define the schema, blocked: Waits on the API contract' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Blockers' }).getByText('Define the schema')).toBeVisible();
+
+  await schema.getByRole('button', { name: 'Unblock' }).click();
+  await expect.poll(plan).toContain('| 1 | Define the schema | `pending` |');
+  await expect(board.getByRole('listitem', { name: 'Run step: Define the schema', exact: true })).toBeVisible();
+
+  // Dropping needs a reason too; a dropped step leaves the board.
+  const old = board.getByRole('listitem', { name: 'Run step: Old approach' });
+  await old.getByRole('button', { name: 'Drop', exact: true }).click();
+  await old.locator('form').getByRole('button', { name: 'Drop' }).click();
+  await expect(board.getByRole('alert')).toHaveText('[ERROR] say why the step is dropped');
+  await old.getByRole('textbox', { name: 'Why drop Old approach' }).fill('Superseded by the schema');
+  await old.locator('form').getByRole('button', { name: 'Drop' }).click();
+  await expect.poll(plan).toContain('| 2 | Old approach | `dropped` | Superseded by the schema |');
+  await expect(old).toHaveCount(0);
+});

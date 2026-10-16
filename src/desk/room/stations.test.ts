@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { canMove, cardsFrom, moveRequest } from './stations';
+import { canMove, cardsFrom, holdActions, holdRequest, moveRequest, releaseRequest } from './stations';
 
 const detail = {
   tasks: [
@@ -38,5 +38,29 @@ describe('mission board stations', () => {
     const [task, , step] = cardsFrom(detail);
     assert.deepEqual(moveRequest(task, 'review', 'alpha'), { path: 'desk/tasks/status', body: { project: 'alpha', id: 'task_a', status: 'review', revision: 'r1' } });
     assert.deepEqual(moveRequest(step, 'hands', 'alpha'), { path: 'desk/plan/status', body: { project: 'alpha', run: 'run-1', n: '1', status: 'in_progress', revision: 'p1' } });
+  });
+
+  it('offers block to open tasks, block and drop to open steps, and nothing to blocked or shipped cards', () => {
+    const [task, blockedTask, shippedStep, blockedStep] = cardsFrom(detail);
+    const pendingStep = { ...blockedStep, blocked: false, reason: '' };
+    assert.deepEqual(holdActions(task), ['block']);
+    assert.deepEqual(holdActions(pendingStep), ['block', 'drop']);
+    assert.deepEqual(holdActions(blockedTask), []);
+    assert.deepEqual(holdActions(blockedStep), []);
+    assert.deepEqual(holdActions(shippedStep), []);
+  });
+
+  it('blocks a task through ws task, and blocks or drops a step through ws plan with the reason as its notes', () => {
+    const [task, , , blockedStep] = cardsFrom(detail);
+    const step = { ...blockedStep, blocked: false, reason: '' };
+    assert.deepEqual(holdRequest(task, 'block', 'needs keys', 'alpha'), { path: 'desk/tasks/block', body: { project: 'alpha', id: 'task_a', reason: 'needs keys', revision: 'r1' } });
+    assert.deepEqual(holdRequest(step, 'block', 'waits on API', 'alpha'), { path: 'desk/plan/status', body: { project: 'alpha', run: 'run-1', n: '2', status: 'blocked', notes: 'waits on API', revision: 'p1' } });
+    assert.deepEqual(holdRequest(step, 'drop', 'superseded', 'alpha'), { path: 'desk/plan/status', body: { project: 'alpha', run: 'run-1', n: '2', status: 'dropped', notes: 'superseded', revision: 'p1' } });
+  });
+
+  it('frees a blocked task through ws task unblock and a blocked step by setting it pending', () => {
+    const [, blockedTask, , blockedStep] = cardsFrom(detail);
+    assert.deepEqual(releaseRequest(blockedTask, 'alpha'), { path: 'desk/tasks/unblock', body: { project: 'alpha', id: 'task_b', revision: 'r2' } });
+    assert.deepEqual(releaseRequest(blockedStep, 'alpha'), { path: 'desk/plan/status', body: { project: 'alpha', run: 'run-1', n: '2', status: 'pending', revision: 'p1' } });
   });
 });
