@@ -24,9 +24,10 @@ loopback server.
 3. **Records are UIDL.** Every drawer section that lists records is a UIDL document
    rendered by `uidl-runtime` and read through one `DataAdapter`. The floor and the
    drawers themselves are React and SVG.
-4. **Read first, write through `ws`.** The desk's endpoints are read-only and sandboxed to
-   the workspace root. Writes to context, memory, notes, and tasks arrive as `ws`
-   commands run through `execFile` (ADR-0019 §2), never as direct file writes.
+4. **Write through `ws`.** The desk reads workspace files directly, sandboxed to the
+   workspace root, but every write is a `ws` command run through `execFile` with an
+   argument array (ADR-0019 §2): notes through `ws note` today, tasks and runs next. A
+   section's button names a host command; the host validates it and runs `ws`.
 5. **The operator sees everything; an agent sees one project.** The floor shows every
    registered project to the loopback operator. A chat opened from an agent is bound to
    that agent's project, with the same tool scoping and egress rules as before.
@@ -79,6 +80,7 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | Endpoint | Returns |
 |---|---|
 | `GET floor` | `{ generatedAt, zones: [{ client, rooms: [{ key, group, description, agents, pendingApprovals, codingSession }] }], totals }` |
+| `POST notes` | `{ project, title, body }` -> `{ path }`. Runs `ws note <project> <title> -` with the body on stdin; 400 with the reason on any refusal |
 | `GET events` | Server-sent events: `floor` with the same body whenever something on it changes (checked every second), `ping` after fifteen quiet seconds. The desk reads it with fetch, so the token stays in a header. |
 | `GET collections/:name?project=<key>` | `{ rows, total, page, pageSize }`, the shape of a UIDL `QueryResult` |
 
@@ -120,7 +122,9 @@ src/desk/
 | 1 | Skeleton (done) | This document, the floor, both drawers, UIDL sections |
 | 2a | Live floor (done) | `GET events`; activity records from `ws hooks` and `ws agent activity` for outside agents; pose transitions; large zones span two columns |
 | 2b | Chat history (done) | Per-scope conversations in the host's session log; the latest reloads with the page |
-| 3 | Manage context | In this order: notes (`ws note`), tasks (`ws task`, status changes first), run plans; UIDL forms and commands in the drawers, every write through `ws` |
+| 3a | Notes (done) | `ws note` in Agent-Workspace; the Notes section's form runs the host command `notes.add` |
+| 3b | Tasks | `ws task`, status changes first; the Tasks section edits operator tasks, run plan rows stay read-only |
+| 3c | Run plans | Edits through `ws` with a revision check, only for the run's owner |
 | 4 | Agent work | Start a coding session from the agent drawer, review its diff, approve inline, verify with `ws verify`; Agent-Brain as an endpoint preset and MCP client |
 | 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
 
