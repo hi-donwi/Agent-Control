@@ -14,7 +14,8 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (content: string, provider: string, model: string, project?: string) => {
+    /** `conversation` keeps the turn in that conversation's server-side history. */
+    async (content: string, provider: string, model: string, project?: string, conversation?: string) => {
       if (!content.trim() || isStreaming) return;
 
       setError(null);
@@ -58,7 +59,11 @@ export function useChat() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${getAuthToken()}`,
           },
-          body: JSON.stringify({ messages: apiMessages, provider, model, ...(project ? { project } : {}) }),
+          body: JSON.stringify({
+            messages: apiMessages, provider, model,
+            ...(project ? { project } : {}),
+            ...(conversation ? { conversation } : {}),
+          }),
           signal: controller.signal,
         });
 
