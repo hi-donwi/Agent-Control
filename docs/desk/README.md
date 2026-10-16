@@ -40,6 +40,10 @@ loopback server.
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
 | Agent drawer | An avatar | The agent card (state, detail, approvals) and a chat bound to its project. |
 
+Each scope - the workspace, or one project - has its own conversation. The latest one is
+loaded when the scope is first opened and every turn is written back, so a reload keeps it;
+"New conversation" starts another and leaves the old one on disk (see History).
+
 ## Agent states
 
 | State | Meaning | Source today | Pose |
@@ -78,6 +82,13 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | `GET events` | Server-sent events: `floor` with the same body whenever something on it changes (checked every second), `ping` after fifteen quiet seconds. The desk reads it with fetch, so the token stays in a header. |
 | `GET collections/:name?project=<key>` | `{ rows, total, page, pageSize }`, the shape of a UIDL `QueryResult` |
 
+Chat history lives beside the chat API rather than under `desk/`:
+
+| Endpoint | Returns |
+|---|---|
+| `POST /api/agent/chat` with `conversation: <uuid>` | The chat as before; the user message and the answer are appended to that conversation |
+| `GET /api/agent/conversations/latest?scope=<key or _workspace>` | `{ id, messages }` of the scope's latest conversation, or `{ id: null, messages: [] }` |
+
 Collections: `projects`, `agents`, `approvals`, `memory`, `runs`, `tasks`, `notes`.
 `memory`, `runs`, `tasks`, and `notes` require `project`. Every path is built from a
 validated project key and checked to stay inside the workspace.
@@ -108,10 +119,26 @@ src/desk/
 |---|---|---|
 | 1 | Skeleton (done) | This document, the floor, both drawers, UIDL sections |
 | 2a | Live floor (done) | `GET events`; activity records from `ws hooks` and `ws agent activity` for outside agents; pose transitions; large zones span two columns |
-| 2b | Chat history | Per-project conversations persisted in the host's session log, so an agent drawer shows its history after a reload |
+| 2b | Chat history (done) | Per-scope conversations in the host's session log; the latest reloads with the page |
 | 3 | Manage context | In this order: notes (`ws note`), tasks (`ws task`, status changes first), run plans; UIDL forms and commands in the drawers, every write through `ws` |
 | 4 | Agent work | Start a coding session from the agent drawer, review its diff, approve inline, verify with `ws verify`; Agent-Brain as an endpoint preset and MCP client |
 | 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
+
+## History
+
+Conversations are the host's own state (Agent-Workspace ADR-0019 §2): one event log per
+conversation at `<workspace>/.local/agent/sessions/<id>/events.jsonl`. The first line names
+its scope; each later line is one message, with tool calls by name, status, and a result cut
+to 2,000 characters as the transcript shows it. The rules:
+
+- It holds conversation content, so it never leaves the machine: `.local/` is not
+  committed or pushed, files are mode 0600, and usage records still carry no content
+  (ADR-0021).
+- A conversation never changes scope. A message sent with a conversation id that belongs
+  to another scope is refused with 400, so one project's history cannot be replayed into
+  another project's chat or to an endpoint only that one allows (ADR-0011, ADR-0021).
+- Only the desk asks for history; the classic view sends no conversation id and keeps
+  nothing.
 
 ## Wireframe review decisions (2026-10-16)
 

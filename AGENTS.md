@@ -36,6 +36,9 @@ markdown rendering and syntax highlighting.
   context, memory, notes, tasks, or runs go through `ws` via `execFile` (ADR-0019 §2), never a
   direct file write. A floor pose comes from a recorded event, never a guess - see
   `docs/desk/README.md`.
+- Conversation history (`server/conversations.ts`, `.local/agent/sessions/`) holds content:
+  it never leaves the machine, never enters a usage record, and a conversation never changes
+  scope - keep the scope check in `appendMessage`.
 - No emojis in UI, logs, or docs; use SVG icons or text badges such as `[WARN]`.
 - CI (`test`, `security / gate`) is required on `main`; merge through a PR.
 - File reads MUST be sandboxed: resolved path must start with workspace root.
