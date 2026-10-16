@@ -41,6 +41,27 @@ export async function addTask(run: WsInputRunner, request: Record<string, unknow
   return parseResult(await run(['task', 'add', key, title, '--priority', priority, '-'], ''));
 }
 
+/** Marks a task blocked with a reason, or frees it when `reason` is absent, through `ws task`. */
+export async function setTaskBlocked(run: WsInputRunner, request: Record<string, unknown>, blocked: boolean): Promise<TaskResult> {
+  const key = project(request.project);
+  const id = typeof request.id === 'string' ? request.id : '';
+  if (!TASK_ID_RE.test(id)) throw new Error('choose a task');
+  const revision = typeof request.revision === 'string' ? request.revision : '';
+  if (!REVISION_RE.test(revision)) throw new Error('reload the tasks before changing one');
+  const reason = typeof request.reason === 'string' ? request.reason.replace(/\s+/g, ' ').trim() : '';
+  if (blocked && !reason) throw new Error('say what blocks the task');
+  const args = blocked
+    ? ['task', 'block', key, id, reason, '--revision', revision]
+    : ['task', 'unblock', key, id, '--revision', revision];
+  try {
+    return parseResult(await run(args, ''));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/revision mismatch/.test(message)) throw new TaskConflictError('this task changed since it was shown; the list has been reloaded');
+    throw err;
+  }
+}
+
 export async function setTaskStatus(run: WsInputRunner, request: Record<string, unknown>): Promise<TaskResult> {
   const key = project(request.project);
   const id = typeof request.id === 'string' ? request.id : '';

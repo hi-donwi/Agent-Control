@@ -35,7 +35,8 @@ import { forwardToControl } from './proxy.js';
 import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
 import { addNote, realWsInputRunner } from './desk/notes.js';
-import { TaskConflictError, addTask, setTaskStatus } from './desk/tasks.js';
+import { TaskConflictError, addTask, setTaskBlocked, setTaskStatus } from './desk/tasks.js';
+import { projectDetail } from './desk/project.js';
 import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
@@ -462,6 +463,27 @@ app.post(`${AGENT_API}/desk/tasks/status`, async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, err instanceof TaskConflictError ? 409 : 400);
+  }
+});
+
+for (const [path, blocked] of [['block', true], ['unblock', false]] as const) {
+  app.post(`${AGENT_API}/desk/tasks/${path}`, async (c) => {
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    try {
+      return c.json(await setTaskBlocked(realWsInputRunner(WORKSPACE_ROOT), body, blocked));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: message }, err instanceof TaskConflictError ? 409 : 400);
+    }
+  });
+}
+
+// One project's room: memory, work, blockers, people, and context in one read.
+app.get(`${AGENT_API}/desk/projects/:project`, (c) => {
+  try {
+    return c.json(projectDetail(WORKSPACE_ROOT, c.req.param('project'), deskFloor(WORKSPACE_ROOT, activity)));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
   }
 });
 
