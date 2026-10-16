@@ -30,12 +30,15 @@ import {
   setScriptNonce,
 } from './middleware/security.js';
 import { forwardToControl } from './proxy.js';
+import { ActivityRegistry, deskFloor, isCollection, queryRows, readCollection } from './desk/index.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
 const config = loadConfig();
 const TOKEN = generateToken();
 const bridge = new WorkspaceBridge(WORKSPACE_ROOT);
+// What each project-bound chat is doing right now; the desk floor shows it as a pose.
+const activity = new ActivityRegistry();
 
 // ── Agent mode (ADR-0019 §4): the host is the single browser-facing origin ──
 // `ws web --agent` sets these. Without them the host is a standalone app as before.
@@ -275,7 +278,8 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         console.error('Usage record not written:', err instanceof Error ? err.message : String(err));
       }
     };
-    return new Response(toLineStream(result.fullStream, usage), {
+    const parts = scope ? activity.tap(scope.project, result.fullStream) : result.fullStream;
+    return new Response(toLineStream(parts, usage), {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
@@ -372,6 +376,33 @@ app.get(`${AGENT_API}/workspace`, async (c) => {
   }
 });
 
+// ── API: Desk (docs/desk/README.md) ────────────────────────────────────
+// Read-only: the floor, and the record sets the drawer sections bind UIDL tables to.
+app.get(`${AGENT_API}/desk/floor`, (c) => c.json(deskFloor(WORKSPACE_ROOT, activity)));
+
+app.get(`${AGENT_API}/desk/collections/:name`, (c) => {
+  const name = c.req.param('name');
+  if (!isCollection(name)) return c.json({ error: `unknown collection '${name}'` }, 404);
+  const params = c.req.query();
+  // `eq.<field>=<value>` is an equality filter; `sort=<field>:<asc|desc>`.
+  const equals = Object.fromEntries(Object.entries(params)
+    .filter(([key]) => key.startsWith('eq.'))
+    .map(([key, value]) => [key.slice(3), value]));
+  const [sortField, sortDir] = (params.sort ?? '').split(':');
+  try {
+    const rows = readCollection(WORKSPACE_ROOT, name, params.project || undefined, deskFloor(WORKSPACE_ROOT, activity));
+    return c.json(queryRows(rows, {
+      search: params.search,
+      equals,
+      sort: sortField ? { field: sortField, dir: sortDir === 'desc' ? 'desc' : 'asc' } : undefined,
+      page: params.page ? Number(params.page) : undefined,
+      pageSize: params.pageSize ? Number(params.pageSize) : undefined,
+    }));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
 // ── Agent mode: proxy the control-plane API (ADR-0019 §4) ──────────────
 // Registered after the host's own /api/agent/* routes, so they always win. The browser
 // never holds the control-plane token: the proxy presents it and rewrites Host/Origin.
@@ -433,7 +464,7 @@ serve({ fetch: app.fetch, hostname: HOST, port: PORT }, () => {
   console.log('');
   console.log('  ╭──────────────────────────────────────────╮');
   console.log('  │                                          │');
-  console.log('  │   🤖 Agent Control                       │');
+  console.log('  │   Agent Control                          │');
   console.log('  │                                          │');
   console.log(`  │   Local:  http://${HOST}:${PORT}         │`);
   console.log('  │                                          │');
