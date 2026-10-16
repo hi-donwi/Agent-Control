@@ -45,6 +45,8 @@ export function MenuDrawer(props: Props) {
     },
     'tasks.status': (_state, payload) =>
       apiFetch('desk/tasks/status', { method: 'POST', body: JSON.stringify({ ...payload, project }) }),
+    'plans.status': (_state, payload) =>
+      apiFetch('desk/plan/status', { method: 'POST', body: JSON.stringify({ ...payload, project }) }),
   }), [project]);
   const title = section ? (section === 'settings' ? 'Settings' : SECTIONS[section].title) : 'Menu';
   return (

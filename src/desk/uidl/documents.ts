@@ -211,6 +211,42 @@ function backlogTable(): UIDLNode {
   } as UIDLNode;
 }
 
+/** Row actions on a run's plan; a blocked or dropped row needs a reason, so it stays in ws. */
+const PLAN_MOVES: Array<{ label: string; event: string; status: string }> = [
+  { label: 'Pending', event: 'pending', status: 'pending' },
+  { label: 'Start', event: 'start', status: 'in_progress' },
+  { label: 'Done', event: 'done', status: 'done' },
+];
+
+function runPlanTable(): UIDLNode {
+  const reload = { query: { target: 'rows' } };
+  return {
+    id: 'tasks',
+    type: 'DataTable',
+    props: {
+      title: 'Run plans',
+      dataSource: 'rows',
+      showIndex: false,
+      emptyMessage: 'No open run plan rows.',
+      columns: [
+        { key: 'task', label: 'Task' },
+        { key: 'status', label: 'Status', format: 'status' },
+        { key: 'run', label: 'Run' },
+      ],
+      rowActions: PLAN_MOVES.map(({ label, event }) => ({ label, event })),
+    },
+    events: Object.fromEntries(PLAN_MOVES.map(({ event, status }) => [event, [{
+      command: {
+        name: 'plans.status',
+        payload: { run: { $bind: 'event.runId' }, n: { $bind: 'event.n' }, revision: { $bind: 'event.revision' }, status },
+        errorPath: 'plan.error',
+        onSuccess: { sequence: [{ setState: { path: 'plan.error', value: '' } }, reload] },
+        onError: reload,
+      },
+    }]])),
+  } as UIDLNode;
+}
+
 /** The document for one section; `project` scopes it (required for project sections). */
 export function sectionDocument(section: SectionId, project: string | undefined, room?: FloorRoom): UIDLDocument {
   const id = `desk-${section}${project ? `-${project}` : ''}`;
@@ -272,13 +308,9 @@ export function sectionDocument(section: SectionId, project: string | undefined,
           taskForm(),
           { id: 'status-error', type: 'Text', props: { value: { $bind: 'state.status.error' } } },
           backlogTable(),
-          text('tasks-hint', 'Run plans: rows of every run that is not done. They belong to each run\'s owner, so they are read-only here.'),
-          table('tasks', 'rows', [
-            { key: 'task', label: 'Task' },
-            { key: 'status', label: 'Status', format: 'status' },
-            { key: 'run', label: 'Run' },
-            { key: 'notes', label: 'Notes' },
-          ], 'No open run plan rows.', 'Run plans'),
+          text('tasks-hint', 'Run plans: rows of every run that is not done. Changes go through ws plan, which allows the run\'s owner - you, at the desk - and one row in progress per run.'),
+          { id: 'plan-error', type: 'Text', props: { value: { $bind: 'state.plan.error' } } },
+          runPlanTable(),
         ], {
           backlog: query('backlog', project),
           rows: query('tasks', project),

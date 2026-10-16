@@ -86,6 +86,12 @@ elif [ "$1" = "task" ]; then
     sed "s/^status: .*/status: $5/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
     printf 'task %s %s mtime:0:size:0\\n' "$4" "$5"
   fi
+elif [ "$1" = "plan" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  f="$root/context/runs/$3/$4/plan.md"
+  q="$(printf '\\140')"
+  awk -F'|' -v n="$5" -v st="$6" -v q="$q" 'BEGIN { OFS = "|" } { c = $2; gsub(/ /, "", c); if (NF > 4 && c == n) $4 = " " q st q " "; print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  printf 'plan %s %s %s mtime:0:size:0\\n' "$4" "$5" "$6"
 else
   printf '${PROJECT}\\tframework\\t-\\tprojects/mock/${PROJECT}\\t-\\t-\\t-\\n'
 fi
