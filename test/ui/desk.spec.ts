@@ -215,6 +215,8 @@ test('starts a coding session from the agent drawer and shows its changes', asyn
   await drawer.getByRole('combobox', { name: 'Assistant scope' }).selectOption(PROJECT);
   const bar = drawer.getByRole('region', { name: 'Coding session' });
 
+  // The bar appears once the session is known; the coding-session spec may have stopped it.
+  await expect(bar).toBeVisible();
   const start = bar.getByRole('button', { name: 'Start coding session' });
   if (await start.isVisible()) await start.click();
   await expect(bar.getByText(SESSION_BRANCH)).toBeVisible();

@@ -104,7 +104,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
       {scope && approvals.pending.length > 0 && (
         <Approvals requests={approvals.pending} deciding={approvals.decidingIds} onDecide={decide} />
       )}
-      {scope && (
+      {scope && coding.known && (
         <section className="session-bar" aria-label="Coding session">
           {coding.session ? (
             <>
