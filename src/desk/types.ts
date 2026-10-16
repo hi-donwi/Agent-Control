@@ -48,3 +48,32 @@ export const STATE_LABELS: Record<ActivityState, string> = {
 };
 
 export const UNREGISTERED_ZONE = '-';
+
+/** One project's room, as `GET /api/agent/desk/projects/:key` returns it. */
+export interface ProjectDetail {
+  key: string;
+  client: string;
+  group: string;
+  description: string;
+  folder: string;
+  memory: {
+    updated: string;
+    stage: string;
+    focus: string;
+    nextUp: string[];
+    blockedOn: Array<{ item: string; waitingFor: string; since: string }>;
+    decisions: Array<{ date: string; title: string }>;
+    log: Array<{ date: string; text: string }>;
+    notes: Array<{ name: string; updated: string; excerpt: string }>;
+  };
+  tasks: Array<Record<string, string>>;
+  plans: Array<Record<string, string>>;
+  runs: Array<Record<string, string>>;
+  approvals: Array<Record<string, string>>;
+  agents: FloorAgent[];
+  codingSession: { branch: string; worktree: string } | null;
+  context: {
+    pack: string[];
+    policy: { default: string; actions: number; endpoints: string[] } | null;
+  };
+}

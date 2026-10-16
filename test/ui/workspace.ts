@@ -56,7 +56,9 @@ function approvalRequest(id: string, action: string, now: number, ttlMs: number)
 /**
  * A `ws` CLI the bridge can shell out to. `list` answers the registry, `agent start`
  * prints the one machine-readable `cd <path>` line `coding-sessions.ts` parses, and
- * `agent stop` succeeds. `AC_STUB_WORKTREE` reaches it through the server's environment.
+ * `agent stop` succeeds. `note`, `task`, and `plan` write the files the real commands
+ * would, without their revision checks. `AC_STUB_WORKTREE` reaches it through the
+ * server's environment.
  */
 const WS_STUB = `#!/bin/sh
 if [ "$1" = "agent" ]; then
@@ -81,6 +83,14 @@ elif [ "$1" = "task" ]; then
     cat > /dev/null
     printf -- '---\\nschema_version: 1\\nid: %s\\nproject: %s\\ntitle: %s\\nstatus: backlog\\npriority: %s\\nowner: desk\\nupdated_at: 2026-10-16T10:00:00+07:00\\n---\\n' "$id" "$3" "$4" "$6" > "$dir/$id.md"
     printf 'task %s backlog mtime:0:size:0\\n' "$id"
+  elif [ "$2" = "block" ]; then
+    f="$dir/$4.md"
+    sed '/^blocked/d' "$f" | awk -v r="$5" 'NR > 1 && $0 == "---" && !d { print "blocked: true"; print "blocked_reason: \\"" r "\\""; d = 1 } { print }' > "$f.tmp" && mv "$f.tmp" "$f"
+    printf 'task %s blocked mtime:0:size:0\\n' "$4"
+  elif [ "$2" = "unblock" ]; then
+    f="$dir/$4.md"
+    sed '/^blocked/d' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    printf 'task %s unblocked mtime:0:size:0\\n' "$4"
   else
     f="$dir/$4.md"
     sed "s/^status: .*/status: $5/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
