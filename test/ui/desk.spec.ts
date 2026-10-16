@@ -166,3 +166,22 @@ test('adds a note from the Notes section, written by ws note', async ({ page, de
   const file = join(workspaceRoot(), 'context', 'memory', 'projects', PROJECT, 'notes', 'desk-note.md');
   expect(readFileSync(file, 'utf-8')).toContain('Written from the desk.\nSecond line.');
 });
+
+test('adds an operator task and moves it, through ws task', async ({ page, deskUrl }) => {
+  await page.goto(deskUrl);
+  await page.getByRole('button', { name: /^Menu/ }).click();
+  await page.locator('#desk-project').selectOption(PROJECT);
+  await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Tasks' }).click();
+  const tasks = page.getByRole('dialog', { name: 'Tasks' });
+  const doc = tasks.locator('.section-doc');
+
+  await tasks.getByRole('textbox', { name: 'New task' }).fill('Ship the desk');
+  await tasks.getByRole('button', { name: 'Add task' }).click();
+  await expect(doc.getByText('Ship the desk', { exact: true })).toBeVisible();
+
+  // The row's Start action sends its id and revision; the reloaded row shows the new status.
+  await doc.getByRole('button', { name: 'Start' }).first().click();
+  const file = join(workspaceRoot(), 'context', 'tasks', PROJECT, 'task_ship_the_desk.md');
+  await expect.poll(() => readFileSync(file, 'utf-8')).toContain('status: in_progress');
+  await expect(doc.getByText(/in.progress/i).first()).toBeVisible();
+});

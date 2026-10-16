@@ -131,6 +131,86 @@ function noteForm(): UIDLNode {
   };
 }
 
+/** The new-task form; its button runs the host command `tasks.add` with `state.task`. */
+function taskForm(): UIDLNode {
+  return {
+    id: 'task-form',
+    type: 'Column',
+    children: [
+      field('task-title', 'TextField', 'New task', 'task.title', { placeholder: 'What needs doing?' }),
+      {
+        id: 'task-priority',
+        type: 'Select',
+        props: {
+          label: 'Priority',
+          value: { $bind: 'state.task.priority' },
+          options: ['low', 'normal', 'high', 'urgent'].map((value) => ({ value, label: value })),
+        },
+        events: { onChange: [{ setState: { path: 'task.priority', value: null } }] },
+      } as UIDLNode,
+      { id: 'task-error', type: 'Text', props: { value: { $bind: 'state.task.error' } } },
+      {
+        id: 'task-add',
+        type: 'Button',
+        props: { label: 'Add task' },
+        events: {
+          onClick: [{
+            command: {
+              name: 'tasks.add',
+              errorPath: 'task.error',
+              onSuccess: {
+                sequence: [
+                  { setState: { path: 'task.title', value: '' } },
+                  { query: { target: 'backlog' } },
+                  { showSnackbar: { message: 'Task added' } },
+                ],
+              },
+            },
+          }],
+        },
+      } as UIDLNode,
+    ],
+  };
+}
+
+/** Row actions move a task; each sends the row's id and the revision it was read at. */
+const MOVES: Array<{ label: string; event: string; status: string }> = [
+  { label: 'Ready', event: 'ready', status: 'ready' },
+  { label: 'Start', event: 'start', status: 'in_progress' },
+  { label: 'Review', event: 'review', status: 'review' },
+  { label: 'Done', event: 'done', status: 'done' },
+];
+
+function backlogTable(): UIDLNode {
+  const reload = { query: { target: 'backlog' } };
+  return {
+    id: 'backlog',
+    type: 'DataTable',
+    props: {
+      title: 'Backlog',
+      dataSource: 'backlog',
+      showIndex: false,
+      emptyMessage: 'No tasks yet. Add one above.',
+      columns: [
+        { key: 'title', label: 'Task' },
+        { key: 'status', label: 'Status', format: 'status' },
+        { key: 'priority', label: 'Priority' },
+      ],
+      rowActions: MOVES.map(({ label, event }) => ({ label, event })),
+    },
+    events: Object.fromEntries(MOVES.map(({ event, status }) => [event, [{
+      command: {
+        name: 'tasks.status',
+        payload: { id: { $bind: 'event.id' }, revision: { $bind: 'event.revision' }, status },
+        errorPath: 'status.error',
+        // A conflict or a refusal still reloads: the row on screen may be stale.
+        onSuccess: { sequence: [{ setState: { path: 'status.error', value: '' } }, reload] },
+        onError: reload,
+      },
+    }]])),
+  } as UIDLNode;
+}
+
 /** The document for one section; `project` scopes it (required for project sections). */
 export function sectionDocument(section: SectionId, project: string | undefined, room?: FloorRoom): UIDLDocument {
   const id = `desk-${section}${project ? `-${project}` : ''}`;
@@ -187,15 +267,24 @@ export function sectionDocument(section: SectionId, project: string | undefined,
         ], 'No runs yet. Start one with ws run.'),
       ], { rows: query('runs', project) });
     case 'tasks':
-      return document(id, name, [
-        text('tasks-hint', 'Plan rows of every run that is not done.'),
-        table('tasks', 'rows', [
-          { key: 'task', label: 'Task' },
-          { key: 'status', label: 'Status', format: 'status' },
-          { key: 'run', label: 'Run' },
-          { key: 'notes', label: 'Notes' },
-        ], 'No open tasks.'),
-      ], { rows: query('tasks', project) });
+      return {
+        ...document(id, name, [
+          taskForm(),
+          { id: 'status-error', type: 'Text', props: { value: { $bind: 'state.status.error' } } },
+          backlogTable(),
+          text('tasks-hint', 'Run plans: rows of every run that is not done. They belong to each run\'s owner, so they are read-only here.'),
+          table('tasks', 'rows', [
+            { key: 'task', label: 'Task' },
+            { key: 'status', label: 'Status', format: 'status' },
+            { key: 'run', label: 'Run' },
+            { key: 'notes', label: 'Notes' },
+          ], 'No open run plan rows.', 'Run plans'),
+        ], {
+          backlog: query('backlog', project),
+          rows: query('tasks', project),
+        }),
+        state: { task: { title: '', priority: 'normal' } },
+      };
     case 'notes':
       return {
         ...document(id, name, [
