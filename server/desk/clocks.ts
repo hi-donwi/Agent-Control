@@ -16,6 +16,8 @@ export interface OpenClock {
   startMs: number;
   note: string;
   heartbeatMs: number;
+  /** The file name, which ends in `-<session>.json`: how an activity record finds its clock. */
+  file: string;
 }
 
 const OPEN_AGENT_RE = /^\.open-agent-.+\.json$/;
@@ -25,7 +27,7 @@ export const ACTIVE_WINDOW_MS = 2 * 60 * 1000;
 
 export type ClockState = 'working' | 'idle' | 'offline';
 
-export function parseOpenClock(text: string, heartbeatMs: number): OpenClock | null {
+export function parseOpenClock(text: string, heartbeatMs: number, file = ''): OpenClock | null {
   let record: Record<string, unknown>;
   try {
     record = JSON.parse(text) as Record<string, unknown>;
@@ -48,6 +50,7 @@ export function parseOpenClock(text: string, heartbeatMs: number): OpenClock | n
     startMs,
     note: typeof record.note === 'string' ? record.note : '',
     heartbeatMs,
+    file,
   };
 }
 
@@ -59,7 +62,7 @@ export function readOpenClocks(root: string): OpenClock[] {
     .flatMap((name) => {
       const path = join(works, name);
       try {
-        const clock = parseOpenClock(readFileSync(path, 'utf-8'), statSync(path).mtimeMs);
+        const clock = parseOpenClock(readFileSync(path, 'utf-8'), statSync(path).mtimeMs, name);
         return clock ? [clock] : [];
       } catch {
         return [];

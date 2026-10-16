@@ -1,4 +1,3 @@
-import type { ClockState, OpenClock } from './clocks.js';
 import type { HostActivity } from './activity.js';
 import type { RegistryRow } from './registry.js';
 
@@ -19,7 +18,8 @@ export interface FloorAgent {
   state: ActivityState;
   detail: string;
   since: string;
-  source: 'host' | 'clock';
+  /** host: this server's own chat; clock and activity: an agent outside it (server/desk/agents.ts). */
+  source: 'host' | 'clock' | 'activity';
 }
 
 export interface FloorRoom {
@@ -51,7 +51,8 @@ export interface PendingSummary {
 
 export interface FloorInput {
   registry: RegistryRow[];
-  clocks: Array<{ clock: OpenClock; state: ClockState }>;
+  /** Agents outside this host, already merged from clocks and activity records. */
+  external: FloorAgent[];
   host: HostActivity[];
   approvals: Record<string, PendingSummary>;
   codingSessions: ReadonlySet<string>;
@@ -76,16 +77,8 @@ export function buildFloor(input: FloorInput, now: Date): Floor {
     Object.assign(room(row.key, row.client), { group: row.group, description: row.description });
   }
 
-  for (const { clock, state } of input.clocks) {
-    room(clock.project).agents.push({
-      id: `clock:${clock.id}`,
-      tool: clock.tool,
-      project: clock.project,
-      state,
-      detail: clock.note,
-      since: new Date(clock.startMs).toISOString(),
-      source: 'clock',
-    });
+  for (const agent of input.external) {
+    room(agent.project).agents.push({ ...agent });
   }
 
   const hostAgents = new Map<string, FloorAgent>();

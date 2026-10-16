@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { listPending } from '../approvals.js';
 import { readCodingSession } from '../coding-sessions.js';
 import type { ActivityRegistry } from './activity.js';
-import { clockState, readOpenClocks } from './clocks.js';
+import { readActivityRecords } from './activity-files.js';
+import { externalAgents } from './agents.js';
+import { readOpenClocks } from './clocks.js';
 import { buildFloor, type Floor, type PendingSummary } from './floor.js';
 import { readRegistry } from './registry.js';
 import { KEY_RE, maxAgentSessionHours } from './workspace-files.js';
@@ -11,6 +13,7 @@ import { KEY_RE, maxAgentSessionHours } from './workspace-files.js';
 export { ActivityRegistry } from './activity.js';
 export { COLLECTIONS, PROJECT_COLLECTIONS, isCollection, queryRows, readCollection } from './collections.js';
 export type { Floor } from './floor.js';
+export { floorEvents } from './stream.js';
 
 /** Projects with an approvals directory: the only ones that can have a raised hand. */
 function approvalSummaries(root: string): Record<string, PendingSummary> {
@@ -32,7 +35,12 @@ function approvalSummaries(root: string): Record<string, PendingSummary> {
 export function deskFloor(root: string, activity: ActivityRegistry, now = new Date()): Floor {
   const registry = readRegistry(root);
   const maxHours = maxAgentSessionHours(root);
-  const clocks = readOpenClocks(root).map((clock) => ({ clock, state: clockState(clock, now.getTime(), maxHours) }));
+  const external = externalAgents({
+    clocks: readOpenClocks(root),
+    records: readActivityRecords(root),
+    nowMs: now.getTime(),
+    maxHours,
+  });
   const codingSessions = new Set(registry.map((row) => row.key).filter((key) => readCodingSession(root, key) !== null));
-  return buildFloor({ registry, clocks, host: activity.list(), approvals: approvalSummaries(root), codingSessions }, now);
+  return buildFloor({ registry, external, host: activity.list(), approvals: approvalSummaries(root), codingSessions }, now);
 }

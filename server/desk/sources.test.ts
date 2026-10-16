@@ -129,6 +129,16 @@ describe('deskFloor and readCollection on a disposable workspace', () => {
     assert.equal(readOpenClocks(root).length, 1);
   });
 
+  it('takes an outside agent\'s pose from its activity record', () => {
+    const dir = join(root, '.local', 'agent', 'activity');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 's1.json'), JSON.stringify({
+      version: 1, session: 's1', project: 'alpha', tool: 'codex', state: 'running', detail: 'Bash', at: '2026-10-16T09:59:30Z',
+    }));
+    const floor = deskFloor(root, new ActivityRegistry(), new Date('2026-10-16T10:00:00Z'));
+    assert.deepEqual(floor.zones[0].rooms[0].agents.map((a) => [a.tool, a.state, a.detail]), [['codex', 'running', 'Bash']]);
+  });
+
   it('builds the floor from the registry, the clocks, and the host', () => {
     const activity = new ActivityRegistry();
     activity.set('alpha', 'reading', 'read_file');
