@@ -78,7 +78,10 @@ export function taskFields(text: string): Record<string, string> {
   for (const line of lines.slice(1)) {
     if (line === '---') break;
     const match = line.match(/^([a-z_]+):\s?(.*)$/);
-    if (match && match[2] !== '') fields[match[1]] = match[2].trim();
+    if (!match || match[2] === '') continue;
+    const value = match[2].trim();
+    // ws_tasks.py quotes blocked_reason; take the text back out.
+    fields[match[1]] = /^".*"$/.test(value) ? value.slice(1, -1).replace(/\\"/g, '"') : value;
   }
   return fields;
 }
@@ -103,6 +106,8 @@ function backlogRows(root: string, project: string): Row[] {
         status: fields.status ?? 'backlog',
         priority: fields.priority ?? 'normal',
         owner: fields.owner ?? 'unassigned',
+        blocked: fields.blocked === 'true' ? 'yes' : '',
+        blockedReason: fields.blocked === 'true' ? fields.blocked_reason ?? '' : '',
         updated: (fields.updated_at ?? '').slice(0, 16).replace('T', ' '),
         revision: `mtime:${stat.mtimeNs}:size:${stat.size}`,
       }];
