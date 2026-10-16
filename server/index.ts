@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import { resolve, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -30,7 +31,7 @@ import {
   setScriptNonce,
 } from './middleware/security.js';
 import { forwardToControl } from './proxy.js';
-import { ActivityRegistry, deskFloor, isCollection, queryRows, readCollection } from './desk/index.js';
+import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
@@ -379,6 +380,18 @@ app.get(`${AGENT_API}/workspace`, async (c) => {
 // ── API: Desk (docs/desk/README.md) ────────────────────────────────────
 // Read-only: the floor, and the record sets the drawer sections bind UIDL tables to.
 app.get(`${AGENT_API}/desk/floor`, (c) => c.json(deskFloor(WORKSPACE_ROOT, activity)));
+
+// The live floor: a new floor only when something on it changed, as server-sent events.
+// The desk reads it with fetch, so the bearer token stays in a header, never in a URL.
+app.get(`${AGENT_API}/desk/events`, (c) => streamSSE(c, async (stream) => {
+  for await (const event of floorEvents({
+    read: () => deskFloor(WORKSPACE_ROOT, activity),
+    sleep: (ms) => stream.sleep(ms).then(() => undefined),
+    stopped: () => stream.aborted || stream.closed,
+  })) {
+    await stream.writeSSE(event);
+  }
+}));
 
 app.get(`${AGENT_API}/desk/collections/:name`, (c) => {
   const name = c.req.param('name');
