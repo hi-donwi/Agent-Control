@@ -145,7 +145,10 @@ app.use('*', securityHeaders());
 
 // API routes require token
 app.use('/api/agent/*', tokenAuth(TOKEN));
-app.use('/api/agent/*', rateLimit(120, 60_000));
+// A ceiling against a runaway page, not a quota: one operator's desk stays far below it. The
+// browser suite loads the desk dozens of times a minute, so it raises the ceiling.
+const RATE_LIMIT = Math.max(1, parseInt(process.env.AC_RATE_LIMIT_PER_MINUTE ?? '', 10) || 120);
+app.use('/api/agent/*', rateLimit(RATE_LIMIT, 60_000));
 
 // ── API: Providers & models ────────────────────────────────────────────
 app.get(`${AGENT_API}/providers`, (c) => {
