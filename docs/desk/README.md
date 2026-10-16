@@ -40,7 +40,7 @@ loopback server.
 | Floor | Home | Zones (clients) > rooms (projects) > agents. Zoom to a client by its name. |
 | Menu drawer | Menu icon | Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
-| Agent drawer | An avatar | The agent card (state, detail, approvals) and a chat bound to its project. |
+| Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes), and a chat bound to its project. |
 
 Each scope - the workspace, or one project - has its own conversation. The latest one is
 loaded when the scope is first opened and every turn is written back, so a reload keeps it;
@@ -85,6 +85,7 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | `POST tasks` | `{ project, title, priority }` -> `{ id, status, revision }`. Runs `ws task add` |
 | `POST tasks/status` | `{ project, id, status, revision }` -> `{ id, status, revision }`. Runs `ws task status --revision`; 409 when the task changed since the desk showed it |
 | `POST plan/status` | `{ project, run, n, status, revision, notes? }` -> `{ run, n, status, revision }`. Runs `ws plan status --operator`: the person at the desk must own the run, one row in progress, a reason for blocked or dropped; 409 when the plan changed since it was shown |
+| `GET /api/agent/coding-sessions/:project/diff` | `{ session, diff, truncated }`: the session worktree's `git diff`, capped at 400 KB |
 | `GET events` | Server-sent events: `floor` with the same body whenever something on it changes (checked every second), `ping` after fifteen quiet seconds. The desk reads it with fetch, so the token stays in a header. |
 | `GET collections/:name?project=<key>` | `{ rows, total, page, pageSize }`, the shape of a UIDL `QueryResult` |
 
@@ -130,7 +131,8 @@ src/desk/
 | 3a | Notes (done) | `ws note` in Agent-Workspace; the Notes section's form runs the host command `notes.add` |
 | 3b | Tasks (done) | `ws task`; the Tasks section adds operator tasks and moves them with row actions, run plan rows stay read-only |
 | 3c | Run plans (done) | Pending, Start, and Done on a plan row through `ws plan status --operator`; blocked and dropped need a reason, so they stay in `ws` for now |
-| 4 | Agent work | Start a coding session from the agent drawer, review its diff, approve inline, verify with `ws verify`; Agent-Brain as an endpoint preset and MCP client |
+| 4a | Agent work (done) | Start and stop a coding session from the drawer; a Changes tab with the worktree's diff, reloaded after every turn; an approval or denial goes back into the conversation so the agent continues |
+| 4b | Verify and hand back | `ws verify` against the session's worktree (it runs in the primary checkout today), then merge or discard the session's branch from the drawer |
 | 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
 
 ## History
