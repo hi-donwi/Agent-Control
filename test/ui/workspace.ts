@@ -100,7 +100,9 @@ elif [ "$1" = "plan" ]; then
   root="$(cd "$(dirname "$0")/../.." && pwd)"
   f="$root/context/runs/$3/$4/plan.md"
   q="$(printf '\\140')"
-  awk -F'|' -v n="$5" -v st="$6" -v q="$q" 'BEGIN { OFS = "|" } { c = $2; gsub(/ /, "", c); if (NF > 4 && c == n) $4 = " " q st q " "; print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  sn=0; nt=""
+  if [ "\${10}" = "--notes" ]; then sn=1; nt="\${11}"; fi
+  awk -F'|' -v n="$5" -v st="$6" -v q="$q" -v sn="$sn" -v nt="$nt" 'BEGIN { OFS = "|" } { c = $2; gsub(/ /, "", c); if (NF > 4 && c == n) { $4 = " " q st q " "; if (sn == 1) $5 = " " nt " " } print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   printf 'plan %s %s %s mtime:0:size:0\\n' "$4" "$5" "$6"
 else
   printf '${PROJECT}\\tframework\\t-\\tprojects/mock/${PROJECT}\\t-\\t-\\t-\\n'

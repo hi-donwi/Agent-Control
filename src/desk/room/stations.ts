@@ -95,3 +95,31 @@ export function moveRequest(card: Card, to: StationId, project: string): { path:
   }
   return { path: 'desk/plan/status', body: { project, run: card.runId, n: card.ref, status: station.planStatus!, revision: card.revision } };
 }
+
+export type HoldMode = 'block' | 'drop';
+
+/**
+ * What can hold a card back: a task can be blocked, a plan step blocked or dropped. A card
+ * already blocked is released instead, and shipped work is not held.
+ */
+export function holdActions(card: Card): HoldMode[] {
+  if (card.blocked || card.station === 'shipped') return [];
+  return card.kind === 'task' ? ['block'] : ['block', 'drop'];
+}
+
+/** The desk endpoint and body that hold `card` back with `reason`, through `ws`. */
+export function holdRequest(card: Card, mode: HoldMode, reason: string, project: string): { path: string; body: Record<string, string> } {
+  if (card.kind === 'task') {
+    return { path: 'desk/tasks/block', body: { project, id: card.ref, reason, revision: card.revision } };
+  }
+  const status = mode === 'drop' ? 'dropped' : 'blocked';
+  return { path: 'desk/plan/status', body: { project, run: card.runId, n: card.ref, status, notes: reason, revision: card.revision } };
+}
+
+/** The desk endpoint and body that free a blocked card: a task is unblocked, a step goes back to pending. */
+export function releaseRequest(card: Card, project: string): { path: string; body: Record<string, string> } {
+  if (card.kind === 'task') {
+    return { path: 'desk/tasks/unblock', body: { project, id: card.ref, revision: card.revision } };
+  }
+  return { path: 'desk/plan/status', body: { project, run: card.runId, n: card.ref, status: 'pending', revision: card.revision } };
+}

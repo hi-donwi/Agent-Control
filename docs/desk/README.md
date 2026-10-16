@@ -55,7 +55,10 @@ two seconds) or after a change it made itself.
   tasks (`ws task`) and the plan steps of open runs (`ws plan`). A card moves by drag and
   drop or by its own "Move to" menu, which is also the keyboard path; a plan step has only
   pending, in progress, and done, so it stops at Queue, In hands, and Shipped. A blocked card
-  raises its hand and says why; blocking a task asks for the reason first.
+  raises its hand and says why. Blocking a task (`ws task block`) or a step, and dropping a
+  step, asks for the reason first; a step's reason goes into its plan row's Notes through
+  `ws plan status --operator --notes`. Unblock frees a task, and sets a step back to pending.
+  A dropped step leaves the board.
 - **Crew.** The agents in the room, in their live pose; one opens its drawer.
 - **Blockers.** Everything that waits, from every source: pending approvals, blocked tasks,
   blocked plan steps, and the `Blocked on` table of `active.md`.
@@ -159,7 +162,7 @@ src/desk/
 | 2b | Chat history (done) | Per-scope conversations in the host's session log; the latest reloads with the page |
 | 3a | Notes (done) | `ws note` in Agent-Workspace; the Notes section's form runs the host command `notes.add` |
 | 3b | Tasks (done) | `ws task`; the Tasks section adds operator tasks and moves them with row actions, run plan rows stay read-only |
-| 3c | Run plans (done) | Pending, Start, and Done on a plan row through `ws plan status --operator`; blocked and dropped need a reason, so they stay in `ws` for now |
+| 3c | Run plans (done) | Pending, Start, and Done on a plan row through `ws plan status --operator`; blocked and dropped, with a reason, from the mission board since 4c |
 | 4a | Agent work (done) | Start and stop a coding session from the drawer; a Changes tab with the worktree's diff, reloaded after every turn; an approval or denial goes back into the conversation so the agent continues |
 | 4b | Verify and hand back | `ws verify` against the session's worktree (it runs in the primary checkout today), then merge or discard the session's branch from the drawer |
 | 4c | Project room (done) | One page per project: mission board over tasks and plan steps, block and unblock a task with a reason, crew, blockers from every source, memory, context pack and policy |
