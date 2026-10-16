@@ -6,6 +6,15 @@ A standalone, loopback-only chat interface that understands your Agent-Workspace
 projects, context, memory, and runs. It connects to OpenAI, Anthropic, and
 Google Gemini — all from one unified interface.
 
+## Desk
+
+The default UI is the **desk**: the workspace as a 2D floor - clients as zones, projects as
+rooms, agents as animated figures whose pose shows what they are doing, with a raised hand
+when one needs you. Two icons at the top right open the menu drawer (sections rendered by
+`uidl-runtime`) and the assistant drawer. `/?ui=classic` keeps the previous chat layout.
+Design, states, and phases: [docs/desk/README.md](docs/desk/README.md); wireframes:
+[docs/desk/wireframe.md](docs/desk/wireframe.md).
+
 ## Quick start
 
 Requires [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on `PATH` - `search_code`
@@ -180,7 +189,7 @@ network call and no real provider. That is also the seam the browser harness dri
 ### Browser harness (local only)
 
 ```bash
-pnpm exec playwright install chromium   # once
+pnpm exec playwright install chromium   # once, or use PW_CHANNEL=chrome for an installed Chrome
 pnpm test:ui
 ```
 

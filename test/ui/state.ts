@@ -20,6 +20,8 @@ export interface ServerState {
   token: string;
   /** The isolated `HOME` the server ran with - where its `~/.agent-control/config.json` lives. */
   home: string;
+  /** The disposable workspace root (`WS_WORKSPACE_ROOT`). */
+  root: string;
 }
 
 export const serverEntry = () => join(REPO_ROOT, 'server', 'index.ts');

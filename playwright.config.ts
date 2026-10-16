@@ -18,5 +18,7 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     viewport: { width: 1280, height: 800 },
+    // PW_CHANNEL=chrome drives the installed Chrome instead of a downloaded browser.
+    ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}),
   },
 });

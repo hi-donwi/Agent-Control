@@ -1,0 +1,49 @@
+import type { ReactNode } from 'react';
+
+/** Line icons on a 24px grid, drawn with the current text color. */
+function Icon({ children, size = 20 }: { children: ReactNode; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {children}
+    </svg>
+  );
+}
+
+export const MenuIcon = () => (
+  <Icon><path d="M4 7h16M4 12h16M4 17h10" /></Icon>
+);
+
+/** A speech bubble with a spark: the assistant. */
+export const AssistantIcon = () => (
+  <Icon>
+    <path d="M20 12.5a7.5 7.5 0 0 1-11.2 6.5L4 20l1.1-4.2A7.5 7.5 0 1 1 20 12.5Z" />
+    <path d="M12.5 9v4M10.5 11h4" />
+  </Icon>
+);
+
+export const CloseIcon = () => (
+  <Icon><path d="M6 6l12 12M18 6L6 18" /></Icon>
+);
+
+export const BackIcon = () => (
+  <Icon><path d="M15 6l-6 6 6 6" /></Icon>
+);
+
+export const ChevronIcon = () => (
+  <Icon size={16}><path d="M9 6l6 6-6 6" /></Icon>
+);
+
+export const NewChatIcon = () => (
+  <Icon><path d="M12 5v14M5 12h14" /></Icon>
+);
