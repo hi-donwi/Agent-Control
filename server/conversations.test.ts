@@ -9,6 +9,8 @@ import {
   captureAssistant,
   isScope,
   latestConversation,
+  listConversations,
+  openConversation,
   readConversation,
   type StoredMessage,
 } from './conversations.js';
@@ -53,6 +55,34 @@ describe('conversation history', () => {
     utimesSync(join(sessions, C, 'events.jsonl'), new Date('2026-10-16T10:00:00Z'), new Date('2026-10-16T10:00:00Z'));
     assert.deepEqual(latestConversation(root, 'alpha'), { id: C, messages: [user('new')] });
     assert.equal(latestConversation(root, WORKSPACE_SCOPE), null);
+  });
+
+  it('lists the conversations of a scope newest first, titled by their first question', () => {
+    appendMessage(root, 'alpha', A, user('  How does   the export\nwork?  '));
+    appendMessage(root, 'alpha', A, { role: 'assistant', content: 'It streams.', at: '2026-10-16T10:00:01.000Z' });
+    appendMessage(root, 'beta', B, user('other project'));
+    appendMessage(root, 'alpha', C, user('x'.repeat(120)));
+    const sessions = join(root, '.local', 'agent', 'sessions');
+    utimesSync(join(sessions, A, 'events.jsonl'), new Date('2026-10-16T09:00:00Z'), new Date('2026-10-16T09:00:00Z'));
+    utimesSync(join(sessions, C, 'events.jsonl'), new Date('2026-10-16T10:00:00Z'), new Date('2026-10-16T10:00:00Z'));
+
+    const list = listConversations(root, 'alpha');
+    assert.deepEqual(list.map((c) => [c.id, c.messages, c.updatedAt]), [
+      [C, 1, '2026-10-16T10:00:00.000Z'],
+      [A, 2, '2026-10-16T09:00:00.000Z'],
+    ]);
+    assert.equal(list[0].title, `${'x'.repeat(80)}...`);
+    assert.equal(list[1].title, 'How does the export work?');
+    assert.deepEqual(listConversations(root, 'alpha', 1).map((c) => c.id), [C]);
+    assert.deepEqual(listConversations(root, WORKSPACE_SCOPE), []);
+  });
+
+  it('opens a conversation only in its own scope', () => {
+    appendMessage(root, 'alpha', A, user('hello'));
+    assert.deepEqual(openConversation(root, 'alpha', A), { id: A, messages: [user('hello')] });
+    assert.equal(openConversation(root, 'beta', A), null);
+    assert.equal(openConversation(root, 'alpha', B), null);
+    assert.throws(() => openConversation(root, 'alpha', '../escape'), /invalid conversation id/);
   });
 
   it('accepts a project key or the workspace scope', () => {

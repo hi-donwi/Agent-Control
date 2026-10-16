@@ -103,22 +103,55 @@ export function readConversation(root: string, id: string): { scope: string; mes
   return { scope: start.scope, messages };
 }
 
-/** The most recently written conversation of a scope, or null when it has none. */
-export function latestConversation(root: string, scope: string): { id: string; messages: StoredMessage[] } | null {
+/** A scope's conversations, newest first by their last write. */
+function scopeEntries(root: string, scope: string): Array<{ id: string; mtimeMs: number }> {
   if (!isScope(scope)) throw new Error(`invalid scope '${scope}'`);
   const dir = sessionsDir(root);
-  if (!existsSync(dir)) return null;
-  let best: { id: string; mtimeMs: number } | null = null;
-  for (const id of readdirSync(dir)) {
-    if (!isConversationId(id)) continue;
-    const path = join(dir, id, 'events.jsonl');
-    if (!existsSync(path) || scopeOf(path) !== scope) continue;
-    const { mtimeMs } = statSync(path);
-    if (!best || mtimeMs > best.mtimeMs) best = { id, mtimeMs };
-  }
-  if (!best) return null;
-  const conversation = readConversation(root, best.id);
-  return conversation ? { id: best.id, messages: conversation.messages } : null;
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(isConversationId)
+    .map((id) => ({ id, path: join(dir, id, 'events.jsonl') }))
+    .filter(({ path }) => existsSync(path) && scopeOf(path) === scope)
+    .map(({ id, path }) => ({ id, mtimeMs: statSync(path).mtimeMs }))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/** The most recently written conversation of a scope, or null when it has none. */
+export function latestConversation(root: string, scope: string): { id: string; messages: StoredMessage[] } | null {
+  const [best] = scopeEntries(root, scope);
+  return best ? openConversation(root, scope, best.id) : null;
+}
+
+/** One conversation, only when it belongs to `scope`: another scope's history is not there to read. */
+export function openConversation(root: string, scope: string, id: string): { id: string; messages: StoredMessage[] } | null {
+  const conversation = readConversation(root, id);
+  return conversation && conversation.scope === scope ? { id, messages: conversation.messages } : null;
+}
+
+export interface ConversationSummary {
+  id: string;
+  /** The first question, whitespace collapsed, cut to `TITLE_MAX` characters. */
+  title: string;
+  messages: number;
+  updatedAt: string;
+}
+
+const TITLE_MAX = 80;
+
+/** A scope's conversations for the history list, newest first, at most `limit`. */
+export function listConversations(root: string, scope: string, limit = 30): ConversationSummary[] {
+  return scopeEntries(root, scope).slice(0, limit).flatMap(({ id, mtimeMs }) => {
+    const conversation = readConversation(root, id);
+    if (!conversation) return [];
+    const first = conversation.messages.find((m) => m.role === 'user')?.content ?? '';
+    const text = first.replace(/\s+/g, ' ').trim();
+    return [{
+      id,
+      title: text.length > TITLE_MAX ? `${text.slice(0, TITLE_MAX)}...` : text,
+      messages: conversation.messages.length,
+      updatedAt: new Date(mtimeMs).toISOString(),
+    }];
+  });
 }
 
 interface StreamPart {
