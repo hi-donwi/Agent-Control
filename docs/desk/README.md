@@ -69,7 +69,9 @@ two seconds) or after a change it made itself.
 
 Each scope - the workspace, or one project - has its own conversation. The latest one is
 loaded when the scope is first opened and every turn is written back, so a reload keeps it;
-"New conversation" starts another and leaves the old one on disk (see History).
+"New conversation" starts another and leaves the old one on disk (see History). "Earlier
+conversations" lists the scope's conversations, newest first, titled by their first
+question; opening one shows it, and the next turn is appended to it.
 
 ## Agent states
 
@@ -123,6 +125,8 @@ Chat history lives beside the chat API rather than under `desk/`:
 |---|---|
 | `POST /api/agent/chat` with `conversation: <uuid>` | The chat as before; the user message and the answer are appended to that conversation |
 | `GET /api/agent/conversations/latest?scope=<key or _workspace>` | `{ id, messages }` of the scope's latest conversation, or `{ id: null, messages: [] }` |
+| `GET /api/agent/conversations?scope=<key or _workspace>` | `{ conversations: [{ id, title, messages, updatedAt }] }`, newest first, at most 30 |
+| `GET /api/agent/conversations/:id?scope=<key or _workspace>` | `{ id, messages }`; 404 when the conversation is not in that scope, so one project's history is never read from another's chat |
 
 Collections: `projects`, `agents`, `approvals`, `memory`, `runs`, `tasks` (run plan
 rows, each with its run id and the plan's revision), `backlog` (operator tasks, each with the revision `ws task status` checks), `notes`.
