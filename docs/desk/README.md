@@ -38,9 +38,31 @@ loopback server.
 | Surface | Opens from | Contents |
 |---|---|---|
 | Floor | Home | Zones (clients) > rooms (projects) > agents. Zoom to a client by its name. |
+| Project room | A room's name on the floor | One project: stage and focus, the mission board, crew, blockers, memory, and context (see Project room). Escape or the breadcrumb goes back to the floor. |
 | Menu drawer | Menu icon | Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
 | Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes), and a chat bound to its project. |
+
+## Project room
+
+A project's own page, opened from its name on the floor. It reads one endpoint,
+`GET projects/:key`, and reloads when the project's room on the floor changes (at most every
+two seconds) or after a change it made itself.
+
+- **Mission board.** Work as it moves through an agent's day, not to-do / doing / done:
+  *Queue* (waiting for its turn), *Ready for an agent* (clear enough to hand off), *In hands*
+  (an agent is on it), *Awaiting review* (a person looks next), *Shipped*. Cards are operator
+  tasks (`ws task`) and the plan steps of open runs (`ws plan`). A card moves by drag and
+  drop or by its own "Move to" menu, which is also the keyboard path; a plan step has only
+  pending, in progress, and done, so it stops at Queue, In hands, and Shipped. A blocked card
+  raises its hand and says why; blocking a task asks for the reason first.
+- **Crew.** The agents in the room, in their live pose; one opens its drawer.
+- **Blockers.** Everything that waits, from every source: pending approvals, blocked tasks,
+  blocked plan steps, and the `Blocked on` table of `active.md`.
+- **Memory.** Next up from `active.md`, the latest decisions and log milestones, and notes;
+  "Add a note" opens the Notes section.
+- **Context.** The files `ws context pack` loads for an agent bound here, and what the
+  project's policy lets it reach: its autonomy default and allowed remote endpoints.
 
 Each scope - the workspace, or one project - has its own conversation. The latest one is
 loaded when the scope is first opened and every turn is written back, so a reload keeps it;
@@ -84,6 +106,9 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | `POST notes` | `{ project, title, body }` -> `{ path }`. Runs `ws note <project> <title> -` with the body on stdin; 400 with the reason on any refusal |
 | `POST tasks` | `{ project, title, priority }` -> `{ id, status, revision }`. Runs `ws task add` |
 | `POST tasks/status` | `{ project, id, status, revision }` -> `{ id, status, revision }`. Runs `ws task status --revision`; 409 when the task changed since the desk showed it |
+| `POST tasks/block` | `{ project, id, reason, revision }` -> `{ id, status, revision }`. Runs `ws task block --revision`; a reason is required; 409 as above |
+| `POST tasks/unblock` | `{ project, id, revision }` -> `{ id, status, revision }`. Runs `ws task unblock --revision`; 409 as above |
+| `GET projects/:key` | The project room in one read: registry row, memory (`updated`, `stage`, `focus`, `nextUp`, `blockedOn`, the last six `decisions` and `log` entries, `notes`), `tasks` (operator tasks with `blocked` and `blockedReason`), `plans` (plan rows), open `runs`, `approvals`, the room's `agents`, `codingSession`, and `context` (`pack`, `policy`); 404 for an unknown or invalid key |
 | `POST plan/status` | `{ project, run, n, status, revision, notes? }` -> `{ run, n, status, revision }`. Runs `ws plan status --operator`: the person at the desk must own the run, one row in progress, a reason for blocked or dropped; 409 when the plan changed since it was shown |
 | `GET /api/agent/coding-sessions/:project/diff` | `{ session, diff, truncated }`: the session worktree's `git diff`, capped at 400 KB |
 | `GET events` | Server-sent events: `floor` with the same body whenever something on it changes (checked every second), `ping` after fifteen quiet seconds. The desk reads it with fetch, so the token stays in a header. |
@@ -113,10 +138,14 @@ server/desk/
   floor.ts          pure: registry + agents + approvals + host activity -> floor
   stream.ts         the floor as events, sent only on change
   collections.ts    read-only drawer collections
+  project.ts        the project room in one read; active.md, decisions, and log parsers
+  notes.ts, tasks.ts, plans.ts
+                    writes, each through ws with stdin and a revision
 src/desk/
   DeskApp.tsx       the shell: floor, two icons, drawers
   floor/            zones, rooms, avatars and their poses
   drawers/          drawer frame, menu, assistant, agent card
+  room/             project room: mission board, stations, side panels
   uidl/             section documents and the DataAdapter
   desk.css          tokens and layout; light and dark
 ```
@@ -133,6 +162,7 @@ src/desk/
 | 3c | Run plans (done) | Pending, Start, and Done on a plan row through `ws plan status --operator`; blocked and dropped need a reason, so they stay in `ws` for now |
 | 4a | Agent work (done) | Start and stop a coding session from the drawer; a Changes tab with the worktree's diff, reloaded after every turn; an approval or denial goes back into the conversation so the agent continues |
 | 4b | Verify and hand back | `ws verify` against the session's worktree (it runs in the primary checkout today), then merge or discard the session's branch from the drawer |
+| 4c | Project room (done) | One page per project: mission board over tasks and plan steps, block and unblock a task with a reason, crew, blockers from every source, memory, context pack and policy |
 | 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
 
 ## History
