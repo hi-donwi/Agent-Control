@@ -31,6 +31,7 @@ import {
   setScriptNonce,
 } from './middleware/security.js';
 import { forwardToControl } from './proxy.js';
+import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
@@ -208,6 +209,8 @@ app.post(`${AGENT_API}/chat`, async (c) => {
     model?: string;
     /** Project whose context this chat works with; decides which endpoints may receive it. */
     project?: string;
+    /** When set, the turn is kept in this conversation's history (server/conversations.ts). */
+    conversation?: string;
   };
 
   const resolved = resolveChatModel({
@@ -238,6 +241,19 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       remote: resolved.locality === 'remote',
       worktree: coding?.worktree,
     };
+  }
+
+  // History, when the client asked for it: this turn's user message now, the answer when
+  // the turn ends. A conversation id that belongs to another scope is refused here.
+  const conversation = isConversationId(body.conversation) ? body.conversation : undefined;
+  const historyScope = scope?.project ?? WORKSPACE_SCOPE;
+  const lastMessage = body.messages.at(-1);
+  if (conversation && lastMessage?.role === 'user' && typeof lastMessage.content === 'string') {
+    try {
+      appendMessage(WORKSPACE_ROOT, historyScope, conversation, { role: 'user', content: lastMessage.content, at: new Date().toISOString() });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
   }
 
   try {
@@ -279,7 +295,16 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         console.error('Usage record not written:', err instanceof Error ? err.message : String(err));
       }
     };
-    const parts = scope ? activity.tap(scope.project, result.fullStream) : result.fullStream;
+    const tapped = scope ? activity.tap(scope.project, result.fullStream) : result.fullStream;
+    const parts = conversation
+      ? captureAssistant(tapped, (message) => {
+        try {
+          appendMessage(WORKSPACE_ROOT, historyScope, conversation, message);
+        } catch (err) {
+          console.error('History not written:', err instanceof Error ? err.message : String(err));
+        }
+      })
+      : tapped;
     return new Response(toLineStream(parts, usage), {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
@@ -291,6 +316,15 @@ app.post(`${AGENT_API}/chat`, async (c) => {
     console.error('Chat error:', message);
     return c.json({ error: message }, 500);
   }
+});
+
+// ── API: Conversation history (server/conversations.ts) ────────────────
+// The latest conversation of a scope: a project key, or `_workspace` for an unbound chat.
+app.get(`${AGENT_API}/conversations/latest`, (c) => {
+  const scope = c.req.query('scope') ?? '';
+  if (!isScope(scope)) return c.json({ error: 'scope is a project key or _workspace' }, 400);
+  const latest = latestConversation(WORKSPACE_ROOT, scope);
+  return c.json(latest ?? { id: null, messages: [] });
 });
 
 // ── API: Projects a chat can be bound to ───────────────────────────────

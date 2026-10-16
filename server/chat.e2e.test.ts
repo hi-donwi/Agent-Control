@@ -115,6 +115,21 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(answerText(await protocolLines(response)), 'mock(echo): hello');
   });
 
+  it('keeps a conversation\'s turns, readable as the scope\'s latest, and refuses it for another project', async () => {
+    const conversation = '44444444-4444-4444-8444-444444444444';
+    const first = await post({ messages: [{ role: 'user', content: 'remember me' }], provider: 'mock', model: 'echo', project: 'mockproj', conversation });
+    assert.equal(answerText(await protocolLines(first)), 'mock(echo): remember me');
+
+    const latest = await fetch(`${origin}/api/agent/conversations/latest?scope=mockproj`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await latest.json() as { id: string; messages: Array<{ role: string; content: string }> };
+    assert.equal(body.id, conversation);
+    assert.deepEqual(body.messages.map((m) => [m.role, m.content]), [['user', 'remember me'], ['assistant', 'mock(echo): remember me']]);
+
+    // The same conversation, sent unbound, would mix a project's history into another scope.
+    const unbound = await post({ messages: [{ role: 'user', content: 'leak' }], provider: 'mock', model: 'echo', conversation });
+    assert.equal(unbound.status, 400);
+  });
+
   it('refuses a remote endpoint without a project policy, before any request', async () => {
     const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'remote', model: 'x' });
     assert.equal(response.status, 403);
