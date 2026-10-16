@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { listPending } from '../approvals.js';
 import type { Floor } from './floor.js';
@@ -9,10 +9,10 @@ import { KEY_RE, contextDir, inside, readHead } from './workspace-files.js';
  * UIDL `DataAdapter.query` returns, so a section document can bind a table to it. Nothing
  * here writes: notes, tasks, and runs change through `ws` (ADR-0019 §2).
  */
-export const COLLECTIONS = ['projects', 'agents', 'approvals', 'memory', 'runs', 'tasks', 'notes'] as const;
+export const COLLECTIONS = ['projects', 'agents', 'approvals', 'memory', 'runs', 'tasks', 'backlog', 'notes'] as const;
 export type CollectionName = (typeof COLLECTIONS)[number];
 /** Collections that only make sense for one project, and refuse a request without one. */
-export const PROJECT_COLLECTIONS: ReadonlySet<CollectionName> = new Set(['memory', 'runs', 'tasks', 'notes']);
+export const PROJECT_COLLECTIONS: ReadonlySet<CollectionName> = new Set(['memory', 'runs', 'tasks', 'backlog', 'notes']);
 
 export type Row = Record<string, string | number>;
 
@@ -68,6 +68,47 @@ export function planRows(text: string): Array<{ n: string; task: string; status:
     if (!/^\d+[a-z]?$/i.test(n)) return [];
     return [{ n, task, status: status.replace(/`/g, '') || 'pending', notes: notes.replace(/`/g, '') }];
   });
+}
+
+/** The flat `key: value` lines of a task document's front matter (ws_tasks.py, schema 1). */
+export function taskFields(text: string): Record<string, string> {
+  const lines = text.split('\n');
+  if (lines[0] !== '---') return {};
+  const fields: Record<string, string> = {};
+  for (const line of lines.slice(1)) {
+    if (line === '---') break;
+    const match = line.match(/^([a-z_]+):\s?(.*)$/);
+    if (match && match[2] !== '') fields[match[1]] = match[2].trim();
+  }
+  return fields;
+}
+
+const STATUS_ORDER = ['in_progress', 'review', 'ready', 'backlog', 'done'];
+
+/** Operator tasks with the revision `ws task status --revision` expects back. */
+function backlogRows(root: string, project: string): Row[] {
+  const dir = projectDir(root, 'tasks', project);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.md') && !name.startsWith('.'))
+    .flatMap((name) => {
+      const path = join(dir, name);
+      if (!lstatSync(path).isFile()) return [];
+      const fields = taskFields(readHead(path, 8192));
+      if (fields.schema_version !== '1' || !fields.id || fields.project !== project) return [];
+      const stat = statSync(path, { bigint: true });
+      return [{
+        id: fields.id,
+        title: fields.title ?? fields.id,
+        status: fields.status ?? 'backlog',
+        priority: fields.priority ?? 'normal',
+        owner: fields.owner ?? 'unassigned',
+        updated: (fields.updated_at ?? '').slice(0, 16).replace('T', ' '),
+        revision: `mtime:${stat.mtimeNs}:size:${stat.size}`,
+      }];
+    })
+    .sort((a, b) => STATUS_ORDER.indexOf(String(a.status)) - STATUS_ORDER.indexOf(String(b.status))
+      || String(b.updated).localeCompare(String(a.updated)));
 }
 
 function projectDir(root: string, ...parts: string[]): string {
@@ -170,6 +211,8 @@ export function readCollection(root: string, name: CollectionName, project: stri
       return runRows(root, project!);
     case 'tasks':
       return taskRows(root, project!);
+    case 'backlog':
+      return backlogRows(root, project!);
   }
 }
 
