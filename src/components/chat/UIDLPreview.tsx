@@ -52,7 +52,7 @@ class UIDLRenderBoundary extends Component<
     if (this.state.error) {
       return (
         <div className="uidl-error-notice">
-          <p>⚠️ Unable to render interactive preview: {this.state.error.message}</p>
+          <p>[WARN] Unable to render interactive preview: {this.state.error.message}</p>
           <button
             type="button"
             className="uidl-btn-sm"
@@ -160,7 +160,7 @@ export function UIDLPreview({ code }: UIDLPreviewProps) {
     <div className="uidl-preview-card">
       <div className="uidl-preview-header">
         <div className="uidl-preview-title">
-          <span className="uidl-badge">✦ UIDL</span>
+          <span className="uidl-badge">UIDL</span>
           <span className="uidl-doc-id">{doc.root.id || 'Interactive UI'}</span>
         </div>
         <div className="uidl-preview-actions">
@@ -198,7 +198,7 @@ export function UIDLPreview({ code }: UIDLPreviewProps) {
             onClick={handleCopy}
             title="Copy UIDL JSON"
           >
-            {copied ? '✓ Copied' : 'Copy'}
+            {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
       </div>

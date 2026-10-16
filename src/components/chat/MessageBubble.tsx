@@ -12,7 +12,7 @@ export function MessageBubble({ message }: Props) {
   return (
     <div className="message">
       <div className={`message-avatar ${message.role}`}>
-        {isUser ? 'U' : '✦'}
+        {isUser ? 'U' : 'AC'}
       </div>
       <div className="message-content">
         <div className="message-role">{isUser ? 'You' : 'Agent Control'}</div>
@@ -51,7 +51,7 @@ function ToolCallCard({ name, args, result, status }: {
         type="button"
         style={{ cursor: 'pointer', width: '100%', border: 'none', background: 'transparent', textAlign: 'left' }}
       >
-        <span>{status === 'pending' ? '⏳' : status === 'done' ? '✓' : '✗'}</span>
+        <span className={`tool-call-status is-${status}`}>{status === 'pending' ? '[RUN]' : status === 'done' ? '[DONE]' : '[FAIL]'}</span>
         <span>{displayName}</span>
         {argsPreview && <span style={{ opacity: 0.6, fontWeight: 400, textTransform: 'none' }}>({argsPreview})</span>}
       </button>

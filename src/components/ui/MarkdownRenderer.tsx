@@ -61,7 +61,7 @@ function CodeBlock({
       <div className="code-header">
         <span>{lang || 'code'}</span>
         <button className="copy-btn" onClick={handleCopy} type="button">
-          {copied ? '✓ Copied' : 'Copy'}
+          {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <code className={className} {...props}>

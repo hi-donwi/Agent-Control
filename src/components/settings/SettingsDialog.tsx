@@ -69,7 +69,9 @@ export function SettingsDialog({ open, onClose, onSaved }: Props) {
       <div className="dialog" ref={dialogRef}>
         <div className="dialog-header">
           <h2 className="dialog-title">Settings</h2>
-          <button className="dialog-close" onClick={onClose} aria-label="Close settings" type="button">✕</button>
+          <button className="dialog-close" onClick={onClose} aria-label="Close settings" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
         <div className="dialog-body">
           {error && <div className="error-notice">{error}</div>}
