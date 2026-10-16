@@ -649,6 +649,52 @@
 .suggestion:disabled { opacity: 0.5; cursor: not-allowed; }
 .assistant-error { margin: 0 16px; color: var(--d-warn); font-size: 13px; }
 
+.session-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--d-line);
+  font-size: 12.5px;
+  color: var(--d-ink-2);
+}
+.session-text { flex: 1; min-width: 0; }
+.session-text code { font-family: var(--font-mono); font-size: 12px; color: var(--d-ink); }
+.session-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--d-accent); animation: glow 2s ease-in-out infinite; }
+.session-error { width: 100%; margin: 0; color: var(--d-warn); }
+
+.changes { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.changes-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--d-ink-2); }
+.changes-note { color: var(--d-ink-3); font-size: 12.5px; margin: 0; }
+.changes-file { border: 1px solid var(--d-line); border-radius: 10px; background: var(--d-room); overflow: hidden; }
+.changes-file summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.changes-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.changes-status { font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: var(--d-hover); color: var(--d-ink-2); }
+.changes-status.is-added { color: var(--d-accent); }
+.changes-status.is-deleted { color: var(--d-warn); }
+.diff-add { color: var(--d-accent); font-variant-numeric: tabular-nums; }
+.diff-del { color: var(--d-warn); font-variant-numeric: tabular-nums; }
+.changes-lines {
+  margin: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--d-line);
+  font: 12px/1.5 var(--font-mono);
+  overflow-x: auto;
+  max-height: 360px;
+}
+.diff-line { display: block; padding: 0 10px; white-space: pre; }
+.diff-line.is-add { background: color-mix(in srgb, var(--d-accent) 12%, transparent); }
+.diff-line.is-del { background: color-mix(in srgb, var(--d-warn) 10%, transparent); }
+.diff-line.is-hunk { color: var(--d-ink-3); }
+
 /* The shared chat components, tightened for a drawer. */
 .drawer .message-list { padding: 16px; }
 .drawer .input-area { padding: 10px 12px 12px; background: transparent; backdrop-filter: none; border-top: 1px solid var(--d-line); }

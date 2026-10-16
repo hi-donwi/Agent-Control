@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from './fixtures.js';
-import { HEAD_SHA, PROJECT } from './workspace.js';
+import { HEAD_SHA, PROJECT, SESSION_BRANCH } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
@@ -95,6 +95,8 @@ test('opens the agent drawer bound to its project: approval, chat, and a live po
     await expect(approve).toHaveCount(left - 1);
   }
   await expect(waiting).toHaveCount(0);
+  // The decision goes back into the conversation, so the agent continues without a retype.
+  await expect(drawer.getByText(/^Approved request /).first()).toBeVisible();
   await expect(page.getByRole('button', { name: `agent-control in ${PROJECT}: idle, turn finished` }))
     .toBeVisible({ timeout: 10_000 });
 });
@@ -204,4 +206,23 @@ test('starts a run plan row from the Tasks section, through ws plan', async ({ p
   await plans.getByRole('button', { name: 'Start' }).first().click();
   await expect.poll(() => readFileSync(join(dir, 'plan.md'), 'utf-8')).toContain('| 1 | Write the parser | `in_progress` |');
   await expect(plans.getByText(/in.progress/i).first()).toBeVisible();
+});
+
+test('starts a coding session from the agent drawer and shows its changes', async ({ page, deskUrl }) => {
+  await page.goto(deskUrl);
+  await page.getByRole('button', { name: 'Assistant' }).click();
+  const drawer = page.getByRole('dialog', { name: 'Assistant' });
+  await drawer.getByRole('combobox', { name: 'Assistant scope' }).selectOption(PROJECT);
+  const bar = drawer.getByRole('region', { name: 'Coding session' });
+
+  const start = bar.getByRole('button', { name: 'Start coding session' });
+  if (await start.isVisible()) await start.click();
+  await expect(bar.getByText(SESSION_BRANCH)).toBeVisible();
+
+  // What an agent's write_file would leave in the session's worktree.
+  writeFileSync(join(workspaceRoot(), '.local', 'worktrees', PROJECT, 'NOTES.md'), '# Notes\nfrom the agent\n');
+  await bar.getByRole('button', { name: 'Changes' }).click();
+  const changes = drawer.getByLabel('Changes in the coding session');
+  await expect(changes.getByText('NOTES.md')).toBeVisible();
+  await expect(changes.getByText('from the agent')).toBeVisible();
 });
