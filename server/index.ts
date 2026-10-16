@@ -32,7 +32,7 @@ import {
   setScriptNonce,
 } from './middleware/security.js';
 import { forwardToControl } from './proxy.js';
-import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation } from './conversations.js';
+import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation, listConversations, openConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
 import { addNote, realWsInputRunner } from './desk/notes.js';
 import { TaskConflictError, addTask, setTaskBlocked, setTaskStatus } from './desk/tasks.js';
@@ -333,6 +333,23 @@ app.get(`${AGENT_API}/conversations/latest`, (c) => {
   if (!isScope(scope)) return c.json({ error: 'scope is a project key or _workspace' }, 400);
   const latest = latestConversation(WORKSPACE_ROOT, scope);
   return c.json(latest ?? { id: null, messages: [] });
+});
+
+// A scope's earlier conversations, newest first, for the assistant's history list.
+app.get(`${AGENT_API}/conversations`, (c) => {
+  const scope = c.req.query('scope') ?? '';
+  if (!isScope(scope)) return c.json({ error: 'scope is a project key or _workspace' }, 400);
+  return c.json({ conversations: listConversations(WORKSPACE_ROOT, scope) });
+});
+
+// One conversation, read only within its own scope: another scope's id answers 404.
+app.get(`${AGENT_API}/conversations/:id`, (c) => {
+  const scope = c.req.query('scope') ?? '';
+  const id = c.req.param('id');
+  if (!isScope(scope)) return c.json({ error: 'scope is a project key or _workspace' }, 400);
+  if (!isConversationId(id)) return c.json({ error: 'invalid conversation id' }, 400);
+  const conversation = openConversation(WORKSPACE_ROOT, scope, id);
+  return conversation ? c.json(conversation) : c.json({ error: 'no such conversation in this scope' }, 404);
 });
 
 // ── API: Projects a chat can be bound to ───────────────────────────────
