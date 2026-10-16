@@ -30,8 +30,8 @@ class SectionBoundary extends Component<{ children: ReactNode }, { error: Error 
  * adapter. The renderer runs `$query` data sources only with a state store, where each
  * result lands under `state.$data.<name>`; a section gets a fresh one per document.
  */
-/** Host commands a section's buttons may run, by name; each receives the document state. */
-export type SectionCommands = Record<string, (state: Record<string, unknown>) => Promise<unknown>>;
+/** Host commands a section may run, by name; each gets the document state and the payload. */
+export type SectionCommands = Record<string, (state: Record<string, unknown>, payload: Record<string, unknown>) => Promise<unknown>>;
 
 interface Props {
   document: UIDLDocument;
@@ -57,7 +57,7 @@ function Section({ document, dark, commands }: Props) {
   const commandHandler = useMemo(() => async (request: CommandRequest) => {
     const run = commands?.[request.name];
     if (!run) throw new Error(`This section cannot run ${request.name}.`);
-    return run((stateStore.getValue() ?? {}) as Record<string, unknown>);
+    return run((stateStore.getValue() ?? {}) as Record<string, unknown>, request.payload ?? {});
   }, [commands, stateStore]);
   return (
     <div className="section-doc" data-section={stable.id}>

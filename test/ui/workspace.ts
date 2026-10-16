@@ -72,6 +72,20 @@ elif [ "$1" = "note" ]; then
   mkdir -p "$dir"
   { printf '# %s\\n\\n' "$3"; cat; } > "$dir/$slug.md"
   printf 'note context/memory/projects/%s/notes/%s.md\\n' "$2" "$slug"
+elif [ "$1" = "task" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  dir="$root/context/tasks/$3"
+  if [ "$2" = "add" ]; then
+    id="task_$(printf '%s' "$4" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_' | sed 's/^_*//; s/_*$//')"
+    mkdir -p "$dir"
+    cat > /dev/null
+    printf -- '---\\nschema_version: 1\\nid: %s\\nproject: %s\\ntitle: %s\\nstatus: backlog\\npriority: %s\\nowner: desk\\nupdated_at: 2026-10-16T10:00:00+07:00\\n---\\n' "$id" "$3" "$4" "$6" > "$dir/$id.md"
+    printf 'task %s backlog mtime:0:size:0\\n' "$id"
+  else
+    f="$dir/$4.md"
+    sed "s/^status: .*/status: $5/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    printf 'task %s %s mtime:0:size:0\\n' "$4" "$5"
+  fi
 else
   printf '${PROJECT}\\tframework\\t-\\tprojects/mock/${PROJECT}\\t-\\t-\\t-\\n'
 fi

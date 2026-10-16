@@ -39,6 +39,12 @@ export function MenuDrawer(props: Props) {
       const note = (state.note ?? {}) as { title?: string; body?: string };
       return apiFetch('desk/notes', { method: 'POST', body: JSON.stringify({ project, title: note.title ?? '', body: note.body ?? '' }) });
     },
+    'tasks.add': (state) => {
+      const task = (state.task ?? {}) as { title?: string; priority?: string };
+      return apiFetch('desk/tasks', { method: 'POST', body: JSON.stringify({ project, title: task.title ?? '', priority: task.priority ?? 'normal' }) });
+    },
+    'tasks.status': (_state, payload) =>
+      apiFetch('desk/tasks/status', { method: 'POST', body: JSON.stringify({ ...payload, project }) }),
   }), [project]);
   const title = section ? (section === 'settings' ? 'Settings' : SECTIONS[section].title) : 'Menu';
   return (
