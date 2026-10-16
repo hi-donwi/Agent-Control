@@ -45,7 +45,12 @@ export default async function globalSetup(): Promise<() => void> {
 
   const workspace: Workspace = createWorkspace();
   const port = await freePort();
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: workspace.home, WS_WORKSPACE_ROOT: workspace.root, HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'production', AC_STUB_WORKTREE: workspace.worktree };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env, HOME: workspace.home, WS_WORKSPACE_ROOT: workspace.root, HOST: '127.0.0.1', PORT: String(port),
+    NODE_ENV: 'production', AC_STUB_WORKTREE: workspace.worktree,
+    // Every spec loads the page afresh; the whole suite passes the default 120 requests a minute.
+    AC_RATE_LIMIT_PER_MINUTE: '1000',
+  };
   // Standalone app, not the agent mode that proxies the control plane.
   delete env.WS_AGENT_MODE;
   delete env.WS_DESK_DIST;
