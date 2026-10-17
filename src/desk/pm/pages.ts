@@ -1,9 +1,12 @@
 /** Project management views that fill the main area, opened from the menu (ADR-0024, owner's D4). */
-export type PmPage = 'today' | 'missions';
+export type PmPage = 'today' | 'missions' | 'backlog' | 'timeline' | 'clients';
 
 export const PM_PAGE_TITLE: Record<PmPage, string> = {
   today: 'Today',
   missions: 'Missions board',
+  backlog: 'Backlog',
+  timeline: 'Timeline',
+  clients: 'Clients',
 };
 
 /** Alerts the floor does not already show: dates and reminders (approvals and hands are on the floor). */

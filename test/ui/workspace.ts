@@ -109,9 +109,11 @@ else:
         t["blocked"] = sub == "block"; t["blocked_reason"] = rest[0] if sub == "block" else ""; touch(t, sub)
     elif sub == "edit":
         pairs = dict(zip(rest[0::2], rest[1::2]))
-        for flag, field in (("--due", "due"), ("--priority", "priority"), ("--assignee", "assignee")):
+        for flag, field in (("--due", "due"), ("--priority", "priority"), ("--assignee", "assignee"), ("--remind-at", "remind_at")):
             if flag in pairs:
                 t[field] = "" if pairs[flag] == "none" else pairs[flag]
+        if "--rank" in pairs:
+            t["rank"] = int(pairs["--rank"])
         for i, value in enumerate(rest):
             if value == "--check-add":
                 t["checklist"].append({"n": len(t["checklist"]) + 1, "done": False, "text": rest[i + 1]})

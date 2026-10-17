@@ -169,6 +169,24 @@ function Nav({ floor, project, onSection, onFloor, alerts, onPage }: Props) {
             <ChevronIcon />
           </button>
         </li>
+        <li>
+          <button type="button" className="nav-item" onClick={() => onPage('backlog')}>
+            <span>Backlog</span>
+            <ChevronIcon />
+          </button>
+        </li>
+        <li>
+          <button type="button" className="nav-item" onClick={() => onPage('timeline')}>
+            <span>Timeline</span>
+            <ChevronIcon />
+          </button>
+        </li>
+        <li>
+          <button type="button" className="nav-item" onClick={() => onPage('clients')}>
+            <span>Clients</span>
+            <ChevronIcon />
+          </button>
+        </li>
       </ul>
       <p className="nav-group">Workspace</p>
       <ul className="nav-list">
