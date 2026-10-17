@@ -16,5 +16,20 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rolldownOptions: {
+      output: {
+        // Vendor code in its own chunks, loaded in parallel with the app by modulepreload:
+        // they stay cached across app releases and keep every chunk under the 500 kB
+        // warning. The desk is served on loopback, so the split is for caching, not for lazy
+        // loading - a lazy floor measured slower (an extra request round before it paints).
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react|react-dom|scheduler)[\\/]/, priority: 30 },
+            { name: 'uidl-runtime', test: /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?uidl-runtime[\\/]/, priority: 20 },
+            { name: 'vendor', test: /node_modules[\\/]/, priority: 10 },
+          ],
+        },
+      },
+    },
   },
 });
