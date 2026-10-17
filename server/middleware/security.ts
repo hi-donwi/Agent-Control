@@ -61,8 +61,8 @@ export function contentSecurityPolicy(scriptNonce?: string): string {
   return [
     "default-src 'self'",
     scriptNonce ? `script-src 'self' 'nonce-${scriptNonce}'` : "script-src 'self'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "connect-src 'self'",
     "img-src 'self' data:",
     "frame-ancestors 'none'",
