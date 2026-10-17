@@ -11,6 +11,10 @@ import { SettingsDialog } from '../components/settings/SettingsDialog';
 import { TodayView } from './pm/TodayView';
 import { MissionsView } from './pm/MissionsView';
 import { TaskDrawer } from './pm/TaskDrawer';
+import { BacklogView } from './pm/BacklogView';
+import { TimelineView } from './pm/TimelineView';
+import { ClientsView } from './pm/ClientsView';
+import { ClientPage } from './pm/ClientPage';
 import { usePmAlerts } from './pm/usePm';
 import { DATE_ALERTS, PM_PAGE_TITLE, type PmPage } from './pm/pages';
 import type { Floor, FloorAgent, FloorRoom } from './types';
@@ -43,6 +47,8 @@ export function DeskApp() {
   const [room, setRoom] = useState<string | null>(null);
   /** A project management view filling the main area (Today, ...), or null. */
   const [page, setPage] = useState<PmPage | null>(null);
+  /** The client whose dossier fills the main area, opened from Clients or a client scope. */
+  const [clientPage, setClientPage] = useState<string | null>(null);
   const pm = usePmAlerts();
   /** The task open in its drawer, and a counter its changes bump so the views follow. */
   const [task, setTask] = useState<{ scope: string; id: string } | null>(null);
@@ -71,16 +77,18 @@ export function DeskApp() {
   const openRoom = useCallback((target: FloorRoom) => {
     setProject(target.key);
     setPage(null);
+    setClientPage(null);
     setRoom(target.key);
   }, [setProject]);
 
-  // A task's scope: a project opens its room; a client's own work opens the floor at that client.
+  // A task's scope: a project opens its room; a client's own work opens the client's dossier.
   const openScope = useCallback((scope: string) => {
     setPage(null);
     if (scope.startsWith('@')) {
       setRoom(null);
-      setFocusClient(scope.slice(1));
+      setClientPage(scope.slice(1));
     } else {
+      setClientPage(null);
       setProject(scope);
       setRoom(scope);
     }
@@ -88,19 +96,20 @@ export function DeskApp() {
 
   const openPage = useCallback((next: PmPage) => {
     setRoom(null);
+    setClientPage(null);
     setPage(next);
     setDrawer(null);
   }, []);
 
   // Escape leaves a room or a view for the floor, unless a drawer is open: then it closes the drawer.
   useEffect(() => {
-    if (!room && !page) return;
+    if (!room && !page && !clientPage) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !drawer && !task) { setRoom(null); setPage(null); }
+      if (event.key === 'Escape' && !drawer && !task) { setRoom(null); setPage(null); setClientPage(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [room, page, drawer, task]);
+  }, [room, page, clientPage, drawer, task]);
 
   // The menu or the assistant takes the right-hand side; an open task gives way to it.
   useEffect(() => {
@@ -157,7 +166,15 @@ export function DeskApp() {
       <header className="desk-bar">
         <div className="desk-crumbs">
           <span className="desk-mark" aria-hidden="true" />
-          {page ? (
+          {clientPage ? (
+            <nav aria-label="Floor position" className="crumbs">
+              <button type="button" onClick={() => setClientPage(null)}>All</button>
+              <span aria-hidden="true">/</span>
+              <button type="button" onClick={() => openPage('clients')}>Clients</button>
+              <span aria-hidden="true">/</span>
+              <span aria-current="location">{clientPage}</span>
+            </nav>
+          ) : page ? (
             <nav aria-label="Floor position" className="crumbs">
               <button type="button" onClick={() => setPage(null)}>All</button>
               <span aria-hidden="true">/</span>
@@ -232,8 +249,16 @@ export function DeskApp() {
             onSnooze={pm.snooze}
             onOpenTask={openTask}
           />
+        ) : clientPage ? (
+          <ClientPage client={clientPage} version={alertsVersion} onOpenProject={(key) => openScope(key)} onOpenTask={openTask} />
         ) : page === 'missions' ? (
           <MissionsView projects={projectKeys} version={alertsVersion} onOpenTask={openTask} />
+        ) : page === 'backlog' ? (
+          <BacklogView projects={projectKeys} version={alertsVersion} onOpenTask={openTask} />
+        ) : page === 'timeline' ? (
+          <TimelineView version={alertsVersion} onOpenTask={openTask} />
+        ) : page === 'clients' ? (
+          <ClientsView version={alertsVersion} onOpenClient={(key) => { setPage(null); setClientPage(key); }} />
         ) : floor ? (
           <FloorView
             floor={floor}

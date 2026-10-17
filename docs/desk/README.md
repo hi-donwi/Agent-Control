@@ -39,9 +39,11 @@ loopback server.
 |---|---|---|
 | Floor | Home | Zones (clients) > rooms (projects) > agents. Zoom to a client by its name. |
 | Project room | A room's name on the floor | One project: stage and focus, the mission board, crew, blockers, memory, and context (see Project room). Escape or the breadcrumb goes back to the floor. |
-| Menu drawer | Menu icon | Missions: Inbox, Today, Missions board. Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
+| Menu drawer | Menu icon | Missions: Inbox, Today, Missions board, Backlog, Timeline, Clients. Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
 | Today | Menu > Missions > Today | Every client's day in one view (see Missions). Escape or the breadcrumb goes back to the floor. |
 | Missions board | Menu > Missions > Missions board | Every client's tasks by station, a lane per client, project, or assignee. A card opens the task drawer. |
+| Backlog, Timeline | Menu > Missions | The ranked backlog with milestones; the week on a calendar. |
+| Clients, a dossier | Menu > Missions > Clients | Every client's pulse; one client's profile, projects, own work, interactions, and restricted records. |
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
 | Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes, hand back), and a chat bound to its project. |
 
@@ -97,6 +99,18 @@ in the desk and the browser only; navigation from the menu, with views in the ma
   client's own work. A card shows its scope, due date (late in red, today in orange), checklist
   or milestone progress, who has it (an agent figure for `agent:<tool>`), and a raised hand when
   blocked. Drag a card along its lane to move it.
+- **Backlog**: open work grouped by client or by milestone, ranked by hand - drag a row, or
+  move it up or down - with the milestones and their progress on top. A move numbers the
+  group 1..n and writes only the ranks that change; the rank is the task's own field, so
+  agents read the same order.
+- **Timeline**: the week, Monday first, with due work and reminders on their day and late work
+  in an "Earlier" column. Drag an item to another day to move its due date, or a reminder's
+  day at the same time.
+- **Clients**: every client with its projects, open and late work, alerts, and last touch.
+  A client's dossier holds its profile (from `client.md`), working agreement and stakeholder
+  roles, projects, its own open work, the interaction log (`ws client log`), and - marked
+  "desk only" - its contacts and commercial terms, which the host reads from disk and no
+  agent ever receives.
 - **Task drawer**: station, priority, due date, assignee, labels, blocker, checklist, the
   description and acceptance criteria, a comment box, and the activity - every change by a
   person or an agent. Every edit is one `ws task` command with the revision the drawer read; a
@@ -146,6 +160,7 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | `POST pm/tasks/edit` | `{ scope, id, revision, changes: { title?, priority?, due?, assignee?, parent?, remind_at?, recur?, kind?, rank?, labels_add?, labels_rm?, check_add?, accept_add? } }`: `ws task edit`; `none` clears |
 | `POST pm/tasks/status` · `comment` · `check` · `block` · `unblock` | `ws task status|comment|check|block|unblock` with the revision; 409 when it is stale |
 | `POST pm/remind` | `{ scope, text, at: "YYYY-MM-DD HH:MM", recur? }`: `ws remind` |
+| `POST pm/clients/:client/log` | `{ text }`: `ws client log` |
 | `GET pm/clients` | Every client folder with a `client.md`, with its pulse from `ws client show` |
 | `GET pm/clients/:client` | `ws client show --json`, plus `restrictedText` (contacts, commercial) read by the host for the desk only - never a chat or an agent tool |
 | `POST notes` | `{ project, title, body }` -> `{ path }`. Runs `ws note <project> <title> -` with the body on stdin; 400 with the reason on any refusal |
