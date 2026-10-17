@@ -41,6 +41,16 @@ describe('startCodingSession', () => {
     assert.equal(call.env.WS_AGENT, 'agent-control');
   });
 
+  it('passes brief as the agent start reason and records brief and cardKey', async () => {
+    const root = tmpRoot();
+    const runner = fakeRunner();
+    const session = await startCodingSession(root, 'demo', runner, { brief: 'Fix navigation layout', cardKey: 'task:task-1' });
+    assert.equal(session.brief, 'Fix navigation layout');
+    assert.equal(session.cardKey, 'task:task-1');
+    const [call] = runner.calls;
+    assert.deepEqual(call.args, ['agent', 'start', 'demo', 'agent-control: Fix navigation layout']);
+  });
+
   it('is idempotent: a second call returns the same session without starting another', async () => {
     const root = tmpRoot();
     const runner = fakeRunner();

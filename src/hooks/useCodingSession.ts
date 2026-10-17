@@ -29,15 +29,20 @@ export function useCodingSession(project: string | undefined) {
     return () => clearInterval(id);
   }, [verifying, refresh]);
 
-  const start = useCallback(async () => {
-    if (!project || busy) return;
+  const start = useCallback(async (opts?: { brief?: string; cardKey?: string }) => {
+    if (!project || busy) return null;
     setBusy(true);
     setError('');
     try {
-      const data = await apiFetch<{ session: CodingSession }>(`coding-sessions/${encodeURIComponent(project)}/start`, { method: 'POST' });
+      const data = await apiFetch<{ session: CodingSession }>(`coding-sessions/${encodeURIComponent(project)}/start`, {
+        method: 'POST',
+        body: JSON.stringify(opts ?? {}),
+      });
       setSession(data.session);
+      return data.session;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start');
+      return null;
     } finally {
       setBusy(false);
     }
@@ -58,8 +63,8 @@ export function useCodingSession(project: string | undefined) {
   }, [project, busy]);
 
   /** Runs a hand-back step; the host answers with the reason when it refuses. */
-  const handBack = useCallback(async (step: 'verify' | 'ship' | 'discard', body?: Record<string, string>) => {
-    if (!project || busy) return;
+  const handBack = useCallback(async (step: 'verify' | 'ship' | 'discard', body?: Record<string, string>): Promise<boolean> => {
+    if (!project || busy) return false;
     setBusy(true);
     setError('');
     try {
@@ -70,13 +75,15 @@ export function useCodingSession(project: string | undefined) {
       if (step === 'discard') setSession(null);
       else if (data.session) setSession(data.session);
       else refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${step}`);
       refresh();
+      return false;
     } finally {
       setBusy(false);
     }
   }, [project, busy, refresh]);
 
-  return { session, known, start, stop, handBack, busy, error };
+  return { session, known, start, stop, handBack, refresh, busy, error };
 }

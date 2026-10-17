@@ -2,6 +2,7 @@ import { AgentFigure } from '../floor/AgentFigure';
 import { HandGlyph } from './glyphs';
 import { MissionBoard } from './MissionBoard';
 import { useProject } from './useProject';
+import { useCodingSession } from '../../hooks/useCodingSession';
 import { STATE_LABELS, type FloorAgent, type ProjectDetail } from '../types';
 import { ago } from '../time';
 
@@ -39,11 +40,13 @@ const KIND_LABEL: Record<Blocker['kind'], string> = { approval: 'needs you', tas
  */
 export function ProjectRoom({ project, version, onAgent, onAssistant, onNotes }: Props) {
   const { detail, error, reload } = useProject(project, version);
+  const coding = useCodingSession(project);
   if (error && !detail) return <p className="desk-loading" role="alert">[ERROR] {error}</p>;
   if (!detail) return <p className="desk-loading" role="status">Opening {project}...</p>;
 
   const holds = blockers(detail);
   const active = detail.agents.filter((a) => a.state !== 'idle' && a.state !== 'offline').length;
+  const activeBranch = coding.session?.branch || detail.codingSession?.branch;
 
   return (
     <div className="room-view" aria-label={`Project room ${detail.key}`}>
@@ -61,13 +64,20 @@ export function ProjectRoom({ project, version, onAgent, onAssistant, onNotes }:
           <span className="chip">{detail.agents.length} in the room{active ? ` · ${active} active` : ''}</span>
           <span className={`chip${holds.length ? ' is-attn' : ''}`}>{holds.length} {holds.length === 1 ? 'blocker' : 'blockers'}</span>
           <span className="chip">{detail.runs.length} open {detail.runs.length === 1 ? 'run' : 'runs'}</span>
-          {detail.codingSession && <span className="chip is-accent">coding on {detail.codingSession.branch}</span>}
+          {activeBranch && <span className="chip is-accent">coding on {activeBranch}</span>}
           <button type="button" className="btn btn-primary" onClick={() => onAssistant(detail.key)}>Talk to the agent</button>
         </div>
       </header>
 
       <div className="room-grid">
-        <MissionBoard detail={detail} onChanged={reload} />
+        <MissionBoard
+          detail={detail}
+          coding={coding}
+          onChanged={() => {
+            reload();
+            void coding.refresh();
+          }}
+        />
 
         <aside className="room-side">
           <section className="panel" aria-label="Crew">

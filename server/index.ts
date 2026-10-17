@@ -408,7 +408,9 @@ app.get(`${AGENT_API}/coding-sessions/:project`, (c) => {
 
 app.post(`${AGENT_API}/coding-sessions/:project/start`, async (c) => {
   try {
-    const session = await startCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
+    let body: { brief?: string; cardKey?: string } | undefined;
+    try { body = await c.req.json(); } catch { /* body is optional */ }
+    const session = await startCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT), body);
     return c.json({ session });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
