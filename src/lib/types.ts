@@ -66,6 +66,8 @@ export interface CodingSession {
   worktree: string;
   branch: string;
   startedAt: string;
+  brief?: string;
+  cardKey?: string;
   verify?: SessionVerify;
   shipped?: { head: string; base: string; commits: number; at: string };
 }

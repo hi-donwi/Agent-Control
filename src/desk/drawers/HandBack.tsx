@@ -22,8 +22,13 @@ function seconds(ms: number | undefined): string {
  * exactly the content in the worktree, and both ship and discard ask once more before
  * they act - a push and a deleted branch cannot be taken back.
  */
-export function HandBack({ coding }: { coding: ReturnType<typeof useCodingSession> }) {
-  const { session, handBack, busy } = coding;
+interface Props {
+  coding: ReturnType<typeof useCodingSession>;
+  onShipped?: () => void;
+}
+
+export function HandBack({ coding, onShipped }: Props) {
+  const { session, handBack, busy, error } = coding;
   const [message, setMessage] = useState('');
   const [confirm, setConfirm] = useState<'ship' | 'discard' | null>(null);
   if (!session) return null;
@@ -34,6 +39,8 @@ export function HandBack({ coding }: { coding: ReturnType<typeof useCodingSessio
   return (
     <section className="handback" aria-label="Hand back">
       <h3 className="handback-title">Hand back</h3>
+
+      {error && <p className="handback-detail handback-error" role="alert">[ERROR] {error}</p>}
 
       <div className="handback-row">
         <button type="button" className="btn" onClick={() => void handBack('verify')} disabled={busy || verify?.state === 'running'}>
@@ -71,7 +78,17 @@ export function HandBack({ coding }: { coding: ReturnType<typeof useCodingSessio
         <div className="handback-confirm" role="alertdialog" aria-label="Confirm ship">
           <p>Push <code>{session.branch}</code> to the default branch on origin? Only a fast-forward is pushed, and a push cannot be taken back.</p>
           <div className="handback-actions">
-            <button type="button" className="btn btn-primary" onClick={() => { setConfirm(null); void handBack('ship', { message }); }}>Push to main</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                setConfirm(null);
+                const ok = await handBack('ship', { message });
+                if (ok) onShipped?.();
+              }}
+            >
+              Push to main
+            </button>
             <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
           </div>
         </div>

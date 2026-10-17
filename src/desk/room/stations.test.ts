@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { canMove, cardsFrom, holdActions, holdRequest, moveRequest, releaseRequest } from './stations';
+import { canAssign, canMove, cardsFrom, holdActions, holdRequest, moveRequest, releaseRequest } from './stations';
 
 const detail = {
   tasks: [
@@ -32,6 +32,12 @@ describe('mission board stations', () => {
     assert.equal(canMove(task, 'hands'), false);
     assert.equal(canMove(step, 'review'), false);
     assert.equal(canMove(step, 'hands'), true);
+  });
+
+  it('allows assignment to agent only for cards at ready station', () => {
+    const [inProgressTask, readyTask] = cardsFrom(detail);
+    assert.equal(canAssign(readyTask), true);
+    assert.equal(canAssign(inProgressTask), false);
   });
 
   it('builds the ws-backed request with the revision the card was read at', () => {

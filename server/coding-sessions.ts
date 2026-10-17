@@ -17,6 +17,8 @@ export interface CodingSession {
   worktree: string;
   branch: string;
   startedAt: string;
+  brief?: string;
+  cardKey?: string;
   /** The latest `ws verify` of the worktree (server/hand-back.ts). */
   verify?: VerifyState;
   /** The latest push of the session's work to the project's main branch. */
@@ -73,19 +75,49 @@ function parseWorktreePath(output: string): string | null {
   return line ? line.slice('cd '.length).trim() : null;
 }
 
+export interface StartSessionOptions {
+  brief?: string;
+  cardKey?: string;
+}
+
 /** Starts (or, idempotently, returns) the project's coding session. */
-export async function startCodingSession(root: string, project: string, runner: SessionRunner): Promise<CodingSession> {
+export async function startCodingSession(
+  root: string,
+  project: string,
+  runner: SessionRunner,
+  opts?: StartSessionOptions,
+): Promise<CodingSession> {
   const existing = readCodingSession(root, project);
-  if (existing) return existing;
+  if (existing) {
+    if (opts && (opts.brief || opts.cardKey)) {
+      const updated: CodingSession = {
+        ...existing,
+        ...(opts.brief ? { brief: opts.brief } : {}),
+        ...(opts.cardKey ? { cardKey: opts.cardKey } : {}),
+      };
+      writeCodingSession(root, project, updated);
+      return updated;
+    }
+    return existing;
+  }
   const id = randomUUID();
+  const reason = opts?.brief ? `agent-control: ${opts.brief}` : `agent-control coding session ${id}`;
   const output = await runner.runWs(
-    ['agent', 'start', project, `agent-control coding session ${id}`],
+    ['agent', 'start', project, reason],
     { WS_SESSION_ID: id, WS_AGENT: 'agent-control' },
   );
   const worktree = parseWorktreePath(output);
   if (!worktree) throw new Error('ws agent start did not report a worktree path');
   const branch = await runner.currentBranch(worktree);
-  const session: CodingSession = { id, project, worktree, branch, startedAt: new Date().toISOString() };
+  const session: CodingSession = {
+    id,
+    project,
+    worktree,
+    branch,
+    startedAt: new Date().toISOString(),
+    ...(opts?.brief ? { brief: opts.brief } : {}),
+    ...(opts?.cardKey ? { cardKey: opts.cardKey } : {}),
+  };
   writeCodingSession(root, project, session);
   return session;
 }

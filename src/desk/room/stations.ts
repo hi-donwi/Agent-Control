@@ -87,6 +87,11 @@ export function canMove(card: Card, to: StationId): boolean {
   return Boolean(station && (card.kind === 'task' || station.planStatus));
 }
 
+/** True when card is at "Ready for an agent" and can be assigned to start a coding session. */
+export function canAssign(card: Card): boolean {
+  return card.station === 'ready';
+}
+
 /** The desk endpoint and body that move `card` to `to` through `ws`. */
 export function moveRequest(card: Card, to: StationId, project: string): { path: string; body: Record<string, string> } {
   const station = STATIONS.find((s) => s.id === to)!;

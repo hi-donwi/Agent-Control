@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FloorView, zoneLabel } from './floor/FloorView';
 import { ProjectRoom } from './room/ProjectRoom';
 import { MenuDrawer, rooms, type MenuSection } from './drawers/MenuDrawer';
@@ -82,6 +82,32 @@ export function DeskApp() {
     return entry ? JSON.stringify(entry) : '';
   }, [floor, room]);
   const waiting = floor?.totals.waiting ?? 0;
+
+  // Track previous waiting count to alert when new agents need attention / approval.
+  const prevWaiting = useRef<number | null>(null);
+  useEffect(() => {
+    const base = 'desk';
+    document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
+
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (prevWaiting.current !== null && waiting > prevWaiting.current) {
+        const delta = waiting - prevWaiting.current;
+        if (Notification.permission === 'granted') {
+          try {
+            const notif = new Notification('Agent approval needed', {
+              body: `${delta} agent${delta === 1 ? '' : 's'} raised a hand and need${delta === 1 ? 's' : ''} your approval on desk.`,
+            });
+            notif.onclick = () => window.focus();
+          } catch {
+            // Notification dispatch may fail in non-secure or restricted contexts
+          }
+        }
+      } else if (prevWaiting.current === null && Notification.permission === 'default') {
+        void Notification.requestPermission().catch(() => undefined);
+      }
+    }
+    prevWaiting.current = waiting;
+  }, [waiting]);
 
   return (
     <div className="desk">

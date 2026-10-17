@@ -1,11 +1,15 @@
 import { useMemo, useState, type DragEvent } from 'react';
 import { apiFetch } from '../../lib/api';
+import { AgentFigure } from '../floor/AgentFigure';
+import { HandBack } from '../drawers/HandBack';
 import { HandGlyph, StationGlyph } from './glyphs';
-import { STATIONS, canMove, cardsFrom, holdActions, holdRequest, moveRequest, releaseRequest, type Card, type HoldMode, type StationId } from './stations';
+import { STATIONS, canAssign, canMove, cardsFrom, holdActions, holdRequest, moveRequest, releaseRequest, type Card, type HoldMode, type StationId } from './stations';
+import type { useCodingSession } from '../../hooks/useCodingSession';
 import type { ProjectDetail } from '../types';
 
 interface Props {
   detail: ProjectDetail;
+  coding?: ReturnType<typeof useCodingSession>;
   onChanged: () => void;
 }
 
@@ -22,7 +26,7 @@ const HOLD_PROMPT: Record<HoldMode, string> = { block: 'What blocks it?', drop: 
  * menu, moves it through `ws` with the revision it was read at. A blocked card raises its
  * hand and says why; blocking a card, or dropping a step, asks for the reason first.
  */
-export function MissionBoard({ detail, onChanged }: Props) {
+export function MissionBoard({ detail, coding, onChanged }: Props) {
   const cards = useMemo(() => cardsFrom(detail), [detail]);
   const [dragging, setDragging] = useState<Card | null>(null);
   const [error, setError] = useState('');
@@ -46,6 +50,14 @@ export function MissionBoard({ detail, onChanged }: Props) {
     if (!canMove(card, to)) return;
     const { path, body } = moveRequest(card, to, detail.key);
     void run(path, body);
+  };
+
+  const assign = async (card: Card) => {
+    if (!coding) return;
+    const sess = await coding.start({ brief: card.title, cardKey: card.key });
+    if (sess) {
+      move(card, 'hands');
+    }
   };
 
   const add = () => {
@@ -104,56 +116,115 @@ export function MissionBoard({ detail, onChanged }: Props) {
               )}
 
               <ol className="station-cards">
-                {shown.map((card) => (
-                  <li
-                    key={card.key}
-                    className={`mission mission-${card.kind} priority-${card.priority}${card.blocked ? ' is-blocked' : ''}${dragging?.key === card.key ? ' is-dragging' : ''}`}
-                    draggable
-                    onDragStart={() => setDragging(card)}
-                    onDragEnd={() => setDragging(null)}
-                    aria-label={`${card.kind === 'task' ? 'Task' : 'Run step'}: ${card.title}${card.blocked ? `, blocked: ${card.reason}` : ''}`}
-                  >
-                    <p className="mission-title">{card.title}</p>
-                    <p className="mission-meta">
-                      {card.kind === 'step' ? <span className="mission-run">run step {card.ref} · {card.runTitle}</span> : <span className="mission-priority">{card.priority}</span>}
-                      {card.station === 'hands' && <span className="mission-busy" aria-hidden="true"><i /><i /><i /></span>}
-                    </p>
-                    {card.blocked && (
-                      <p className="mission-blocked"><HandGlyph /><span>{card.reason || 'blocked'}</span></p>
-                    )}
-                    <div className="mission-actions">
-                      <select
-                        aria-label={`Move ${card.title}`}
-                        value=""
-                        onChange={(event) => move(card, event.target.value as StationId)}
-                      >
-                        <option value="">Move to...</option>
-                        {STATIONS.filter((s) => canMove(card, s.id)).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                      </select>
+                {shown.map((card) => {
+                  const isReviewTarget = Boolean(
+                    card.station === 'review' &&
+                    coding?.session &&
+                    (coding.session.cardKey
+                      ? coding.session.cardKey === card.key
+                      : here.find((c) => c.station === 'review')?.key === card.key)
+                  );
+
+                  return (
+                    <li
+                      key={card.key}
+                      className={`mission mission-${card.kind} priority-${card.priority}${card.blocked ? ' is-blocked' : ''}${dragging?.key === card.key ? ' is-dragging' : ''}`}
+                      draggable={!holding}
+                      onDragStart={() => setDragging(card)}
+                      onDragEnd={() => setDragging(null)}
+                      aria-label={`${card.kind === 'task' ? 'Task' : 'Run step'}: ${card.title}${card.blocked ? `, blocked: ${card.reason}` : ''}`}
+                    >
+                      <p className="mission-title">{card.title}</p>
+                      <p className="mission-meta">
+                        {card.kind === 'step' ? <span className="mission-run">run step {card.ref} · {card.runTitle}</span> : <span className="mission-priority">{card.priority}</span>}
+                        {card.station === 'hands' && <span className="mission-busy" aria-hidden="true"><i /><i /><i /></span>}
+                      </p>
                       {card.blocked && (
-                        <button type="button" className="mission-link" onClick={() => release(card)}>Unblock</button>
+                        <p className="mission-blocked"><HandGlyph /><span>{card.reason || 'blocked'}</span></p>
                       )}
-                      {holdActions(card).map((mode) => (
-                        <button key={mode} type="button" className="mission-link" onClick={() => { setHolding({ key: card.key, mode }); setReason(''); }}>
-                          {HOLD_LABEL[mode]}
-                        </button>
-                      ))}
-                    </div>
-                    {holding?.key === card.key && (
-                      <form className="mission-block" onSubmit={(event) => { event.preventDefault(); hold(card, holding.mode); }}>
-                        <input
-                          aria-label={holding.mode === 'drop' ? `Why drop ${card.title}` : `What blocks ${card.title}`}
-                          placeholder={HOLD_PROMPT[holding.mode]}
-                          value={reason}
-                          onChange={(event) => setReason(event.target.value)}
-                          autoFocus
-                        />
-                        <button type="submit" className="btn">{HOLD_LABEL[holding.mode]}</button>
-                        <button type="button" className="mission-link" onClick={() => setHolding(null)}>Cancel</button>
-                      </form>
-                    )}
-                  </li>
-                ))}
+
+                      {canAssign(card) && (
+                        <div className="mission-assign">
+                          <button
+                            type="button"
+                            className="btn btn-primary mission-assign-btn"
+                            disabled={coding?.busy || (Boolean(coding?.session) && coding?.session?.cardKey !== card.key)}
+                            onClick={() => void assign(card)}
+                          >
+                            Assign to agent
+                          </button>
+                        </div>
+                      )}
+
+                      {card.station === 'hands' && (
+                        <div className="mission-in-hands">
+                          <div className="mission-agent-working">
+                            <AgentFigure
+                              state={card.blocked ? 'waiting' : 'typing'}
+                              tool={detail.agents[0]?.tool || 'agent-control'}
+                              size={44}
+                            />
+                            <div className="mission-agent-info">
+                              <span className="mission-agent-label">
+                                {card.blocked ? 'Waiting for input' : 'Working on this task...'}
+                              </span>
+                              {coding?.session && (
+                                <span className="mission-agent-branch">
+                                  <code>{coding.session.branch}</code>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm mission-review-btn"
+                            onClick={() => move(card, 'review')}
+                          >
+                            Ready for review
+                          </button>
+                        </div>
+                      )}
+
+                      {isReviewTarget && coding && (
+                        <div className="mission-handback-panel">
+                          <HandBack coding={coding} onShipped={() => move(card, 'shipped')} />
+                        </div>
+                      )}
+
+                      <div className="mission-actions">
+                        <select
+                          aria-label={`Move ${card.title}`}
+                          value=""
+                          onChange={(event) => move(card, event.target.value as StationId)}
+                        >
+                          <option value="">Move to...</option>
+                          {STATIONS.filter((s) => canMove(card, s.id)).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </select>
+                        {card.blocked && (
+                          <button type="button" className="mission-link" onClick={() => release(card)}>Unblock</button>
+                        )}
+                        {holdActions(card).map((mode) => (
+                          <button key={mode} type="button" className="mission-link" onClick={() => { setHolding({ key: card.key, mode }); setReason(''); }}>
+                            {HOLD_LABEL[mode]}
+                          </button>
+                        ))}
+                      </div>
+                      {holding?.key === card.key && (
+                        <form className="mission-block" onSubmit={(event) => { event.preventDefault(); hold(card, holding.mode); }}>
+                          <input
+                            aria-label={holding.mode === 'drop' ? `Why drop ${card.title}` : `What blocks ${card.title}`}
+                            placeholder={HOLD_PROMPT[holding.mode]}
+                            value={reason}
+                            onChange={(event) => setReason(event.target.value)}
+                            autoFocus
+                          />
+                          <button type="submit" className="btn">{HOLD_LABEL[holding.mode]}</button>
+                          <button type="button" className="mission-link" onClick={() => setHolding(null)}>Cancel</button>
+                        </form>
+                      )}
+                    </li>
+                  );
+                })}
                 {here.length === 0 && <li className="station-empty" aria-hidden="true">nothing here</li>}
               </ol>
             </section>

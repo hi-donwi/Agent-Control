@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useChat } from './hooks/useChat';
 import { useProviders } from './hooks/useProviders';
 import { useProjects } from './hooks/useProjects';
@@ -73,6 +73,32 @@ export function App() {
 
   const { pending: pendingApprovals, decide: decideApproval, decidingIds } = useApprovals(project?.key);
   const coding = useCodingSession(project?.key);
+
+  const prevApprovalsCount = useRef<number | null>(null);
+  useEffect(() => {
+    const count = pendingApprovals.length;
+    const base = 'Agent Control';
+    document.title = count > 0 ? `(${count}) ${base}` : base;
+
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (prevApprovalsCount.current !== null && count > prevApprovalsCount.current) {
+        const delta = count - prevApprovalsCount.current;
+        if (Notification.permission === 'granted') {
+          try {
+            const notif = new Notification('Agent approval needed', {
+              body: `${delta} new action${delta === 1 ? '' : 's'} require your approval.`,
+            });
+            notif.onclick = () => window.focus();
+          } catch {
+            // ignore
+          }
+        }
+      } else if (prevApprovalsCount.current === null && Notification.permission === 'default') {
+        void Notification.requestPermission().catch(() => undefined);
+      }
+    }
+    prevApprovalsCount.current = count;
+  }, [pendingApprovals.length]);
 
   const handleSend = useCallback((content: string) => {
     chat.sendMessage(content, selectedProvider, selectedModel, project?.key);
@@ -167,8 +193,8 @@ export function App() {
             session={coding.session}
             busy={coding.busy}
             error={coding.error}
-            onStart={coding.start}
-            onStop={coding.stop}
+            onStart={() => void coding.start()}
+            onStop={() => void coding.stop()}
           />
         )}
 

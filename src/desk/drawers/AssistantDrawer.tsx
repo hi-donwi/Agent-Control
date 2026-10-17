@@ -137,7 +137,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
           ) : (
             <>
               <span className="session-text">The agent edits a separate worktree, never the checkout.</span>
-              <button type="button" className="btn" onClick={coding.start} disabled={coding.busy}>
+              <button type="button" className="btn" onClick={() => void coding.start()} disabled={coding.busy}>
                 {coding.busy ? 'Starting...' : 'Start coding session'}
               </button>
             </>
