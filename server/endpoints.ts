@@ -93,17 +93,32 @@ export function parseEndpoints(raw: unknown): Endpoint[] {
   });
 }
 
+import { detectLokalEndpoint } from './lokal.js';
+export { detectLokalEndpoint };
+
 /** Endpoints from `<workspace>/.local/agent/endpoints.json`; none when the file is absent. */
-export function loadEndpoints(workspaceRoot: string): Endpoint[] {
+export function loadEndpoints(
+  workspaceRoot: string,
+  opts?: { autoDiscoverLokal?: boolean; home?: string },
+): Endpoint[] {
   const path = endpointsPath(workspaceRoot);
-  if (!existsSync(path)) return [];
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
-    throw new EndpointConfigError(`${path} is not valid JSON`);
+  let list: Endpoint[] = [];
+  if (existsSync(path)) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(path, 'utf-8'));
+    } catch {
+      throw new EndpointConfigError(`${path} is not valid JSON`);
+    }
+    list = parseEndpoints(raw);
   }
-  return parseEndpoints(raw);
+  if (opts?.autoDiscoverLokal) {
+    const lokal = detectLokalEndpoint(opts.home);
+    if (lokal && !list.some((e) => e.name === 'lokal')) {
+      list.push(lokal);
+    }
+  }
+  return list;
 }
 
 export interface CredentialReaders {

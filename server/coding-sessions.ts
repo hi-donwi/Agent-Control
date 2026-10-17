@@ -43,30 +43,84 @@ export interface SessionRunner {
   currentBranch(worktree: string): Promise<string>;
 }
 
+interface StoredSessions {
+  activeId?: string;
+  sessions: CodingSession[];
+}
+
 function sessionFile(root: string, project: string): string {
   if (!KEY_RE.test(project)) throw new Error(`invalid project key '${project}'`);
   return join(root, '.local', 'agent', 'coding-sessions', `${project}.json`);
 }
 
-/** The project's active coding session, or null when there is none or its record does not parse. */
-export function readCodingSession(root: string, project: string): CodingSession | null {
-  const path = sessionFile(root, project);
-  if (!existsSync(path)) return null;
+function parseStoredSessions(content: string): CodingSession[] {
   try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as CodingSession;
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed)) return parsed as CodingSession[];
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray((parsed as StoredSessions).sessions)) {
+        return (parsed as StoredSessions).sessions;
+      }
+      if (typeof (parsed as CodingSession).id === 'string') {
+        return [parsed as CodingSession];
+      }
+    }
+    return [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-export function writeCodingSession(root: string, project: string, session: CodingSession | null): void {
+/** Lists all active coding sessions for the project. */
+export function listCodingSessions(root: string, project: string): CodingSession[] {
   const path = sessionFile(root, project);
+  if (!existsSync(path)) return [];
+  try {
+    return parseStoredSessions(readFileSync(path, 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+/** The project's active coding session (or session by id), or null when none exists. */
+export function readCodingSession(root: string, project: string, sessionId?: string): CodingSession | null {
+  const list = listCodingSessions(root, project);
+  if (list.length === 0) return null;
+  if (sessionId) {
+    return list.find((s) => s.id === sessionId) ?? null;
+  }
+  return list[list.length - 1] ?? null;
+}
+
+export function writeCodingSession(root: string, project: string, session: CodingSession | null, sessionId?: string): void {
+  const path = sessionFile(root, project);
+  const current = listCodingSessions(root, project);
+  let updated: CodingSession[];
   if (session === null) {
+    if (sessionId) {
+      updated = current.filter((s) => s.id !== sessionId);
+    } else {
+      updated = [];
+    }
+  } else {
+    const existingIdx = current.findIndex((s) => s.id === session.id);
+    if (existingIdx >= 0) {
+      updated = [...current];
+      updated[existingIdx] = session;
+    } else {
+      updated = [...current, session];
+    }
+  }
+  if (updated.length === 0) {
     rmSync(path, { force: true });
     return;
   }
   mkdirSync(join(root, '.local', 'agent', 'coding-sessions'), { recursive: true });
-  writeFileSync(path, JSON.stringify(session, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
+  const payload: StoredSessions = {
+    activeId: updated[updated.length - 1].id,
+    sessions: updated,
+  };
+  writeFileSync(path, JSON.stringify(payload, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
 }
 
 /** `ws agent start` prints `cd <path>` as its one machine-readable line, around coloured, human-facing ones. */
@@ -78,28 +132,42 @@ function parseWorktreePath(output: string): string | null {
 export interface StartSessionOptions {
   brief?: string;
   cardKey?: string;
+  allowParallel?: boolean;
 }
 
-/** Starts (or, idempotently, returns) the project's coding session. */
+/** Starts a coding session for a project. Supports parallel sessions per project. */
 export async function startCodingSession(
   root: string,
   project: string,
   runner: SessionRunner,
   opts?: StartSessionOptions,
 ): Promise<CodingSession> {
-  const existing = readCodingSession(root, project);
-  if (existing) {
-    if (opts && (opts.brief || opts.cardKey)) {
-      const updated: CodingSession = {
-        ...existing,
-        ...(opts.brief ? { brief: opts.brief } : {}),
-        ...(opts.cardKey ? { cardKey: opts.cardKey } : {}),
-      };
+  const existingList = listCodingSessions(root, project);
+
+  // If a session already exists for this cardKey, update brief and return it
+  if (opts?.cardKey) {
+    const forCard = existingList.find((s) => s.cardKey === opts.cardKey);
+    if (forCard) {
+      if (opts.brief && forCard.brief !== opts.brief) {
+        const updated: CodingSession = { ...forCard, brief: opts.brief };
+        writeCodingSession(root, project, updated);
+        return updated;
+      }
+      return forCard;
+    }
+  }
+
+  // Without cardKey and without explicit parallel permission, return latest session for idempotency
+  if (!opts?.cardKey && !opts?.allowParallel && existingList.length > 0) {
+    const existing = existingList[existingList.length - 1];
+    if (opts?.brief) {
+      const updated: CodingSession = { ...existing, brief: opts.brief };
       writeCodingSession(root, project, updated);
       return updated;
     }
     return existing;
   }
+
   const id = randomUUID();
   const reason = opts?.brief ? `agent-control: ${opts.brief}` : `agent-control coding session ${id}`;
   const output = await runner.runWs(
@@ -123,13 +191,13 @@ export async function startCodingSession(
 }
 
 /**
- * Stops the project's coding session, if any. The clock and session lock close; the
- * worktree itself is kept for review, exactly as `ws agent stop` leaves it.
+ * Stops a project's coding session. If sessionId is given, stops that specific session;
+ * otherwise stops the latest active session.
  */
-export async function stopCodingSession(root: string, project: string, runner: SessionRunner): Promise<boolean> {
-  const session = readCodingSession(root, project);
+export async function stopCodingSession(root: string, project: string, runner: SessionRunner, sessionId?: string): Promise<boolean> {
+  const session = readCodingSession(root, project, sessionId);
   if (!session) return false;
   await runner.runWs(['agent', 'stop', 'agent-control session ended'], { WS_SESSION_ID: session.id, WS_AGENT: 'agent-control' });
-  writeCodingSession(root, project, null);
+  writeCodingSession(root, project, null, session.id);
   return true;
 }

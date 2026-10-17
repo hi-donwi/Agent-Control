@@ -15,7 +15,9 @@
     "test": "tsx --test 'server/**/*.test.ts' 'src/**/*.test.ts'",
     "test:ui": "playwright test",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.71",

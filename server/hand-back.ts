@@ -47,8 +47,8 @@ function gitSucceeds(cwd: string, args: string[]): Promise<boolean> {
   return git(cwd, args).then(() => true, () => false);
 }
 
-function sessionOf(root: string, project: string): CodingSession {
-  const session = readCodingSession(root, project);
+function sessionOf(root: string, project: string, sessionId?: string): CodingSession {
+  const session = readCodingSession(root, project, sessionId);
   if (!session) throw new HandBackConflict('this project has no coding session');
   return session;
 }
@@ -74,7 +74,7 @@ export async function worktreeTree(worktree: string): Promise<string> {
 
 /** Writes `change` into the session record, unless the session ended or was replaced meanwhile. */
 function update(root: string, project: string, id: string, change: (session: CodingSession) => CodingSession): CodingSession | null {
-  const current = readCodingSession(root, project);
+  const current = readCodingSession(root, project, id);
   if (!current || current.id !== id) return null;
   const next = change(current);
   writeCodingSession(root, project, next);
@@ -90,8 +90,8 @@ interface VerifyReport {
  * Starts `ws verify --worktree` for the session and records it as running; `done`
  * settles once the result is recorded. A verify already running is returned as it is.
  */
-export async function startVerify(root: string, project: string, deps: HandBackDeps): Promise<{ session: CodingSession; done: Promise<void> }> {
-  const session = sessionOf(root, project);
+export async function startVerify(root: string, project: string, deps: HandBackDeps, sessionId?: string): Promise<{ session: CodingSession; done: Promise<void> }> {
+  const session = sessionOf(root, project, sessionId);
   if (session.verify?.state === 'running') return { session, done: Promise.resolve() };
   const tree = await worktreeTree(session.worktree);
   const running = update(root, project, session.id, (s) => ({ ...s, verify: { state: 'running', tree, startedAt: new Date().toISOString() } }))!;
@@ -134,8 +134,8 @@ async function baseBranch(worktree: string): Promise<string> {
  * Pushes the session's verified work to `origin/<main>`: commits what is uncommitted
  * with `message`, then pushes only if that is a fast-forward. Nothing is forced.
  */
-export async function shipSession(root: string, project: string, message: string) {
-  const session = sessionOf(root, project);
+export async function shipSession(root: string, project: string, message: string, sessionId?: string) {
+  const session = sessionOf(root, project, sessionId);
   const verified = session.verify;
   if (!verified || verified.state !== 'pass') throw new HandBackConflict('verify must pass before the work can ship');
   const wt = session.worktree;
@@ -172,8 +172,8 @@ export async function shipSession(root: string, project: string, message: string
  * Ends the session and throws its work away: `ws agent stop`, then the worktree and its
  * branch are removed through the product repository's own git.
  */
-export async function discardSession(root: string, project: string, deps: HandBackDeps): Promise<void> {
-  const session = sessionOf(root, project);
+export async function discardSession(root: string, project: string, deps: HandBackDeps, sessionId?: string): Promise<void> {
+  const session = sessionOf(root, project, sessionId);
   const base = join(root, '.local', 'worktrees', project);
   const real = (path: string) => (existsSync(path) ? realpathSync(path) : path);
   const worktree = real(session.worktree);
@@ -187,5 +187,5 @@ export async function discardSession(root: string, project: string, deps: HandBa
     await git(root, ['--git-dir', common, 'worktree', 'remove', '--force', worktree]);
     await git(root, ['--git-dir', common, 'branch', '-D', session.branch]).catch(() => '');
   }
-  writeCodingSession(root, project, null);
+  writeCodingSession(root, project, null, session.id);
 }
