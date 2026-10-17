@@ -654,8 +654,11 @@ serve({ fetch: app.fetch, hostname: HOST, port: PORT }, () => {
   console.log('  │                                          │');
   console.log(`  │   Local:  http://${HOST}:${PORT}         │`);
   console.log('  │                                          │');
-  console.log(`  │   Workspace: ${WORKSPACE_ROOT.split('/').pop()}  │`);
-  console.log(`  │   Providers: ${availableProviders(config).join(', ') || 'none configured'}  │`);
+  const bannerProviders = [
+    ...Object.keys(endpoints),
+    ...availableProviders(config).filter((p) => !(p in endpoints)),
+  ];
+  console.log(`  │   Providers: ${bannerProviders.join(', ') || 'none configured'}  │`);
   console.log('  │                                          │');
   console.log('  ╰──────────────────────────────────────────╯');
   console.log('');
