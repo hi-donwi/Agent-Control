@@ -14,6 +14,7 @@ import { useApprovals } from '../../hooks/useApprovals';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { ChangesView } from './ChangesView';
 import { HistoryList } from './HistoryList';
+import { HandBack } from './HandBack';
 import type { useScopedChat } from '../useScopedChat';
 import type { ApprovalRequest, Provider } from '../../lib/types';
 
@@ -190,7 +191,8 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         </div>
       ) : tab === 'changes' && scope && coding.session ? (
         <div className="drawer-body">
-          <ChangesView project={scope} version={turnVersion} />
+          <HandBack coding={coding} />
+          <ChangesView project={scope} version={`${turnVersion}:${coding.session.shipped?.head ?? ''}`} />
         </div>
       ) : (
         <div className="assistant-chat">

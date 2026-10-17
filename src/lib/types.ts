@@ -66,4 +66,16 @@ export interface CodingSession {
   worktree: string;
   branch: string;
   startedAt: string;
+  verify?: SessionVerify;
+  shipped?: { head: string; base: string; commits: number; at: string };
+}
+
+/** The latest `ws verify` of a coding session's worktree (server/hand-back.ts). */
+export interface SessionVerify {
+  state: 'running' | 'pass' | 'findings' | 'incomplete' | 'stale' | 'error';
+  tree: string;
+  startedAt: string;
+  finishedAt?: string;
+  commands?: Array<{ id: string; status: string; required?: boolean; duration_ms?: number }>;
+  error?: string;
 }

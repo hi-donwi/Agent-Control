@@ -41,7 +41,7 @@ loopback server.
 | Project room | A room's name on the floor | One project: stage and focus, the mission board, crew, blockers, memory, and context (see Project room). Escape or the breadcrumb goes back to the floor. |
 | Menu drawer | Menu icon | Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
-| Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes), and a chat bound to its project. |
+| Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes, hand back), and a chat bound to its project. |
 
 ## Project room
 
@@ -116,6 +116,9 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | `GET projects/:key` | The project room in one read: registry row, memory (`updated`, `stage`, `focus`, `nextUp`, `blockedOn`, the last six `decisions` and `log` entries, `notes`), `tasks` (operator tasks with `blocked` and `blockedReason`), `plans` (plan rows), open `runs`, `approvals`, the room's `agents`, `codingSession`, and `context` (`pack`, `policy`); 404 for an unknown or invalid key |
 | `POST plan/status` | `{ project, run, n, status, revision, notes? }` -> `{ run, n, status, revision }`. Runs `ws plan status --operator`: the person at the desk must own the run, one row in progress, a reason for blocked or dropped; 409 when the plan changed since it was shown |
 | `GET /api/agent/coding-sessions/:project/diff` | `{ session, diff, truncated }`: the session worktree's `git diff`, capped at 400 KB |
+| `POST /api/agent/coding-sessions/:project/verify` | 202 `{ session }` with `verify.state: running`; runs `ws verify <key> --worktree <worktree> --json` in the background, and the session record holds the result (see Hand back) |
+| `POST /api/agent/coding-sessions/:project/ship` | `{ message }` -> `{ shipped: { head, base, commits, at } }`; 409 when verify has not passed on the worktree's current content, or `origin/<base>` moved past the branch |
+| `POST /api/agent/coding-sessions/:project/discard` | `{ discarded: true }`: `ws agent stop`, then the worktree and its branch are removed; refused for a worktree outside `.local/worktrees/<key>/` |
 | `GET events` | Server-sent events: `floor` with the same body whenever something on it changes (checked every second), `ping` after fifteen quiet seconds. The desk reads it with fetch, so the token stays in a header. |
 | `GET collections/:name?project=<key>` | `{ rows, total, page, pageSize }`, the shape of a UIDL `QueryResult` |
 
@@ -168,9 +171,27 @@ src/desk/
 | 3b | Tasks (done) | `ws task`; the Tasks section adds operator tasks and moves them with row actions, run plan rows stay read-only |
 | 3c | Run plans (done) | Pending, Start, and Done on a plan row through `ws plan status --operator`; blocked and dropped, with a reason, from the mission board since 4c |
 | 4a | Agent work (done) | Start and stop a coding session from the drawer; a Changes tab with the worktree's diff, reloaded after every turn; an approval or denial goes back into the conversation so the agent continues |
-| 4b | Verify and hand back | `ws verify` against the session's worktree (it runs in the primary checkout today), then merge or discard the session's branch from the drawer |
+| 4b | Verify and hand back (done) | `ws verify --worktree` from the Changes tab; ship verified work to the default branch as a fast-forward, or discard the session |
 | 4c | Project room (done) | One page per project: mission board over tasks and plan steps, block and unblock a task with a reason, crew, blockers from every source, memory, context pack and policy |
 | 5 | Desktop | A Tauri v2 shell around the same loopback server, OS keychain for credentials, a tray icon with the waiting count |
+
+## Hand back
+
+The Changes tab ends a coding session in one of two ways, chosen by the operator
+(2026-10-17): ship the work straight to the project's default branch, or discard it.
+
+- **Verify** runs the operator's contract in the session worktree (`ws verify --worktree`,
+  Agent-Workspace PR #34) and keeps the result with the worktree content it saw, as a git
+  tree id written through a copy of the index. A result whose worktree changed while the
+  contract ran is `stale`.
+- **Ship to main** opens only while the last verify passed. The host checks the worktree
+  still holds exactly the verified content, commits what is uncommitted with the given
+  message, fetches `origin/<base>` (from `origin/HEAD`, else `main`), and pushes only a
+  fast-forward - never forced. If the base moved, the agent rebases and verify runs again.
+  The button asks once more before it pushes.
+- **Discard** asks once more, then stops the session and removes its worktree and branch
+  through the product repository's own git. It removes only a worktree under
+  `.local/worktrees/<key>/`, whatever the session record says.
 
 ## History
 
