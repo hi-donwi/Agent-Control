@@ -489,6 +489,7 @@ app.post(`${AGENT_API}/coding-sessions/:project/ship`, async (c) => {
       c.req.param('project'),
       typeof body.message === 'string' ? body.message : '',
       body.sessionId,
+      realHandBackDeps(WORKSPACE_ROOT),
     );
     return c.json({ shipped });
   } catch (err) {
