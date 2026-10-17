@@ -111,6 +111,17 @@ in the desk and the browser only; navigation from the menu, with views in the ma
   roles, projects, its own open work, the interaction log (`ws client log`), and - marked
   "desk only" - its contacts and commercial terms, which the host reads from disk and no
   agent ever receives.
+- **Workflow rules**: a task handed to an agent from a project room ("Assign to agent", which
+  starts a coding session for the card) follows that session. A passing verify moves it to
+  Awaiting review, a ship to Shipped with the commit in a comment, a discard back to Ready for
+  an agent. Each move is `ws task status` plus a comment, so the task's activity tells the story;
+  a refused move never undoes the push or the discard it follows.
+- **In the chat**: a chat bound to a project has `list_tasks`, `today`, `add_task`,
+  `update_task`, and `client_profile` - the same `ws` commands, for that project and its client's
+  own work only. Changes are the `task_change` action under the project's operator policy, so
+  the operator decides whether they run or wait for an approval (set `"task_change": "change"`
+  in `.local/agent/policies/<key>.json` to let the agent keep its tasks current). Contacts and
+  commercial terms are never in a tool's answer.
 - **Task drawer**: station, priority, due date, assignee, labels, blocker, checklist, the
   description and acceptance criteria, a comment box, and the activity - every change by a
   person or an agent. Every edit is one `ws task` command with the revision the drawer read; a

@@ -4,6 +4,7 @@ import type { WorkspaceBridge } from './workspace.js';
 import { runCommand } from './run-command.js';
 import { editFileTool, writeFileTool } from './worktree-mutate.js';
 import { gitDiff, readWorktreeFile } from './worktree-files.js';
+import { pmTools } from './pm-tools.js';
 
 /** A chat bound to one project (ADR-0011): what its tools may reach. */
 export interface ChatScope {
@@ -22,7 +23,7 @@ export interface ChatScope {
   worktree?: string;
 }
 
-interface PlainTool {
+export interface PlainTool {
   description: string;
   /** JSON Schema of the arguments; `{}` means no arguments. */
   parameters: Record<string, unknown>;
@@ -329,6 +330,7 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
         runCommand({ root: scope.root, project: scope.project, cwd: scope.worktree ?? join(scope.root, scope.folder) }, a),
     },
     ...(scope.worktree ? codingSessionTools(scope.root, scope.project, scope.worktree) : {}),
+    ...pmTools(scope),
   };
 }
 
