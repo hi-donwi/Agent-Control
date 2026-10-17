@@ -14,7 +14,8 @@ import type { ProviderAdapter } from './providers/types.js';
 import { loadEndpoints, localityOf, type Endpoint } from './endpoints.js';
 import { decide, listPending } from './approvals.js';
 import { readCodingSession, startCodingSession, stopCodingSession } from './coding-sessions.js';
-import { realSessionRunner } from './ws-runner.js';
+import { realHandBackDeps, realSessionRunner } from './ws-runner.js';
+import { HandBackConflict, discardSession, shipSession, startVerify } from './hand-back.js';
 import { resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
@@ -434,6 +435,45 @@ app.post(`${AGENT_API}/coding-sessions/:project/stop`, async (c) => {
     return c.json({ stopped });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+// Handing the session's work back (desk phase 4b): verify it in its worktree, then ship
+// it to main or discard it. Verify runs in the background; the session record shows it.
+const handBackError = (err: unknown) => ({
+  body: { error: err instanceof Error ? err.message : String(err) },
+  status: (err instanceof HandBackConflict ? 409 : 400) as 409 | 400,
+});
+
+app.post(`${AGENT_API}/coding-sessions/:project/verify`, async (c) => {
+  try {
+    const { session, done } = await startVerify(WORKSPACE_ROOT, c.req.param('project'), realHandBackDeps(WORKSPACE_ROOT));
+    done.catch((err: unknown) => console.error('[verify]', err));
+    return c.json({ session }, 202);
+  } catch (err) {
+    const { body, status } = handBackError(err);
+    return c.json(body, status);
+  }
+});
+
+app.post(`${AGENT_API}/coding-sessions/:project/ship`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { message?: unknown };
+  try {
+    const shipped = await shipSession(WORKSPACE_ROOT, c.req.param('project'), typeof body.message === 'string' ? body.message : '');
+    return c.json({ shipped });
+  } catch (err) {
+    const { body: error, status } = handBackError(err);
+    return c.json(error, status);
+  }
+});
+
+app.post(`${AGENT_API}/coding-sessions/:project/discard`, async (c) => {
+  try {
+    await discardSession(WORKSPACE_ROOT, c.req.param('project'), realHandBackDeps(WORKSPACE_ROOT));
+    return c.json({ discarded: true });
+  } catch (err) {
+    const { body, status } = handBackError(err);
+    return c.json(body, status);
   }
 });
 

@@ -17,6 +17,21 @@ export interface CodingSession {
   worktree: string;
   branch: string;
   startedAt: string;
+  /** The latest `ws verify` of the worktree (server/hand-back.ts). */
+  verify?: VerifyState;
+  /** The latest push of the session's work to the project's main branch. */
+  shipped?: { head: string; base: string; commits: number; at: string };
+}
+
+export interface VerifyState {
+  /** `stale`: the worktree changed while the contract ran, so the result says nothing about it now. */
+  state: 'running' | 'pass' | 'findings' | 'incomplete' | 'stale' | 'error';
+  /** The worktree's content when verify started, as a git tree id. */
+  tree: string;
+  startedAt: string;
+  finishedAt?: string;
+  commands?: Array<{ id: string; status: string; required?: boolean; duration_ms?: number }>;
+  error?: string;
 }
 
 export interface SessionRunner {
@@ -42,7 +57,7 @@ export function readCodingSession(root: string, project: string): CodingSession 
   }
 }
 
-function writeCodingSession(root: string, project: string, session: CodingSession | null): void {
+export function writeCodingSession(root: string, project: string, session: CodingSession | null): void {
   const path = sessionFile(root, project);
   if (session === null) {
     rmSync(path, { force: true });
