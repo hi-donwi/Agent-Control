@@ -39,7 +39,8 @@ loopback server.
 |---|---|---|
 | Floor | Home | Zones (clients) > rooms (projects) > agents. Zoom to a client by its name. |
 | Project room | A room's name on the floor | One project: stage and focus, the mission board, crew, blockers, memory, and context (see Project room). Escape or the breadcrumb goes back to the floor. |
-| Menu drawer | Menu icon | Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
+| Menu drawer | Menu icon | Missions: Inbox, Today. Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
+| Today | Menu > Missions > Today | Every client's day in one view (see Missions). Escape or the breadcrumb goes back to the floor. |
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
 | Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes, hand back), and a chat bound to its project. |
 
@@ -72,6 +73,23 @@ loaded when the scope is first opened and every turn is written back, so a reloa
 "New conversation" starts another and leaves the old one on disk (see History). "Earlier
 conversations" lists the scope's conversations, newest first, titled by their first
 question; opening one shows it, and the next turn is appended to it.
+
+## Missions
+
+Project management across every client (Agent-Workspace ADR-0024). The records are the
+framework's - tasks, milestones, reminders, client records in `context/` - and every read is
+`ws ... --json`, so the desk, the CLI, and agents (through `ws mcp`) see one truth. The owner
+chose (2026-10-17): no sprints; contacts and commercial terms shown in the desk only; alerts
+in the desk and the browser only; navigation from the menu, with views in the main area.
+
+- **Inbox** (menu, first section): the computed alerts - approvals and raised hands, overdue,
+  due today, reminders at their time, stalled, blocked, and waiting reviews. Snooze hides one
+  for an hour, until tomorrow, or a week (`ws alerts snooze`, kept on this machine). The menu
+  icon and the tab title count what waits; a new overdue, due, or reminder alert raises a
+  browser notification. Alerts are polled once a minute.
+- **Today**: signals (each a filter), "Your day" - people waiting first, then dates, then
+  stalled work - with Open and Snooze, the work in hand, the crew working now, and each
+  client's pulse (open, overdue, last interaction).
 
 ## Agent states
 
@@ -108,6 +126,13 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | Endpoint | Returns |
 |---|---|
 | `GET floor` | `{ generatedAt, zones: [{ client, rooms: [{ key, group, description, agents, pendingApprovals, codingSession }] }], totals }` |
+| `GET pm/today?scope=&client=` | `ws today --json`: `{ date, signals, items, in_progress }` |
+| `GET pm/alerts?all=1` | `ws alerts --json`: `{ alerts: [{ id, kind, severity, scope, client, title, detail, ref, at }] }` |
+| `POST pm/alerts/snooze` | `{ id, for: 1h\|1d\|1w\|"YYYY-MM-DD HH:MM" }` or `{ id, off: true }`; runs `ws alerts snooze` |
+| `GET pm/tasks?scope=&client=&status=a,b&assignee=&label=&kind=&due_before=` | `ws task list --json` across every client, or one scope (`<project>` or `@<client>`) |
+| `GET pm/tasks/:scope/:id` | `ws task show --json` |
+| `GET pm/clients` | Every client folder with a `client.md`, with its pulse from `ws client show` |
+| `GET pm/clients/:client` | `ws client show --json`, plus `restrictedText` (contacts, commercial) read by the host for the desk only - never a chat or an agent tool |
 | `POST notes` | `{ project, title, body }` -> `{ path }`. Runs `ws note <project> <title> -` with the body on stdin; 400 with the reason on any refusal |
 | `POST tasks` | `{ project, title, priority }` -> `{ id, status, revision }`. Runs `ws task add` |
 | `POST tasks/status` | `{ project, id, status, revision }` -> `{ id, status, revision }`. Runs `ws task status --revision`; 409 when the task changed since the desk showed it |
