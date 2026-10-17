@@ -117,12 +117,13 @@ export function MissionBoard({ detail, coding, onChanged }: Props) {
 
               <ol className="station-cards">
                 {shown.map((card) => {
+                  const cardSession = coding?.sessionForCard
+                    ? coding.sessionForCard(card.key)
+                    : (coding?.session?.cardKey === card.key ? coding.session : (!coding?.session?.cardKey ? coding?.session : null));
+
                   const isReviewTarget = Boolean(
                     card.station === 'review' &&
-                    coding?.session &&
-                    (coding.session.cardKey
-                      ? coding.session.cardKey === card.key
-                      : here.find((c) => c.station === 'review')?.key === card.key)
+                    (cardSession || (coding?.session && (coding.session.cardKey ? coding.session.cardKey === card.key : here.find((c) => c.station === 'review')?.key === card.key)))
                   );
 
                   return (
@@ -148,7 +149,7 @@ export function MissionBoard({ detail, coding, onChanged }: Props) {
                           <button
                             type="button"
                             className="btn btn-primary mission-assign-btn"
-                            disabled={coding?.busy || (Boolean(coding?.session) && coding?.session?.cardKey !== card.key)}
+                            disabled={coding?.busy || Boolean(cardSession)}
                             onClick={() => void assign(card)}
                           >
                             Assign to agent
@@ -168,9 +169,9 @@ export function MissionBoard({ detail, coding, onChanged }: Props) {
                               <span className="mission-agent-label">
                                 {card.blocked ? 'Waiting for input' : 'Working on this task...'}
                               </span>
-                              {coding?.session && (
+                              {(cardSession || coding?.session) && (
                                 <span className="mission-agent-branch">
-                                  <code>{coding.session.branch}</code>
+                                  <code>{(cardSession ?? coding?.session)?.branch}</code>
                                 </span>
                               )}
                             </div>
@@ -187,7 +188,7 @@ export function MissionBoard({ detail, coding, onChanged }: Props) {
 
                       {isReviewTarget && coding && (
                         <div className="mission-handback-panel">
-                          <HandBack coding={coding} onShipped={() => move(card, 'shipped')} />
+                          <HandBack coding={coding} session={cardSession ?? coding.session ?? undefined} onShipped={() => move(card, 'shipped')} />
                         </div>
                       )}
 

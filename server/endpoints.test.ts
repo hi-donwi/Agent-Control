@@ -92,6 +92,18 @@ describe('loadEndpoints', () => {
     writeFileSync(join(root, '.local', 'agent', 'endpoints.json'), JSON.stringify({ endpoints: { mock: { protocol: 'mock' } } }));
     assert.deepEqual(loadEndpoints(root).map((e) => e.name), ['mock']);
   });
+
+  it('auto-discovers lokal endpoint when requested and serve.token exists', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-endpoints-'));
+    const home = mkdtempSync(join(tmpdir(), 'ac-home-'));
+    mkdirSync(join(home, '.lokal'), { recursive: true });
+    writeFileSync(join(home, '.lokal', 'serve.token'), 'token\n');
+
+    const endpoints = loadEndpoints(root, { autoDiscoverLokal: true, home });
+    assert.equal(endpoints.length, 1);
+    assert.equal(endpoints[0].name, 'lokal');
+    assert.equal(endpoints[0].locality, 'local');
+  });
 });
 
 describe('resolveCredential', () => {

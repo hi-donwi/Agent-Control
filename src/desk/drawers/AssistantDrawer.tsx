@@ -130,7 +130,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
               <span className="session-dot" aria-hidden="true" />
               <span className="session-text">Coding on <code>{coding.session.branch}</code></span>
               <button type="button" className="btn" onClick={() => setTab('changes')}>Changes</button>
-              <button type="button" className="btn" onClick={coding.stop} disabled={coding.busy}>
+              <button type="button" className="btn" onClick={() => void coding.stop()} disabled={coding.busy}>
                 {coding.busy ? 'Stopping...' : 'Stop'}
               </button>
             </>

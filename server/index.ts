@@ -13,7 +13,7 @@ import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
 import { loadEndpoints, localityOf, type Endpoint } from './endpoints.js';
 import { decide, listPending } from './approvals.js';
-import { readCodingSession, startCodingSession, stopCodingSession } from './coding-sessions.js';
+import { listCodingSessions, readCodingSession, startCodingSession, stopCodingSession } from './coding-sessions.js';
 import { realHandBackDeps, realSessionRunner } from './ws-runner.js';
 import { HandBackConflict, discardSession, shipSession, startVerify } from './hand-back.js';
 import { resolveChatModel } from './chat-model.js';
@@ -73,12 +73,14 @@ function getAdapters(cfg: AppConfig): Map<string, ProviderAdapter> {
   return adapters;
 }
 
+import { exportSessionTrace } from './lokal.js';
+
 let adapters = getAdapters(config);
 
 // ── Endpoints by wire protocol (ADR-0021): <workspace>/.local/agent/endpoints.json ──
 function safeLoadEndpoints(): Endpoint[] {
   try {
-    return loadEndpoints(WORKSPACE_ROOT);
+    return loadEndpoints(WORKSPACE_ROOT, { autoDiscoverLokal: true });
   } catch (err) {
     console.error(`Endpoints disabled: ${err instanceof Error ? err.message : String(err)}`);
     return [];
@@ -353,6 +355,17 @@ app.get(`${AGENT_API}/conversations/:id`, (c) => {
   return conversation ? c.json(conversation) : c.json({ error: 'no such conversation in this scope' }, 404);
 });
 
+// Export conversation trace to ~/.lokal/traces/ per lokal ADR-0008
+app.post(`${AGENT_API}/conversations/:id/export-trace`, (c) => {
+  const id = c.req.param('id');
+  try {
+    const result = exportSessionTrace(WORKSPACE_ROOT, id);
+    return c.json(result);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
 // ── API: Projects a chat can be bound to ───────────────────────────────
 app.get(`${AGENT_API}/projects`, async (c) => {
   const projects = parseProjectList(await bridge.listProjects().catch(() => ''));
@@ -400,7 +413,10 @@ app.post(`${AGENT_API}/approvals/decide`, async (c) => {
 // and run_command then act, in place of the primary checkout.
 app.get(`${AGENT_API}/coding-sessions/:project`, (c) => {
   try {
-    return c.json({ session: readCodingSession(WORKSPACE_ROOT, c.req.param('project')) });
+    const project = c.req.param('project');
+    const sessions = listCodingSessions(WORKSPACE_ROOT, project);
+    const session = readCodingSession(WORKSPACE_ROOT, project);
+    return c.json({ session, sessions });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
@@ -422,7 +438,8 @@ app.post(`${AGENT_API}/coding-sessions/:project/start`, async (c) => {
 const DIFF_MAX = 400_000;
 app.get(`${AGENT_API}/coding-sessions/:project/diff`, async (c) => {
   try {
-    const session = readCodingSession(WORKSPACE_ROOT, c.req.param('project'));
+    const sessionId = c.req.query('sessionId');
+    const session = readCodingSession(WORKSPACE_ROOT, c.req.param('project'), sessionId);
     if (!session) return c.json({ session: null, diff: '', truncated: false });
     const diff = await gitDiff(session.worktree);
     return c.json({ session, diff: diff.slice(0, DIFF_MAX), truncated: diff.length > DIFF_MAX });
@@ -433,7 +450,8 @@ app.get(`${AGENT_API}/coding-sessions/:project/diff`, async (c) => {
 
 app.post(`${AGENT_API}/coding-sessions/:project/stop`, async (c) => {
   try {
-    const stopped = await stopCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT));
+    const body = await c.req.json().catch(() => ({})) as { sessionId?: string };
+    const stopped = await stopCodingSession(WORKSPACE_ROOT, c.req.param('project'), realSessionRunner(WORKSPACE_ROOT), body.sessionId);
     return c.json({ stopped });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
@@ -449,7 +467,8 @@ const handBackError = (err: unknown) => ({
 
 app.post(`${AGENT_API}/coding-sessions/:project/verify`, async (c) => {
   try {
-    const { session, done } = await startVerify(WORKSPACE_ROOT, c.req.param('project'), realHandBackDeps(WORKSPACE_ROOT));
+    const body = await c.req.json().catch(() => ({})) as { sessionId?: string };
+    const { session, done } = await startVerify(WORKSPACE_ROOT, c.req.param('project'), realHandBackDeps(WORKSPACE_ROOT), body.sessionId);
     done.catch((err: unknown) => console.error('[verify]', err));
     return c.json({ session }, 202);
   } catch (err) {
@@ -459,9 +478,14 @@ app.post(`${AGENT_API}/coding-sessions/:project/verify`, async (c) => {
 });
 
 app.post(`${AGENT_API}/coding-sessions/:project/ship`, async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { message?: unknown };
+  const body = await c.req.json().catch(() => ({})) as { message?: unknown; sessionId?: string };
   try {
-    const shipped = await shipSession(WORKSPACE_ROOT, c.req.param('project'), typeof body.message === 'string' ? body.message : '');
+    const shipped = await shipSession(
+      WORKSPACE_ROOT,
+      c.req.param('project'),
+      typeof body.message === 'string' ? body.message : '',
+      body.sessionId,
+    );
     return c.json({ shipped });
   } catch (err) {
     const { body: error, status } = handBackError(err);
@@ -471,7 +495,8 @@ app.post(`${AGENT_API}/coding-sessions/:project/ship`, async (c) => {
 
 app.post(`${AGENT_API}/coding-sessions/:project/discard`, async (c) => {
   try {
-    await discardSession(WORKSPACE_ROOT, c.req.param('project'), realHandBackDeps(WORKSPACE_ROOT));
+    const body = await c.req.json().catch(() => ({})) as { sessionId?: string };
+    await discardSession(WORKSPACE_ROOT, c.req.param('project'), realHandBackDeps(WORKSPACE_ROOT), body.sessionId);
     return c.json({ discarded: true });
   } catch (err) {
     const { body, status } = handBackError(err);

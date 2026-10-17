@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ago } from '../time';
 import type { useCodingSession } from '../../hooks/useCodingSession';
-import type { SessionVerify } from '../../lib/types';
+import type { CodingSession, SessionVerify } from '../../lib/types';
 
 const STATE_TEXT: Record<SessionVerify['state'], string> = {
   running: 'Verifying...',
@@ -24,11 +24,13 @@ function seconds(ms: number | undefined): string {
  */
 interface Props {
   coding: ReturnType<typeof useCodingSession>;
+  session?: CodingSession;
   onShipped?: () => void;
 }
 
-export function HandBack({ coding, onShipped }: Props) {
-  const { session, handBack, busy, error } = coding;
+export function HandBack({ coding, session: propSession, onShipped }: Props) {
+  const session = propSession ?? coding.session;
+  const { handBack, busy, error } = coding;
   const [message, setMessage] = useState('');
   const [confirm, setConfirm] = useState<'ship' | 'discard' | null>(null);
   if (!session) return null;
@@ -43,7 +45,7 @@ export function HandBack({ coding, onShipped }: Props) {
       {error && <p className="handback-detail handback-error" role="alert">[ERROR] {error}</p>}
 
       <div className="handback-row">
-        <button type="button" className="btn" onClick={() => void handBack('verify')} disabled={busy || verify?.state === 'running'}>
+        <button type="button" className="btn" onClick={() => void handBack('verify', undefined, session.id)} disabled={busy || verify?.state === 'running'}>
           {verify ? 'Verify again' : 'Verify'}
         </button>
         <span className={`handback-state is-${verify?.state ?? 'none'}`} role="status">
@@ -83,7 +85,7 @@ export function HandBack({ coding, onShipped }: Props) {
               className="btn btn-primary"
               onClick={async () => {
                 setConfirm(null);
-                const ok = await handBack('ship', { message });
+                const ok = await handBack('ship', { message }, session.id);
                 if (ok) onShipped?.();
               }}
             >
@@ -104,7 +106,7 @@ export function HandBack({ coding, onShipped }: Props) {
         <div className="handback-confirm is-danger" role="alertdialog" aria-label="Confirm discard">
           <p>Delete the worktree and the branch <code>{session.branch}</code>, with every change in them?</p>
           <div className="handback-actions">
-            <button type="button" className="btn btn-danger" onClick={() => { setConfirm(null); void handBack('discard'); }}>Discard everything</button>
+            <button type="button" className="btn btn-danger" onClick={() => { setConfirm(null); void handBack('discard', undefined, session.id); }}>Discard everything</button>
             <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
           </div>
         </div>

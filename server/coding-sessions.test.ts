@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readCodingSession, startCodingSession, stopCodingSession, type SessionRunner } from './coding-sessions.js';
+import { listCodingSessions, readCodingSession, startCodingSession, stopCodingSession, type SessionRunner } from './coding-sessions.js';
 
 function tmpRoot(): string {
   return mkdtempSync(join(tmpdir(), 'ac-coding-'));
@@ -17,7 +17,8 @@ function fakeRunner(worktree = '/tmp/fake-worktree'): SessionRunner & { calls: A
       calls.push({ args, env });
       if (args[0] === 'agent' && args[1] === 'start') {
         // Real `ws agent start` output: colour codes around a plain `cd <path>` line.
-        return `\u001b[32m-> agent start demo (session x)\u001b[0m\ncd ${worktree}\n\u001b[2m  do not...\u001b[0m\n`;
+        const suffix = env.WS_SESSION_ID ? `-${env.WS_SESSION_ID.slice(0, 6)}` : '';
+        return `\u001b[32m-> agent start demo (session x)\u001b[0m\ncd ${worktree}${suffix}\n\u001b[2m  do not...\u001b[0m\n`;
       }
       return '';
     },
@@ -31,7 +32,7 @@ describe('startCodingSession', () => {
     const runner = fakeRunner();
     const session = await startCodingSession(root, 'demo', runner);
     assert.equal(session.project, 'demo');
-    assert.equal(session.worktree, '/tmp/fake-worktree');
+    assert.match(session.worktree, /fake-worktree/);
     assert.equal(session.branch, 'agent-x-demo-works');
     assert.match(session.id, /^[a-f0-9-]{16,}$/);
     assert.deepEqual(readCodingSession(root, 'demo'), session);
@@ -58,6 +59,33 @@ describe('startCodingSession', () => {
     const second = await startCodingSession(root, 'demo', runner);
     assert.deepEqual(first, second);
     assert.equal(runner.calls.length, 1);
+  });
+
+  it('allows starting parallel sessions for distinct card keys', async () => {
+    const root = tmpRoot();
+    const runner = fakeRunner();
+    const s1 = await startCodingSession(root, 'demo', runner, { brief: 'Task 1', cardKey: 'task:1', allowParallel: true });
+    const s2 = await startCodingSession(root, 'demo', runner, { brief: 'Task 2', cardKey: 'task:2', allowParallel: true });
+
+    assert.notEqual(s1.id, s2.id);
+    assert.notEqual(s1.worktree, s2.worktree);
+    assert.equal(s1.cardKey, 'task:1');
+    assert.equal(s2.cardKey, 'task:2');
+
+    const all = listCodingSessions(root, 'demo');
+    assert.equal(all.length, 2);
+    assert.deepEqual(readCodingSession(root, 'demo', s1.id), s1);
+    assert.deepEqual(readCodingSession(root, 'demo', s2.id), s2);
+
+    // Stop s1 only
+    const stoppedS1 = await stopCodingSession(root, 'demo', runner, s1.id);
+    assert.equal(stoppedS1, true);
+
+    const remaining = listCodingSessions(root, 'demo');
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].id, s2.id);
+    assert.equal(readCodingSession(root, 'demo', s1.id), null);
+    assert.deepEqual(readCodingSession(root, 'demo', s2.id), s2);
   });
 
   it('throws when ws reports no worktree path', async () => {
