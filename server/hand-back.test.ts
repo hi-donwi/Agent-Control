@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readCodingSession, type CodingSession } from './coding-sessions.js';
@@ -152,5 +152,23 @@ describe('hand back', () => {
     await assert.rejects(discardSession(ws.root, 'demo', fakeWs().deps), /under \.local\/worktrees\/demo/);
     assert.equal(existsSync(elsewhere), true);
     assert.equal(git(ws.primary, 'branch', '--list', '--format=%(refname:short)', 'agent-s1'), 'agent-s1');
+  });
+
+  it('moves the task a session was started for: to review on a passing verify, to shipped on ship', async () => {
+    const record = join(ws.root, '.local', 'agent', 'coding-sessions', 'demo.json');
+    const stored = JSON.parse(readFileSync(record, 'utf-8'));
+    const sessions = Array.isArray(stored) ? stored : [stored];
+    sessions[0].cardKey = 'task:task_export_csv';
+    writeFileSync(record, JSON.stringify(Array.isArray(stored) ? sessions : sessions[0]));
+    writeFileSync(join(ws.worktree, 'feature.txt'), 'shipped\n');
+    const { deps, calls } = fakeWs('pass');
+    await (await startVerify(ws.root, 'demo', deps)).done;
+    assert.deepEqual(calls.filter((c) => c[0] === 'task').map((c) => c.slice(0, 5)), [
+      ['task', 'status', 'demo', 'task_export_csv', 'review'], ['task', 'comment', 'demo', 'task_export_csv', 'Verify passed in the coding session; ready for review'],
+    ]);
+    const shipped = await shipSession(ws.root, 'demo', 'feat: export', undefined, deps);
+    assert.equal(shipped.task, 'done');
+    assert.deepEqual(calls.filter((c) => c[0] === 'task').at(-2), ['task', 'status', 'demo', 'task_export_csv', 'done']);
+    assert.match(calls.filter((c) => c[0] === 'task').at(-1)![4], /^Shipped [0-9a-f]{8} to main \(1 commit\)$/);
   });
 });

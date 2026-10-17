@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, sep } from 'node:path';
+import { followTask } from './workflow.js';
 import { readCodingSession, writeCodingSession, type CodingSession, type VerifyState } from './coding-sessions.js';
 
 /**
@@ -120,6 +121,8 @@ export async function startVerify(root: string, project: string, deps: HandBackD
       verify = { state: 'error', tree, startedAt: running.verify!.startedAt, finishedAt: new Date().toISOString(), error: err instanceof Error ? err.message : String(err) };
     }
     update(root, project, session.id, (s) => ({ ...s, verify }));
+    // A task handed to this session now waits for a person's review (ADR-0024 workflow rule).
+    if (verify.state === 'pass') await followTask(deps, session, 'verified', 'Verify passed in the coding session; ready for review').catch(() => null);
   })();
   return { session: running, done };
 }
@@ -134,7 +137,16 @@ async function baseBranch(worktree: string): Promise<string> {
  * Pushes the session's verified work to `origin/<main>`: commits what is uncommitted
  * with `message`, then pushes only if that is a fast-forward. Nothing is forced.
  */
-export async function shipSession(root: string, project: string, message: string, sessionId?: string) {
+export interface Shipped {
+  head: string;
+  base: string;
+  commits: number;
+  at: string;
+  /** The linked task's new status, or a warning when it could not be moved. */
+  task?: string;
+}
+
+export async function shipSession(root: string, project: string, message: string, sessionId?: string, deps?: HandBackDeps): Promise<Shipped> {
   const session = sessionOf(root, project, sessionId);
   const verified = session.verify;
   if (!verified || verified.state !== 'pass') throw new HandBackConflict('verify must pass before the work can ship');
@@ -165,7 +177,11 @@ export async function shipSession(root: string, project: string, message: string
 
   const shipped = { head, base, commits, at: new Date().toISOString() };
   update(root, project, session.id, (s) => ({ ...s, shipped }));
-  return shipped;
+  // The task this session worked on is shipped too; a refused move does not undo the push.
+  const task = deps
+    ? await followTask(deps, session, 'shipped', `Shipped ${head.slice(0, 8)} to ${base} (${commits} ${commits === 1 ? 'commit' : 'commits'})`).catch((err: unknown) => `[WARN] ${err instanceof Error ? err.message : String(err)}`)
+    : null;
+  return task ? { ...shipped, task } : shipped;
 }
 
 /**
@@ -187,5 +203,6 @@ export async function discardSession(root: string, project: string, deps: HandBa
     await git(root, ['--git-dir', common, 'worktree', 'remove', '--force', worktree]);
     await git(root, ['--git-dir', common, 'branch', '-D', session.branch]).catch(() => '');
   }
+  await followTask(deps, session, 'discarded', 'Coding session discarded; ready for an agent again').catch(() => null);
   writeCodingSession(root, project, null, session.id);
 }
