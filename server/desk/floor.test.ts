@@ -34,7 +34,7 @@ describe('buildFloor', () => {
       ['own', ['own-tool']],
     ]);
     assert.equal(floor.zones[0].rooms[0].description, 'Billing API');
-    assert.deepEqual(floor.totals, { projects: 3, agents: 0, active: 0, waiting: 0 });
+    assert.deepEqual(floor.totals, { projects: 3, agents: 0, active: 0, waiting: 0, idleProjects: 3, activeProjects: 0 });
   });
 
   it('seats an outside agent in its room as it was given', () => {
@@ -84,5 +84,42 @@ describe('buildFloor', () => {
     assert.deepEqual(floor.zones.map((z) => z.client), ['own', 'acme']);
     assert.equal(floor.zones[1].rooms.find((r) => r.key === 'alpha-web')!.codingSession, true);
     assert.equal(floor.zones.flatMap((z) => z.rooms).some((r) => r.key === 'not-registered'), false);
+  });
+
+  it('distinguishes active and idle projects and marks zones accordingly', () => {
+    const floor = buildFloor(input({
+      lastActive: {
+        'alpha-api': '2026-10-16T08:00:00Z', // 2 hours ago -> active
+        'alpha-web': '2026-10-14T08:00:00Z', // 2 days ago -> idle
+        'own-tool': '2026-10-10T08:00:00Z',  // 6 days ago -> idle
+      },
+    }), NOW);
+    const acme = floor.zones.find((z) => z.client === 'acme')!;
+    const own = floor.zones.find((z) => z.client === 'own')!;
+
+    const alphaApi = acme.rooms.find((r) => r.key === 'alpha-api')!;
+    const alphaWeb = acme.rooms.find((r) => r.key === 'alpha-web')!;
+    const ownTool = own.rooms.find((r) => r.key === 'own-tool')!;
+
+    assert.equal(alphaApi.idle, false);
+    assert.equal(alphaWeb.idle, true);
+    assert.equal(ownTool.idle, true);
+
+    // Acme has at least 1 active room -> acme.idle is false
+    assert.equal(acme.idle, false);
+    // Own has all idle rooms -> own.idle is true
+    assert.equal(own.idle, true);
+
+    assert.equal(floor.totals.activeProjects, 1);
+    assert.equal(floor.totals.idleProjects, 2);
+  });
+
+  it('keeps room active when an agent or coding session is running even if lastActive is old', () => {
+    const floor = buildFloor(input({
+      lastActive: { 'alpha-api': '2026-10-01T00:00:00Z' },
+      codingSessions: new Set(['alpha-api']),
+    }), NOW);
+    const alphaApi = floor.zones.flatMap((z) => z.rooms).find((r) => r.key === 'alpha-api')!;
+    assert.equal(alphaApi.idle, false);
   });
 });

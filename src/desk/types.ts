@@ -20,17 +20,28 @@ export interface FloorRoom {
   agents: FloorAgent[];
   pendingApprovals: number;
   codingSession: boolean;
+  lastActiveAt?: string | null;
+  idle?: boolean;
+  idleDays?: number;
 }
 
 export interface FloorZone {
   client: string;
   rooms: FloorRoom[];
+  idle?: boolean;
 }
 
 export interface Floor {
   generatedAt: string;
   zones: FloorZone[];
-  totals: { projects: number; agents: number; active: number; waiting: number };
+  totals: {
+    projects: number;
+    agents: number;
+    active: number;
+    waiting: number;
+    idleProjects?: number;
+    activeProjects?: number;
+  };
 }
 
 /** What the written label under an avatar says for each state. */

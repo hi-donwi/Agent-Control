@@ -72,3 +72,12 @@ export const MoonIcon = () => (
   </Icon>
 );
 
+/** Magnifying glass icon: search projects and clients. */
+export const SearchIcon = ({ size = 16 }: { size?: number }) => (
+  <Icon size={size}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M21 21l-4.35-4.35" />
+  </Icon>
+);
+
+
