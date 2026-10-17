@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from './fixtures.js';
 import { PROJECT } from './workspace.js';
@@ -32,7 +32,16 @@ function seed(): void {
     in_progress: [{ id: 'task_doing', title: 'Write the importer', scope: PROJECT, assignee: 'agent:claude' }],
   }));
   writeFileSync(stub('calls.log'), '');
+  // The task the overdue alert is about, for the task drawer that Open opens.
+  writeFileSync(stub('tasks.json'), JSON.stringify({ tasks: [{
+    id: 'task_late_report', title: 'Late report', scope: PROJECT, project: PROJECT, client: 'framework', status: 'backlog',
+    priority: 'normal', kind: 'task', owner: 'dw', assignee: '', due: '2026-10-15', remind_at: '', recur: '', rank: 0, parent: '',
+    depends_on: [], labels: [], acceptance_criteria: [], blocked: false, blocked_reason: '', description: '', checklist: [],
+    activity: [], revision: 'mtime:1:size:1', updated_at: '2026-10-15T10:00:00+07:00', created_at: '2026-10-01T10:00:00+07:00',
+  }] }));
 }
+
+test.afterAll(() => rmSync(stub('tasks.json'), { force: true }));
 
 test.beforeEach(seed);
 
@@ -71,8 +80,11 @@ test('Today puts people waiting first, filters by signal, and opens the project 
   await today.getByRole('button', { name: /overdue/ }).click();
   await expect(day.getByRole('listitem')).toHaveText([/Late report/]);
 
-  // A task opens where it can be worked on: its project's room.
+  // An alert about a task opens that task; its scope opens the project's room.
   await day.getByRole('listitem', { name: 'overdue: Late report' }).getByRole('button', { name: 'Open' }).click();
+  await expect(page.getByRole('dialog', { name: 'Task' }).getByRole('heading', { name: /Late report/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await today.getByRole('region', { name: 'In hand' }).getByRole('button', { name: PROJECT }).click();
   await expect(page.getByLabel(`Project room ${PROJECT}`).getByRole('heading', { level: 1, name: PROJECT })).toBeVisible();
 });
 
