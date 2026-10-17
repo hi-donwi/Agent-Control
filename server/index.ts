@@ -38,6 +38,7 @@ import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, read
 import { addNote, realWsInputRunner } from './desk/notes.js';
 import { TaskConflictError, addTask, setTaskBlocked, setTaskStatus } from './desk/tasks.js';
 import { projectDetail } from './desk/project.js';
+import { pmAlerts, pmClient, pmClients, pmTask, pmTasks, pmToday, realWsReader, snoozeAlert } from './desk/pm.js';
 import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
@@ -563,6 +564,79 @@ for (const [path, blocked] of [['block', true], ['unblock', false]] as const) {
 }
 
 // One project's room: memory, work, blockers, people, and context in one read.
+// ── Desk: project management (Agent-Workspace ADR-0024) ─────────────────
+// Today, alerts, tasks across every client, and client dossiers - each a `ws ... --json`
+// read, so the desk and agents share one implementation.
+const pmFail = (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) });
+
+app.get(`${AGENT_API}/desk/pm/today`, async (c) => {
+  try {
+    return c.json(await pmToday(realWsReader(WORKSPACE_ROOT), { scope: c.req.query('scope'), client: c.req.query('client') }));
+  } catch (err) {
+    return c.json(pmFail(err), 400);
+  }
+});
+
+app.get(`${AGENT_API}/desk/pm/alerts`, async (c) => {
+  try {
+    return c.json(await pmAlerts(realWsReader(WORKSPACE_ROOT), c.req.query('all') === '1'));
+  } catch (err) {
+    return c.json(pmFail(err), 400);
+  }
+});
+
+app.post(`${AGENT_API}/desk/pm/alerts/snooze`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    return c.json(await snoozeAlert(realWsReader(WORKSPACE_ROOT), body));
+  } catch (err) {
+    return c.json(pmFail(err), 400);
+  }
+});
+
+app.get(`${AGENT_API}/desk/pm/tasks`, async (c) => {
+  const status = c.req.query('status');
+  try {
+    return c.json(await pmTasks(realWsReader(WORKSPACE_ROOT), {
+      scope: c.req.query('scope') || undefined,
+      client: c.req.query('client') || undefined,
+      status: status ? status.split(',') : undefined,
+      assignee: c.req.query('assignee') || undefined,
+      label: c.req.query('label') || undefined,
+      kind: c.req.query('kind') || undefined,
+      dueBefore: c.req.query('due_before') || undefined,
+    }));
+  } catch (err) {
+    return c.json(pmFail(err), 400);
+  }
+});
+
+app.get(`${AGENT_API}/desk/pm/tasks/:scope/:id`, async (c) => {
+  try {
+    return c.json(await pmTask(realWsReader(WORKSPACE_ROOT), c.req.param('scope'), c.req.param('id')));
+  } catch (err) {
+    return c.json(pmFail(err), 404);
+  }
+});
+
+app.get(`${AGENT_API}/desk/pm/clients`, async (c) => {
+  try {
+    return c.json(await pmClients(WORKSPACE_ROOT, realWsReader(WORKSPACE_ROOT)));
+  } catch (err) {
+    return c.json(pmFail(err), 400);
+  }
+});
+
+// The dossier, with the client's restricted records for the operator's eyes only: this
+// route serves the desk, never a chat or an agent tool.
+app.get(`${AGENT_API}/desk/pm/clients/:client`, async (c) => {
+  try {
+    return c.json(await pmClient(WORKSPACE_ROOT, realWsReader(WORKSPACE_ROOT), c.req.param('client')));
+  } catch (err) {
+    return c.json(pmFail(err), 404);
+  }
+});
+
 app.get(`${AGENT_API}/desk/projects/:project`, (c) => {
   try {
     return c.json(projectDetail(WORKSPACE_ROOT, c.req.param('project'), deskFloor(WORKSPACE_ROOT, activity)));
