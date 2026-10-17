@@ -40,7 +40,7 @@ import { TaskConflictError, addTask, setTaskBlocked, setTaskStatus } from './des
 import { projectDetail } from './desk/project.js';
 import {
   PmConflictError, pmAddTask, pmAlerts, pmBlock, pmCheck, pmClient, pmClients, pmComment, pmEditTask, pmRemind,
-  pmSetStatus, pmTask, pmTasks, pmToday, realWsReader, snoozeAlert,
+  pmLogInteraction, pmSetStatus, pmTask, pmTasks, pmToday, realWsReader, snoozeAlert,
 } from './desk/pm.js';
 import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
@@ -651,6 +651,15 @@ for (const [path, action] of pmWrites) {
     }
   });
 }
+
+app.post(`${AGENT_API}/desk/pm/clients/:client/log`, async (c) => {
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    return c.json(await pmLogInteraction(realWsReader(WORKSPACE_ROOT), c.req.param('client'), body));
+  } catch (err) {
+    return c.json(pmFail(err), 400);
+  }
+});
 
 // The dossier, with the client's restricted records for the operator's eyes only: this
 // route serves the desk, never a chat or an agent tool.
