@@ -3,7 +3,7 @@ import { FloorView, zoneLabel } from './floor/FloorView';
 import { ProjectRoom } from './room/ProjectRoom';
 import { MenuDrawer, rooms, type MenuSection } from './drawers/MenuDrawer';
 import { AssistantDrawer } from './drawers/AssistantDrawer';
-import { AssistantIcon, MenuIcon } from './icons';
+import { AssistantIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
 import { useFloor } from './useFloor';
 import { useTheme } from './useTheme';
 import { useScopedChat } from './useScopedChat';
@@ -136,6 +136,15 @@ export function DeskApp() {
           <button
             type="button"
             className="bar-btn"
+            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setTheme(dark ? 'light' : 'dark')}
+            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {dark ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <button
+            type="button"
+            className="bar-btn"
             aria-label="Assistant"
             aria-expanded={drawer?.kind === 'assistant'}
             onClick={() => setDrawer(drawer?.kind === 'assistant' ? null : { kind: 'assistant', scope: '', agent: null })}
@@ -211,6 +220,7 @@ export function DeskApp() {
           projectKeys={projectKeys}
           chat={chat}
           dark={dark}
+          onTheme={(t) => setTheme(t)}
           onScope={(scope) => setDrawer({ kind: 'assistant', scope, agent: null })}
           onClose={close}
         />

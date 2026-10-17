@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
-import { CloseIcon, HistoryIcon, NewChatIcon } from '../icons';
+import { CloseIcon, HistoryIcon, MoonIcon, NewChatIcon, SunIcon } from '../icons';
 import { AgentFigure } from '../floor/AgentFigure';
 import { SectionView } from '../uidl/SectionView';
 import { sectionDocument } from '../uidl/documents';
@@ -26,6 +26,7 @@ interface Props {
   projectKeys: string[];
   chat: ReturnType<typeof useScopedChat>;
   dark: boolean;
+  onTheme?: (theme: 'light' | 'dark') => void;
   onScope: (scope: string) => void;
   onClose: () => void;
 }
@@ -37,7 +38,7 @@ const SEP = '::';
  * project it uses that project's allowed endpoints only (ADR-0021) and shows its pending
  * approvals with explicit approve-once and deny buttons (ADR-0020).
  */
-export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope, onClose }: Props) {
+export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme, onScope, onClose }: Props) {
   const { providers, defaultProvider, defaultModel } = useProviders();
   const { projects } = useProjects();
   const approvals = useApprovals(scope || undefined);
@@ -102,6 +103,17 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onScope
         <h2 className="drawer-title">
           Assistant<span className="drawer-subtitle"> · {scope || 'Workspace'}</span>
         </h2>
+        {onTheme && (
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => onTheme(dark ? 'light' : 'dark')}
+            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {dark ? <SunIcon /> : <MoonIcon />}
+          </button>
+        )}
         <button
           type="button"
           className="icon-btn"
