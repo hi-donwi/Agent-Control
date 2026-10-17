@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { clientKeys, pmAlerts, pmClient, pmClients, pmTask, pmTasks, pmToday, snoozeAlert } from './pm.js';
+import { PmConflictError, clientKeys, pmAddTask, pmAlerts, pmBlock, pmCheck, pmClient, pmClients, pmComment, pmEditTask, pmRemind, pmSetStatus, pmTask, pmTasks, pmToday, snoozeAlert } from './pm.js';
 import type { WsInputRunner } from './ws-input.js';
 
 /** A `ws` that answers from `replies` by its first two words, and records every call. */
@@ -67,5 +67,66 @@ describe('desk project management reads', () => {
     await assert.rejects(pmClient(root, run, '../../etc'), /invalid client/);
     const { clients } = await pmClients(root, run);
     assert.deepEqual(clients, [{ key: 'acme', name: 'Acme Logistics', projects: 1, open: 3, overdue: 1, alerts: 2, lastInteraction: '2026-10-16T10:00:00+07:00' }]);
+  });
+});
+
+describe('desk project management writes', () => {
+  const REV = 'mtime:1:size:2';
+  /** A `ws` that prints the line every task write prints, and records what it was asked. */
+  function writer(fail?: string) {
+    const calls: Array<{ args: string[]; input: string }> = [];
+    const run: WsInputRunner = async (args, input) => {
+      calls.push({ args, input });
+      if (fail) throw new Error(fail);
+      return `task task_x ${args[1] === 'status' ? args[4] : 'backlog'} mtime:9:size:9\n`;
+    };
+    return { run, calls };
+  }
+
+  it('adds a task to a project or a client, the description on stdin', async () => {
+    const { run, calls } = writer();
+    assert.deepEqual(await pmAddTask(run, { scope: '@acme', title: '  Send   the report ', priority: 'high', due: '2026-10-31',
+      assignee: 'agent:claude', labels: ['report'], kind: 'task', description: 'Monthly.' }), { id: 'task_x', status: 'backlog', revision: 'mtime:9:size:9' });
+    assert.deepEqual(calls[0], { args: ['task', 'add', '@acme', 'Send the report', '--priority', 'high', '--due', '2026-10-31',
+      '--assignee', 'agent:claude', '--label', 'report', '--kind', 'task', '-'], input: 'Monthly.' });
+    await assert.rejects(pmAddTask(run, { scope: 'api', title: '' }), /the title is empty/);
+    await assert.rejects(pmAddTask(run, { scope: 'api', title: 'x', due: '31/10' }), /YYYY-MM-DD/);
+    await assert.rejects(pmAddTask(run, { scope: 'api', title: 'x', labels: ['Bad Label'] }), /invalid label/);
+  });
+
+  it('edits fields, clears with none, and carries the revision', async () => {
+    const { run, calls } = writer();
+    await pmEditTask(run, { scope: 'api', id: 'task_x', revision: REV, changes: { due: 'none', priority: 'urgent', labels_add: ['export'], check_add: ['Parse rows'], rank: 2 } });
+    assert.deepEqual(calls[0].args, ['task', 'edit', 'api', 'task_x', '--priority', 'urgent', '--due', 'none', '--rank', '2',
+      '--label-add', 'export', '--check-add', 'Parse rows', '--revision', REV]);
+    await assert.rejects(pmEditTask(run, { scope: 'api', id: 'task_x', changes: {} }), /nothing to change/);
+    await assert.rejects(pmEditTask(run, { scope: 'api', id: 'task_x', changes: { title: 'none' } }), /invalid title/);
+    await assert.rejects(pmEditTask(run, { scope: 'api', id: 'task_x', revision: 'stale', changes: { due: 'none' } }), /reload the task/);
+  });
+
+  it('moves, comments, checks, blocks, and reminds through ws', async () => {
+    const { run, calls } = writer();
+    assert.equal((await pmSetStatus(run, { scope: 'api', id: 'task_x', status: 'review', revision: REV })).status, 'review');
+    await pmComment(run, { scope: 'api', id: 'task_x', text: 'Looks good' });
+    await pmCheck(run, { scope: 'api', id: 'task_x', n: 2 });
+    await pmBlock(run, { scope: 'api', id: 'task_x', reason: 'waits on DB access' }, true);
+    await pmBlock(run, { scope: 'api', id: 'task_x' }, false);
+    await pmRemind(run, { scope: '@acme', text: 'Call about phase 2', at: '2026-10-20T14:00', recur: 'weekly' });
+    assert.deepEqual(calls.map((c) => c.args), [
+      ['task', 'status', 'api', 'task_x', 'review', '--revision', REV],
+      ['task', 'comment', 'api', 'task_x', 'Looks good'],
+      ['task', 'check', 'api', 'task_x', '2'],
+      ['task', 'block', 'api', 'task_x', 'waits on DB access'],
+      ['task', 'unblock', 'api', 'task_x'],
+      ['remind', '@acme', 'Call about phase 2', '--at', '2026-10-20 14:00', '--recur', 'weekly'],
+    ]);
+    await assert.rejects(pmSetStatus(run, { scope: 'api', id: 'task_x', status: 'finished' }), /unknown status/);
+    await assert.rejects(pmCheck(run, { scope: 'api', id: 'task_x', n: 0 }), /a number, from 1/);
+    await assert.rejects(pmRemind(run, { scope: 'api', text: 'x', at: 'tomorrow' }), /needs a time/);
+  });
+
+  it('turns a revision mismatch into a conflict the desk reloads on', async () => {
+    const { run } = writer('workspace tasks: revision mismatch: the task changed since it was read');
+    await assert.rejects(pmSetStatus(run, { scope: 'api', id: 'task_x', status: 'done', revision: REV }), PmConflictError);
   });
 });

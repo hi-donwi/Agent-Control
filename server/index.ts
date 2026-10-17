@@ -38,7 +38,10 @@ import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, read
 import { addNote, realWsInputRunner } from './desk/notes.js';
 import { TaskConflictError, addTask, setTaskBlocked, setTaskStatus } from './desk/tasks.js';
 import { projectDetail } from './desk/project.js';
-import { pmAlerts, pmClient, pmClients, pmTask, pmTasks, pmToday, realWsReader, snoozeAlert } from './desk/pm.js';
+import {
+  PmConflictError, pmAddTask, pmAlerts, pmBlock, pmCheck, pmClient, pmClients, pmComment, pmEditTask, pmRemind,
+  pmSetStatus, pmTask, pmTasks, pmToday, realWsReader, snoozeAlert,
+} from './desk/pm.js';
 import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
@@ -626,6 +629,28 @@ app.get(`${AGENT_API}/desk/pm/clients`, async (c) => {
     return c.json(pmFail(err), 400);
   }
 });
+
+// Task writes, each one `ws` command with the revision the desk read; 409 when it is stale.
+const pmWrites: Array<[string, (run: ReturnType<typeof realWsReader>, body: Record<string, unknown>) => Promise<unknown>]> = [
+  ['tasks', pmAddTask],
+  ['tasks/edit', pmEditTask],
+  ['tasks/status', pmSetStatus],
+  ['tasks/comment', pmComment],
+  ['tasks/check', pmCheck],
+  ['tasks/block', (run, body) => pmBlock(run, body, true)],
+  ['tasks/unblock', (run, body) => pmBlock(run, body, false)],
+  ['remind', pmRemind],
+];
+for (const [path, action] of pmWrites) {
+  app.post(`${AGENT_API}/desk/pm/${path}`, async (c) => {
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    try {
+      return c.json(await action(realWsReader(WORKSPACE_ROOT), body));
+    } catch (err) {
+      return c.json(pmFail(err), err instanceof PmConflictError ? 409 : 400);
+    }
+  });
+}
 
 // The dossier, with the client's restricted records for the operator's eyes only: this
 // route serves the desk, never a chat or an agent tool.
