@@ -39,8 +39,9 @@ loopback server.
 |---|---|---|
 | Floor | Home | Zones (clients) > rooms (projects) > agents. Zoom to a client by its name. |
 | Project room | A room's name on the floor | One project: stage and focus, the mission board, crew, blockers, memory, and context (see Project room). Escape or the breadcrumb goes back to the floor. |
-| Menu drawer | Menu icon | Missions: Inbox, Today. Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
+| Menu drawer | Menu icon | Missions: Inbox, Today, Missions board. Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
 | Today | Menu > Missions > Today | Every client's day in one view (see Missions). Escape or the breadcrumb goes back to the floor. |
+| Missions board | Menu > Missions > Missions board | Every client's tasks by station, a lane per client, project, or assignee. A card opens the task drawer. |
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
 | Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes, hand back), and a chat bound to its project. |
 
@@ -89,7 +90,17 @@ in the desk and the browser only; navigation from the menu, with views in the ma
   browser notification. Alerts are polled once a minute.
 - **Today**: signals (each a filter), "Your day" - people waiting first, then dates, then
   stalled work - with Open and Snooze, the work in hand, the crew working now, and each
-  client's pulse (open, overdue, last interaction).
+  client's pulse (open, overdue, last interaction). An alert about a task opens the task.
+- **Missions board**: the project room's stations as columns - Queue, Ready for an agent, In
+  hands, Awaiting review, Shipped - and one lane per client (or project, or assignee). Filters
+  for client, assignee, label, due date, and text; a quick add straight into a project or a
+  client's own work. A card shows its scope, due date (late in red, today in orange), checklist
+  or milestone progress, who has it (an agent figure for `agent:<tool>`), and a raised hand when
+  blocked. Drag a card along its lane to move it.
+- **Task drawer**: station, priority, due date, assignee, labels, blocker, checklist, the
+  description and acceptance criteria, a comment box, and the activity - every change by a
+  person or an agent. Every edit is one `ws task` command with the revision the drawer read; a
+  stale one is refused with 409 and the drawer reloads.
 
 ## Agent states
 
@@ -131,6 +142,10 @@ All under `/api/agent/desk/`, behind the host's token and loopback checks.
 | `POST pm/alerts/snooze` | `{ id, for: 1h\|1d\|1w\|"YYYY-MM-DD HH:MM" }` or `{ id, off: true }`; runs `ws alerts snooze` |
 | `GET pm/tasks?scope=&client=&status=a,b&assignee=&label=&kind=&due_before=` | `ws task list --json` across every client, or one scope (`<project>` or `@<client>`) |
 | `GET pm/tasks/:scope/:id` | `ws task show --json` |
+| `POST pm/tasks` | `{ scope, title, priority?, due?, assignee?, labels?, parent?, kind?, description? }`: `ws task add`, the description on stdin |
+| `POST pm/tasks/edit` | `{ scope, id, revision, changes: { title?, priority?, due?, assignee?, parent?, remind_at?, recur?, kind?, rank?, labels_add?, labels_rm?, check_add?, accept_add? } }`: `ws task edit`; `none` clears |
+| `POST pm/tasks/status` · `comment` · `check` · `block` · `unblock` | `ws task status|comment|check|block|unblock` with the revision; 409 when it is stale |
+| `POST pm/remind` | `{ scope, text, at: "YYYY-MM-DD HH:MM", recur? }`: `ws remind` |
 | `GET pm/clients` | Every client folder with a `client.md`, with its pulse from `ws client show` |
 | `GET pm/clients/:client` | `ws client show --json`, plus `restrictedText` (contacts, commercial) read by the host for the desk only - never a chat or an agent tool |
 | `POST notes` | `{ project, title, body }` -> `{ path }`. Runs `ws note <project> <title> -` with the body on stdin; 400 with the reason on any refusal |

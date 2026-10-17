@@ -9,6 +9,8 @@ import { useTheme } from './useTheme';
 import { useScopedChat } from './useScopedChat';
 import { SettingsDialog } from '../components/settings/SettingsDialog';
 import { TodayView } from './pm/TodayView';
+import { MissionsView } from './pm/MissionsView';
+import { TaskDrawer } from './pm/TaskDrawer';
 import { usePmAlerts } from './pm/usePm';
 import { DATE_ALERTS, PM_PAGE_TITLE, type PmPage } from './pm/pages';
 import type { Floor, FloorAgent, FloorRoom } from './types';
@@ -42,6 +44,13 @@ export function DeskApp() {
   /** A project management view filling the main area (Today, ...), or null. */
   const [page, setPage] = useState<PmPage | null>(null);
   const pm = usePmAlerts();
+  /** The task open in its drawer, and a counter its changes bump so the views follow. */
+  const [task, setTask] = useState<{ scope: string; id: string } | null>(null);
+  const [pmChanges, setPmChanges] = useState(0);
+  const openTask = useCallback((scope: string, id: string) => {
+    setDrawer(null);
+    setTask({ scope, id });
+  }, []);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [project, setProjectState] = useState(storedProject);
   const [showEndpoints, setShowEndpoints] = useState(false);
@@ -87,11 +96,16 @@ export function DeskApp() {
   useEffect(() => {
     if (!room && !page) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !drawer) { setRoom(null); setPage(null); }
+      if (event.key === 'Escape' && !drawer && !task) { setRoom(null); setPage(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [room, page, drawer]);
+  }, [room, page, drawer, task]);
+
+  // The menu or the assistant takes the right-hand side; an open task gives way to it.
+  useEffect(() => {
+    if (drawer) setTask(null);
+  }, [drawer]);
 
   const close = useCallback(() => setDrawer(null), []);
 
@@ -109,7 +123,7 @@ export function DeskApp() {
   const waiting = floor?.totals.waiting ?? 0;
   // Late, due, and reminding work the floor does not show; approvals and hands it does.
   const dated = pm.alerts.filter((a) => DATE_ALERTS.has(a.kind)).length;
-  const alertsVersion = pm.alerts.map((a) => a.id).join(',');
+  const alertsVersion = `${pm.alerts.map((a) => a.id).join(',')}#${pmChanges}`;
 
   // Track previous waiting count to alert when new agents need attention / approval.
   const prevWaiting = useRef<number | null>(null);
@@ -216,7 +230,10 @@ export function DeskApp() {
             onAssistant={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
             onAgent={openAgent}
             onSnooze={pm.snooze}
+            onOpenTask={openTask}
           />
+        ) : page === 'missions' ? (
+          <MissionsView projects={projectKeys} version={alertsVersion} onOpenTask={openTask} />
         ) : floor ? (
           <FloorView
             floor={floor}
@@ -260,6 +277,16 @@ export function DeskApp() {
           onPage={openPage}
           onOpenScope={openScope}
           onAssistantScope={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
+          onOpenTask={openTask}
+        />
+      )}
+      {task && !drawer && (
+        <TaskDrawer
+          key={`${task.scope}:${task.id}`}
+          scope={task.scope}
+          id={task.id}
+          onClose={() => setTask(null)}
+          onChanged={() => { setPmChanges((n) => n + 1); pm.refresh(); }}
         />
       )}
       {drawer?.kind === 'assistant' && (

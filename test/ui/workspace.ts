@@ -68,7 +68,67 @@ function approvalRequest(id: string, action: string, now: number, ttlMs: number)
  * `AC_STUB_WORKTREE` reaches it through the
  * server's environment.
  */
+/**
+ * A task store for the Missions specs: when a spec writes .local/stub/tasks.json, `ws task
+ * list --all`, `show`, `edit`, `comment`, `check`, and a `status` of a stored task answer from
+ * it, with revisions and activity, as the real ws_tasks.py would. Other task commands fall
+ * through to the file-writing stub below.
+ */
+const STUB_TASKS = `import json, pathlib, sys
+root, mode, args = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3:]
+store = root / ".local" / "stub" / "tasks.json"
+tasks = json.loads(store.read_text())["tasks"]
+if mode == "claims":
+    sub = args[1] if len(args) > 1 else ""
+    ids = {t["id"] for t in tasks}
+    claimed = sub in ("show", "edit", "comment", "check") or (sub == "list" and args[2:3] == ["--all"]) \\
+        or (sub in ("status", "block", "unblock") and len(args) > 3 and args[3] in ids)
+    sys.exit(0 if claimed else 1)
+def find(scope, task_id):
+    return next(t for t in tasks if t["scope"] == scope and t["id"] == task_id)
+def touch(t, text):
+    t["revision"] = "mtime:%d:size:1" % (int(t["revision"].split(":")[1]) + 1)
+    t.setdefault("activity", []).append({"at": "2026-10-17T10:00:00+07:00", "actor": "desk", "text": text})
+sub = args[0]
+if sub == "list":
+    print(json.dumps({"tasks": tasks}))
+elif sub == "show":
+    print(json.dumps(find(args[1], args[2])))
+else:
+    t, rest = find(args[1], args[2]), args[3:]
+    if "--revision" in rest and rest[rest.index("--revision") + 1] != t["revision"]:
+        sys.stderr.write("workspace tasks: revision mismatch: the task changed since it was read\\\\n")
+        sys.exit(1)
+    if sub == "status":
+        t["status"] = rest[0]; touch(t, "status -> " + rest[0])
+    elif sub == "comment":
+        touch(t, rest[0])
+    elif sub == "check":
+        item = t["checklist"][int(rest[0]) - 1]; item["done"] = not item["done"]; touch(t, "checked: " + item["text"])
+    elif sub in ("block", "unblock"):
+        t["blocked"] = sub == "block"; t["blocked_reason"] = rest[0] if sub == "block" else ""; touch(t, sub)
+    elif sub == "edit":
+        pairs = dict(zip(rest[0::2], rest[1::2]))
+        for flag, field in (("--due", "due"), ("--priority", "priority"), ("--assignee", "assignee")):
+            if flag in pairs:
+                t[field] = "" if pairs[flag] == "none" else pairs[flag]
+        for i, value in enumerate(rest):
+            if value == "--check-add":
+                t["checklist"].append({"n": len(t["checklist"]) + 1, "done": False, "text": rest[i + 1]})
+            if value == "--label-add":
+                t["labels"].append(rest[i + 1])
+        touch(t, "set")
+    store.write_text(json.dumps({"tasks": tasks}))
+    print("task %s %s %s" % (t["id"], t["status"], t["revision"]))
+`;
+
 const WS_STUB = `#!/bin/sh
+stubroot="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ "$1" = "task" ] && [ -f "$stubroot/.local/stub/tasks.json" ] && python3 "$(dirname "$0")/stub_tasks.py" "$stubroot" claims "$@"; then
+  printf '%s\\n' "$*" >> "$stubroot/.local/stub/calls.log"
+  shift
+  exec python3 "$(dirname "$0")/stub_tasks.py" "$stubroot" run "$@"
+fi
 if [ "$1" = "agent" ]; then
   if [ "$2" = "start" ]; then
     printf 'cd %s\\n' "$AC_STUB_WORKTREE"
@@ -213,6 +273,7 @@ export function createWorkspace(): Workspace {
 
   const ws = join(root, '.agents', 'bin', 'ws');
   writeFileSync(ws, WS_STUB);
+  writeFileSync(join(root, '.agents', 'bin', 'stub_tasks.py'), STUB_TASKS);
   chmodSync(ws, 0o755);
 
   // What a real session has: a product checkout cloned from a bare origin, and the session

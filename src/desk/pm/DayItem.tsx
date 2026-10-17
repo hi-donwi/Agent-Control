@@ -14,6 +14,8 @@ interface Props {
   onOpenScope: (scope: string) => void;
   onAssistant: (scope: string) => void;
   onSnooze: (id: string, length: string) => Promise<void>;
+  /** Opens the task an alert is about; without it, Open goes to the task's scope. */
+  onOpenTask?: (scope: string, id: string) => void;
   compact?: boolean;
 }
 
@@ -22,7 +24,7 @@ interface Props {
  * late, due, stalled, or reminding. Open goes where it can be acted on; snooze hides it for a
  * while, on this machine only.
  */
-export function DayItem({ item, onOpenScope, onAssistant, onSnooze, compact = false }: Props) {
+export function DayItem({ item, onOpenScope, onAssistant, onSnooze, onOpenTask, compact = false }: Props) {
   const [error, setError] = useState('');
   const person = item.kind === 'approval' || item.kind === 'agent';
   const snooze = (length: string) => {
@@ -44,7 +46,7 @@ export function DayItem({ item, onOpenScope, onAssistant, onSnooze, compact = fa
       </div>
       <div className="day-actions">
         <button type="button" className={`btn${person ? ' btn-primary' : ''}`}
-          onClick={() => (person ? onAssistant(item.scope) : onOpenScope(item.scope))}>
+          onClick={() => (person ? onAssistant(item.scope) : onOpenTask ? onOpenTask(item.scope, item.ref) : onOpenScope(item.scope))}>
           Open
         </button>
         {!person && (

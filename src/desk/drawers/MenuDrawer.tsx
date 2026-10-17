@@ -31,6 +31,7 @@ interface Props {
   onPage: (page: PmPage) => void;
   onOpenScope: (scope: string) => void;
   onAssistantScope: (scope: string) => void;
+  onOpenTask: (scope: string, id: string) => void;
 }
 
 const WORKSPACE_ITEMS: SectionId[] = ['projects', 'agents', 'approvals'];
@@ -110,7 +111,7 @@ function ProjectPicker({ floor, project, onProject }: Props) {
   );
 }
 
-function Inbox({ alerts, onSnooze, onOpenScope, onAssistantScope, onClose }: Props) {
+function Inbox({ alerts, onSnooze, onOpenScope, onAssistantScope, onOpenTask, onClose }: Props) {
   if (alerts.length === 0) return <p className="drawer-empty">Nothing waits: no approvals, late, due, stalled, or reminding work.</p>;
   return (
     <ul className="day-list" aria-label="Alerts">
@@ -122,6 +123,7 @@ function Inbox({ alerts, onSnooze, onOpenScope, onAssistantScope, onClose }: Pro
           onSnooze={onSnooze}
           onOpenScope={(scope) => { onClose(); onOpenScope(scope); }}
           onAssistant={(scope) => onAssistantScope(scope)}
+          onOpenTask={(scope, id) => { onClose(); onOpenTask(scope, id); }}
         />
       ))}
     </ul>
@@ -158,6 +160,12 @@ function Nav({ floor, project, onSection, onFloor, alerts, onPage }: Props) {
         <li>
           <button type="button" className="nav-item" onClick={() => onPage('today')}>
             <span>Today</span>
+            <ChevronIcon />
+          </button>
+        </li>
+        <li>
+          <button type="button" className="nav-item" onClick={() => onPage('missions')}>
+            <span>Missions board</span>
             <ChevronIcon />
           </button>
         </li>

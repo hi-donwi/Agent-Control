@@ -14,6 +14,7 @@ interface Props {
   onAssistant: (scope: string) => void;
   onAgent: (agent: FloorAgent) => void;
   onSnooze: (id: string, length: string) => Promise<void>;
+  onOpenTask: (scope: string, id: string) => void;
 }
 
 const SIGNALS: Array<{ key: keyof PmToday['signals']; label: string; kinds: AlertKind[]; tone: string }> = [
@@ -41,7 +42,7 @@ function since(iso: string): string {
  * The day across every client: who waits for you, what is late or due, what stalled, and
  * what is in hand - one list, so one screen answers "what now". Computed by `ws today`.
  */
-export function TodayView({ floor, version, onOpenScope, onAssistant, onAgent, onSnooze }: Props) {
+export function TodayView({ floor, version, onOpenScope, onAssistant, onAgent, onSnooze, onOpenTask }: Props) {
   const { data, error } = usePmRead<PmToday>('desk/pm/today', version);
   const pulse = usePmRead<{ clients: PmClientPulse[] }>('desk/pm/clients', version);
   const [filter, setFilter] = useState<AlertKind[] | null>(null);
@@ -89,7 +90,7 @@ export function TodayView({ floor, version, onOpenScope, onAssistant, onAgent, o
             : (
               <ul className="day-list">
                 {items.map((item) => (
-                  <DayItem key={item.id} item={item} onOpenScope={onOpenScope} onAssistant={onAssistant} onSnooze={onSnooze} />
+                  <DayItem key={item.id} item={item} onOpenScope={onOpenScope} onAssistant={onAssistant} onSnooze={onSnooze} onOpenTask={onOpenTask} />
                 ))}
               </ul>
             )}
@@ -103,7 +104,7 @@ export function TodayView({ floor, version, onOpenScope, onAssistant, onAgent, o
                 {data.in_progress.slice(0, 8).map((task) => (
                   <li key={`${task.scope}:${task.id}`}>
                     <button type="button" className="mission-link" onClick={() => onOpenScope(task.scope)}>{task.scope}</button>
-                    {' '}{task.title}
+                    {' '}<button type="button" className="mission-link is-plain" onClick={() => onOpenTask(task.scope, task.id)}>{task.title}</button>
                     {task.assignee && <span className="memory-date"> · {task.assignee}</span>}
                   </li>
                 ))}
