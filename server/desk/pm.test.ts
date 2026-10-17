@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PmConflictError, clientKeys, pmAddTask, pmAlerts, pmBlock, pmCheck, pmClient, pmClients, pmComment, pmEditTask, pmRemind, pmSetStatus, pmTask, pmTasks, pmToday, snoozeAlert } from './pm.js';
+import { PmConflictError, clientKeys, pmAddTask, pmLogInteraction, pmAlerts, pmBlock, pmCheck, pmClient, pmClients, pmComment, pmEditTask, pmRemind, pmSetStatus, pmTask, pmTasks, pmToday, snoozeAlert } from './pm.js';
 import type { WsInputRunner } from './ws-input.js';
 
 /** A `ws` that answers from `replies` by its first two words, and records every call. */
@@ -128,5 +128,16 @@ describe('desk project management writes', () => {
   it('turns a revision mismatch into a conflict the desk reloads on', async () => {
     const { run } = writer('workspace tasks: revision mismatch: the task changed since it was read');
     await assert.rejects(pmSetStatus(run, { scope: 'api', id: 'task_x', status: 'done', revision: REV }), PmConflictError);
+  });
+});
+
+describe('client interaction log', () => {
+  it('appends one line through ws client log, checked first', async () => {
+    const calls: string[][] = [];
+    const run: WsInputRunner = async (args) => { calls.push(args); return 'logged acme\n'; };
+    assert.deepEqual(await pmLogInteraction(run, 'acme', { text: 'Call:  agreed   phase 2' }), { client: 'acme' });
+    assert.deepEqual(calls, [['client', 'log', 'acme', 'Call: agreed phase 2']]);
+    await assert.rejects(pmLogInteraction(run, 'acme', { text: ' ' }), /the entry is empty/);
+    await assert.rejects(pmLogInteraction(run, '../x', { text: 'x' }), /invalid client/);
   });
 });

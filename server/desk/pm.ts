@@ -334,3 +334,12 @@ export async function pmRemind(run: WsInputRunner, request: Record<string, unkno
   }
   return write(run, args);
 }
+
+/** One line in the client's interaction log - a meeting, a call, an agreement - via `ws client log`. */
+export async function pmLogInteraction(run: WsInputRunner, key: unknown, request: Record<string, unknown>): Promise<{ client: string }> {
+  const client = clientKey(key);
+  const text = line(request.text, 'the entry', TEXT_MAX);
+  if (CONTROL_RE.test(text)) throw new Error('the entry contains control characters');
+  await run(['client', 'log', client, text], '');
+  return { client };
+}
