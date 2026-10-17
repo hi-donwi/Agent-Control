@@ -280,6 +280,9 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       system: scope
         ? `${SYSTEM_PROMPT}\n\nThis chat is bound to project "${scope.project}" (folder ${scope.folder}). `
           + 'Only that project, its memory and runs, and the framework are available; do not ask for other projects.'
+          + ' Its tasks are records you share with the operator: list_tasks and today show the work and what is'
+          + ' waiting; add_task and update_task change them (the operator\'s policy may ask for approval first);'
+          + ' client_profile says how to work with the client. Record what you change on the task, not only here.'
           + (scope.worktree
             ? ` A coding session is active in ${scope.worktree}. write_file, edit_file, run_command, `
               + 'read_file, and search_code all act there, not in the project\'s main checkout; git_diff shows '
