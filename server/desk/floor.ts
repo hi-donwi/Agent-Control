@@ -29,17 +29,28 @@ export interface FloorRoom {
   agents: FloorAgent[];
   pendingApprovals: number;
   codingSession: boolean;
+  lastActiveAt: string | null;
+  idle: boolean;
+  idleDays: number;
 }
 
 export interface FloorZone {
   client: string;
   rooms: FloorRoom[];
+  idle: boolean;
 }
 
 export interface Floor {
   generatedAt: string;
   zones: FloorZone[];
-  totals: { projects: number; agents: number; active: number; waiting: number };
+  totals: {
+    projects: number;
+    agents: number;
+    active: number;
+    waiting: number;
+    idleProjects?: number;
+    activeProjects?: number;
+  };
 }
 
 export interface PendingSummary {
@@ -56,18 +67,31 @@ export interface FloorInput {
   host: HostActivity[];
   approvals: Record<string, PendingSummary>;
   codingSessions: ReadonlySet<string>;
+  lastActive?: Record<string, string | null>;
 }
 
 /** Clocks can name a project the registry does not list (the framework's own key). */
 const UNREGISTERED = '-';
 const QUIET: ReadonlySet<ActivityState> = new Set(['idle', 'offline']);
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export function buildFloor(input: FloorInput, now: Date): Floor {
   const rooms = new Map<string, FloorRoom & { client: string }>();
   const room = (key: string, client = UNREGISTERED) => {
     let entry = rooms.get(key);
     if (!entry) {
-      entry = { key, client, group: '-', description: '', agents: [], pendingApprovals: 0, codingSession: false };
+      entry = {
+        key,
+        client,
+        group: '-',
+        description: '',
+        agents: [],
+        pendingApprovals: 0,
+        codingSession: false,
+        lastActiveAt: null,
+        idle: true,
+        idleDays: 999,
+      };
       rooms.set(key, entry);
     }
     return entry;
@@ -115,24 +139,59 @@ export function buildFloor(input: FloorInput, now: Date): Floor {
     if (rooms.has(project)) room(project).codingSession = true;
   }
 
-  const busy = (r: FloorRoom) => r.agents.filter((a) => !QUIET.has(a.state)).length;
+  const busy = (r: FloorRoom) => (r.agents.some((a) => !QUIET.has(a.state)) ? 1 : 0) + (r.pendingApprovals > 0 ? 1 : 0) + (r.codingSession ? 1 : 0);
+
+  // Compute activity timestamps and idle state for each room.
+  for (const r of rooms.values()) {
+    let latestMs: number | null = null;
+    if (input.lastActive && input.lastActive[r.key]) {
+      const t = Date.parse(input.lastActive[r.key]!);
+      if (Number.isFinite(t)) latestMs = t;
+    }
+    for (const a of r.agents) {
+      const t = Date.parse(a.since);
+      if (Number.isFinite(t) && (latestMs === null || t > latestMs)) {
+        latestMs = t;
+      }
+    }
+    if (input.approvals[r.key]?.requestedAt) {
+      const t = Date.parse(input.approvals[r.key].requestedAt);
+      if (Number.isFinite(t) && (latestMs === null || t > latestMs)) {
+        latestMs = t;
+      }
+    }
+
+    r.lastActiveAt = latestMs !== null ? new Date(latestMs).toISOString() : null;
+    r.idleDays = latestMs !== null
+      ? Math.max(0, Math.round(((now.getTime() - latestMs) / ONE_DAY_MS) * 10) / 10)
+      : 999;
+    const hasActiveSignal = busy(r) > 0;
+    r.idle = !hasActiveSignal && (latestMs === null || (now.getTime() - latestMs) > ONE_DAY_MS);
+  }
+
   const zones = new Map<string, FloorZone>();
   for (const { client, ...rest } of rooms.values()) {
     rest.agents.sort((a, b) => a.since.localeCompare(b.since));
-    if (!zones.has(client)) zones.set(client, { client, rooms: [] });
+    if (!zones.has(client)) zones.set(client, { client, rooms: [], idle: true });
     zones.get(client)!.rooms.push(rest);
   }
   const ordered = [...zones.values()];
   for (const zone of ordered) {
-    zone.rooms.sort((a, b) => busy(b) - busy(a) || b.agents.length - a.agents.length || a.key.localeCompare(b.key));
+    zone.idle = zone.rooms.every((r) => r.idle);
+    zone.rooms.sort((a, b) => (b.idle ? 0 : 1) - (a.idle ? 0 : 1) || busy(b) - busy(a) || b.agents.length - a.agents.length || a.key.localeCompare(b.key));
   }
   const zoneAgents = (z: FloorZone) => z.rooms.reduce((n, r) => n + r.agents.length, 0);
+  const zoneActive = (z: FloorZone) => z.rooms.filter((r) => !r.idle).length;
   ordered.sort((a, b) =>
     (a.client === UNREGISTERED ? 1 : 0) - (b.client === UNREGISTERED ? 1 : 0)
+    || (b.idle ? 0 : 1) - (a.idle ? 0 : 1)
+    || zoneActive(b) - zoneActive(a)
     || zoneAgents(b) - zoneAgents(a)
     || a.client.localeCompare(b.client));
 
   const agents = ordered.flatMap((z) => z.rooms.flatMap((r) => r.agents));
+  const allRooms = [...rooms.values()];
+  const idleCount = allRooms.filter((r) => r.idle).length;
   return {
     generatedAt: now.toISOString(),
     zones: ordered,
@@ -141,6 +200,8 @@ export function buildFloor(input: FloorInput, now: Date): Floor {
       agents: agents.length,
       active: agents.filter((a) => !QUIET.has(a.state)).length,
       waiting: agents.filter((a) => a.state === 'waiting').length,
+      idleProjects: idleCount,
+      activeProjects: allRooms.length - idleCount,
     },
   };
 }
