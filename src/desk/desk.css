@@ -1200,6 +1200,72 @@
   .station { scroll-snap-align: start; }
 }
 
+/* ── Missions: Today and the Inbox (ADR-0024) ─────────────────────────── */
+.pm-view { max-width: 1600px; margin: 0 auto; padding-bottom: 48px; display: flex; flex-direction: column; gap: 16px; }
+.pm-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.pm-kicker { margin: 0; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--d-ink-3); font-weight: 650; }
+.pm-title { margin: 2px 0 0; font-size: 26px; letter-spacing: -.01em; }
+.pm-date { color: var(--d-ink-2); font-size: 13px; }
+
+/* Signals: one tile per kind of thing waiting; a tile is also a filter. */
+.signals { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.signal {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 12px; border-radius: 14px; text-align: left; cursor: pointer;
+  background: var(--d-room); border: 1px solid var(--d-room-line); color: var(--d-ink); font: inherit;
+}
+.signal b { font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.signal span { font-size: 11.5px; color: var(--d-ink-3); }
+.signal.is-attn { border-color: color-mix(in srgb, var(--d-attn) 55%, transparent); background: color-mix(in srgb, var(--d-attn) 7%, var(--d-room)); }
+.signal.is-attn b { color: var(--d-attn); }
+.signal.is-warn { border-color: color-mix(in srgb, var(--d-warn) 55%, transparent); background: color-mix(in srgb, var(--d-warn) 6%, var(--d-room)); }
+.signal.is-warn b { color: var(--d-warn); }
+.signal.is-on { outline: 2px solid var(--d-accent); outline-offset: 1px; }
+.signal:hover { border-color: var(--d-accent); }
+
+.pm-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+.pm-day { min-width: 0; }
+
+/* A day item: a raised hand when a person waits, a ticket notch otherwise. */
+.day-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.day-item { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--d-room-line); }
+.day-item:last-child { border-bottom: none; }
+.day-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--d-ink-3); }
+.day-mark i { width: 12px; height: 12px; border-radius: 4px; border: 1.5px solid currentColor; }
+.day-item.is-attn .day-mark { color: var(--d-attn); }
+.day-item.is-warn .day-mark { color: var(--d-warn); }
+.day-item.is-attn .day-mark svg { animation: wave 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+.day-body { min-width: 0; }
+.day-title { margin: 0; font-size: 13.5px; color: var(--d-ink); overflow-wrap: anywhere; }
+.day-meta { margin: 3px 0 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11.5px; color: var(--d-ink-3); }
+.day-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; font-weight: 650; }
+.day-kind.kind-overdue { color: var(--d-warn); }
+.day-kind.kind-approval, .day-kind.kind-agent, .day-kind.kind-due_today, .day-kind.kind-reminder { color: var(--d-attn); }
+.day-actions { display: flex; gap: 6px; align-items: center; }
+.day-actions select {
+  font: inherit; font-size: 12px; color: var(--d-ink); background: var(--d-room);
+  border: 1px solid var(--d-line); border-radius: 7px; padding: 3px 6px;
+}
+.day-item.is-compact { grid-template-columns: 22px minmax(0, 1fr); }
+.day-item.is-compact .day-actions { grid-column: 2; }
+.chip-client { background: var(--d-hover); border-color: transparent; font-weight: 600; }
+
+.pulse { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.pulse td { padding: 5px 4px; border-bottom: 1px solid var(--d-room-line); color: var(--d-ink-2); }
+.pulse tr:last-child td { border-bottom: none; }
+.pulse .is-warn { color: var(--d-warn); font-weight: 650; }
+.pulse-when { color: var(--d-ink-3); text-align: right; }
+
+@media (max-width: 1100px) {
+  .pm-grid { grid-template-columns: 1fr; }
+  .signals { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .signals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .day-item { grid-template-columns: 22px minmax(0, 1fr); }
+  .day-actions { grid-column: 2; }
+}
+
 /* ── Small screens ───────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .desk-main { padding: 72px 12px 64px; }

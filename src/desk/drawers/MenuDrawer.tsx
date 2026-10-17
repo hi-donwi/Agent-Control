@@ -6,8 +6,11 @@ import { SectionView, type SectionCommands } from '../uidl/SectionView';
 import { SECTIONS, sectionDocument, type SectionId } from '../uidl/documents';
 import type { Floor, FloorRoom } from '../types';
 import type { ThemePref } from '../useTheme';
+import { DayItem } from '../pm/DayItem';
+import type { PmAlert } from '../pm/types';
+import type { PmPage } from '../pm/pages';
 
-export type MenuSection = SectionId | 'settings';
+export type MenuSection = SectionId | 'settings' | 'inbox';
 
 interface Props {
   floor: Floor | null;
@@ -21,6 +24,13 @@ interface Props {
   onTheme: (theme: ThemePref) => void;
   onEndpoints: () => void;
   onClose: () => void;
+  /** Computed alerts (ws alerts), for the Inbox. */
+  alerts: PmAlert[];
+  onSnooze: (id: string, length: string) => Promise<void>;
+  /** Opens a project management view in the main area. */
+  onPage: (page: PmPage) => void;
+  onOpenScope: (scope: string) => void;
+  onAssistantScope: (scope: string) => void;
 }
 
 const WORKSPACE_ITEMS: SectionId[] = ['projects', 'agents', 'approvals'];
@@ -48,9 +58,9 @@ export function MenuDrawer(props: Props) {
     'plans.status': (_state, payload) =>
       apiFetch('desk/plan/status', { method: 'POST', body: JSON.stringify({ ...payload, project }) }),
   }), [project]);
-  const title = section ? (section === 'settings' ? 'Settings' : SECTIONS[section].title) : 'Menu';
+  const title = section ? (section === 'settings' ? 'Settings' : section === 'inbox' ? 'Inbox' : SECTIONS[section].title) : 'Menu';
   return (
-    <Drawer label={title} wide={section !== null && section !== 'settings'} onClose={onClose}>
+    <Drawer label={title} wide={section !== null && section !== 'settings' && section !== 'inbox'} onClose={onClose}>
       <header className="drawer-head">
         {section && (
           <button type="button" className="icon-btn" onClick={() => onSection(null)} aria-label="Back to menu">
@@ -59,7 +69,7 @@ export function MenuDrawer(props: Props) {
         )}
         <h2 className="drawer-title">
           {title}
-          {section && section !== 'settings' && project && SECTIONS[section].scope === 'project' && (
+          {section && section !== 'settings' && section !== 'inbox' && project && SECTIONS[section].scope === 'project' && (
             <span className="drawer-subtitle"> · {project}</span>
           )}
         </h2>
@@ -67,11 +77,12 @@ export function MenuDrawer(props: Props) {
           <CloseIcon />
         </button>
       </header>
-      <ProjectPicker {...props} />
+      {section !== 'inbox' && <ProjectPicker {...props} />}
       <div className="drawer-body">
         {section === null && <Nav {...props} />}
         {section === 'settings' && <Settings {...props} />}
-        {section && section !== 'settings' && (
+        {section === 'inbox' && <Inbox {...props} />}
+        {section && section !== 'settings' && section !== 'inbox' && (
           SECTIONS[section].scope === 'project' && !project
             ? <p className="drawer-empty">Choose a project above, or click a room on the floor.</p>
             : (
@@ -99,7 +110,25 @@ function ProjectPicker({ floor, project, onProject }: Props) {
   );
 }
 
-function Nav({ floor, project, onSection, onFloor }: Props) {
+function Inbox({ alerts, onSnooze, onOpenScope, onAssistantScope, onClose }: Props) {
+  if (alerts.length === 0) return <p className="drawer-empty">Nothing waits: no approvals, late, due, stalled, or reminding work.</p>;
+  return (
+    <ul className="day-list" aria-label="Alerts">
+      {alerts.map((alert) => (
+        <DayItem
+          key={alert.id}
+          item={alert}
+          compact
+          onSnooze={onSnooze}
+          onOpenScope={(scope) => { onClose(); onOpenScope(scope); }}
+          onAssistant={(scope) => onAssistantScope(scope)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+function Nav({ floor, project, onSection, onFloor, alerts, onPage }: Props) {
   const approvals = rooms(floor).reduce((n, room) => n + room.pendingApprovals, 0);
   const counts: Partial<Record<SectionId, number>> = {
     projects: floor?.totals.projects,
@@ -117,6 +146,22 @@ function Nav({ floor, project, onSection, onFloor }: Props) {
   );
   return (
     <nav aria-label="Desk">
+      <p className="nav-group">Missions</p>
+      <ul className="nav-list">
+        <li>
+          <button type="button" className="nav-item" onClick={() => onSection('inbox')}>
+            <span>Inbox</span>
+            <span className={`nav-count${alerts.some((a) => a.severity !== 'info') ? ' is-attn' : ''}`}>{alerts.length}</span>
+            <ChevronIcon />
+          </button>
+        </li>
+        <li>
+          <button type="button" className="nav-item" onClick={() => onPage('today')}>
+            <span>Today</span>
+            <ChevronIcon />
+          </button>
+        </li>
+      </ul>
       <p className="nav-group">Workspace</p>
       <ul className="nav-list">
         <li>

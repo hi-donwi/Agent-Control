@@ -63,7 +63,9 @@ function approvalRequest(id: string, action: string, now: number, ttlMs: number)
  * A `ws` CLI the bridge can shell out to. `list` answers the registry, `agent start`
  * prints the one machine-readable `cd <path>` line `coding-sessions.ts` parses, and
  * `agent stop` succeeds. `note`, `task`, and `plan` write the files the real commands
- * would, without their revision checks. `AC_STUB_WORKTREE` reaches it through the
+ * would, without their revision checks. `today`, `alerts`, and `client show` answer from
+ * JSON a spec writes to .local/stub/, and log their arguments to .local/stub/calls.log.
+ * `AC_STUB_WORKTREE` reaches it through the
  * server's environment.
  */
 const WS_STUB = `#!/bin/sh
@@ -72,6 +74,24 @@ if [ "$1" = "agent" ]; then
     printf 'cd %s\\n' "$AC_STUB_WORKTREE"
   else
     echo "session stopped"
+  fi
+elif [ "$1" = "today" ] || [ "$1" = "alerts" ] || [ "$1" = "client" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  stub="$root/.local/stub"
+  mkdir -p "$stub"
+  printf '%s\\n' "$*" >> "$stub/calls.log"
+  if [ "$1" = "alerts" ] && [ "$2" = "snooze" ]; then
+    printf '{"alerts": []}\\n' > "$stub/alerts.json"
+    printf 'alert %s snoozed\\n' "$3"
+  elif [ "$1" = "client" ]; then
+    if [ -f "$stub/client-$3.json" ]; then cat "$stub/client-$3.json"
+    else printf '{"client": "%s", "open": 0, "overdue": 0, "alerts": 0, "projects": [], "interactions": [], "tasks": [], "restricted": {}, "profile": {"title": "%s", "fields": {}}}\\n' "$3" "$3"; fi
+  elif [ -f "$stub/$1.json" ]; then
+    cat "$stub/$1.json"
+  elif [ "$1" = "today" ]; then
+    printf '{"date": "2026-10-17", "signals": {"overdue": 0, "due_today": 0, "waiting": 0, "blocked": 0, "stale": 0, "review": 0, "reminders": 0}, "items": [], "in_progress": []}\\n'
+  else
+    printf '{"alerts": []}\\n'
   fi
 elif [ "$1" = "verify" ]; then
   root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -144,6 +164,9 @@ export function createWorkspace(): Workspace {
   mkdirSync(join(root, '.local', 'agent', 'coding-sessions'), { recursive: true });
 
   writeFileSync(join(root, 'AGENTS.md'), '# fixture workspace\n');
+  // The project's client, so the desk's client list has one entry (ADR-0024).
+  mkdirSync(join(root, 'context', 'clients', 'framework'), { recursive: true });
+  writeFileSync(join(root, 'context', 'clients', 'framework', 'client.md'), '# framework - client\n');
   writeFileSync(join(root, 'context', 'registry.tsv'),
     `key\tclient\tgroup\tfolder\n${PROJECT}\tframework\t-\tprojects/mock/${PROJECT}\n`);
 

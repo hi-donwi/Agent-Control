@@ -8,6 +8,9 @@ import { useFloor } from './useFloor';
 import { useTheme } from './useTheme';
 import { useScopedChat } from './useScopedChat';
 import { SettingsDialog } from '../components/settings/SettingsDialog';
+import { TodayView } from './pm/TodayView';
+import { usePmAlerts } from './pm/usePm';
+import { DATE_ALERTS, PM_PAGE_TITLE, type PmPage } from './pm/pages';
 import type { Floor, FloorAgent, FloorRoom } from './types';
 import './desk.css';
 
@@ -36,6 +39,9 @@ export function DeskApp() {
   const [focusClient, setFocusClient] = useState<string | null>(null);
   /** The project whose room fills the main area, or null for the floor. */
   const [room, setRoom] = useState<string | null>(null);
+  /** A project management view filling the main area (Today, ...), or null. */
+  const [page, setPage] = useState<PmPage | null>(null);
+  const pm = usePmAlerts();
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [project, setProjectState] = useState(storedProject);
   const [showEndpoints, setShowEndpoints] = useState(false);
@@ -55,18 +61,37 @@ export function DeskApp() {
 
   const openRoom = useCallback((target: FloorRoom) => {
     setProject(target.key);
+    setPage(null);
     setRoom(target.key);
   }, [setProject]);
 
-  // Escape leaves a room for the floor, unless a drawer is open: then it closes the drawer.
+  // A task's scope: a project opens its room; a client's own work opens the floor at that client.
+  const openScope = useCallback((scope: string) => {
+    setPage(null);
+    if (scope.startsWith('@')) {
+      setRoom(null);
+      setFocusClient(scope.slice(1));
+    } else {
+      setProject(scope);
+      setRoom(scope);
+    }
+  }, [setProject]);
+
+  const openPage = useCallback((next: PmPage) => {
+    setRoom(null);
+    setPage(next);
+    setDrawer(null);
+  }, []);
+
+  // Escape leaves a room or a view for the floor, unless a drawer is open: then it closes the drawer.
   useEffect(() => {
-    if (!room) return;
+    if (!room && !page) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !drawer) setRoom(null);
+      if (event.key === 'Escape' && !drawer) { setRoom(null); setPage(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [room, drawer]);
+  }, [room, page, drawer]);
 
   const close = useCallback(() => setDrawer(null), []);
 
@@ -82,12 +107,16 @@ export function DeskApp() {
     return entry ? JSON.stringify(entry) : '';
   }, [floor, room]);
   const waiting = floor?.totals.waiting ?? 0;
+  // Late, due, and reminding work the floor does not show; approvals and hands it does.
+  const dated = pm.alerts.filter((a) => DATE_ALERTS.has(a.kind)).length;
+  const alertsVersion = pm.alerts.map((a) => a.id).join(',');
 
   // Track previous waiting count to alert when new agents need attention / approval.
   const prevWaiting = useRef<number | null>(null);
   useEffect(() => {
     const base = 'desk';
-    document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
+    const count = waiting + dated;
+    document.title = count > 0 ? `(${count}) ${base}` : base;
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (prevWaiting.current !== null && waiting > prevWaiting.current) {
@@ -107,14 +136,20 @@ export function DeskApp() {
       }
     }
     prevWaiting.current = waiting;
-  }, [waiting]);
+  }, [waiting, dated]);
 
   return (
     <div className="desk">
       <header className="desk-bar">
         <div className="desk-crumbs">
           <span className="desk-mark" aria-hidden="true" />
-          {room ? (
+          {page ? (
+            <nav aria-label="Floor position" className="crumbs">
+              <button type="button" onClick={() => setPage(null)}>All</button>
+              <span aria-hidden="true">/</span>
+              <span aria-current="location">{PM_PAGE_TITLE[page]}</span>
+            </nav>
+          ) : room ? (
             <nav aria-label="Floor position" className="crumbs">
               <button type="button" onClick={() => { setRoom(null); setFocusClient(null); }}>All</button>
               <span aria-hidden="true">/</span>
@@ -154,12 +189,12 @@ export function DeskApp() {
           <button
             type="button"
             className="bar-btn"
-            aria-label={waiting ? `Menu, ${waiting} waiting for you` : 'Menu'}
+            aria-label={waiting || dated ? `Menu, ${[waiting ? `${waiting} waiting for you` : '', dated ? `${dated} due or late` : ''].filter(Boolean).join(', ')}` : 'Menu'}
             aria-expanded={drawer?.kind === 'menu'}
             onClick={() => setDrawer(drawer?.kind === 'menu' ? null : { kind: 'menu', section: null })}
           >
             <MenuIcon />
-            {waiting > 0 && <span className="bar-dot" aria-hidden="true" />}
+            {(waiting > 0 || dated > 0) && <span className="bar-dot" aria-hidden="true" />}
           </button>
         </div>
       </header>
@@ -172,6 +207,15 @@ export function DeskApp() {
             onAgent={openAgent}
             onAssistant={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
             onNotes={(key) => { setProject(key); setDrawer({ kind: 'menu', section: 'notes' }); }}
+          />
+        ) : page === 'today' ? (
+          <TodayView
+            floor={floor}
+            version={alertsVersion}
+            onOpenScope={openScope}
+            onAssistant={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
+            onAgent={openAgent}
+            onSnooze={pm.snooze}
           />
         ) : floor ? (
           <FloorView
@@ -211,6 +255,11 @@ export function DeskApp() {
           onTheme={setTheme}
           onEndpoints={() => setShowEndpoints(true)}
           onClose={close}
+          alerts={pm.alerts}
+          onSnooze={pm.snooze}
+          onPage={openPage}
+          onOpenScope={openScope}
+          onAssistantScope={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
         />
       )}
       {drawer?.kind === 'assistant' && (
