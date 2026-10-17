@@ -9,9 +9,9 @@ interface DiffResponse {
 
 /**
  * The coding session's changes so far, read from its worktree. It reloads when `version`
- * changes - the drawer bumps it after every agent turn - and on demand.
+ * changes - the drawer bumps it after every agent turn and after a ship - and on demand.
  */
-export function ChangesView({ project, version }: { project: string; version: number }) {
+export function ChangesView({ project, version }: { project: string; version: number | string }) {
   const [files, setFiles] = useState<FileDiff[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState('');

@@ -8,7 +8,13 @@ export const PROJECT = 'mockproj';
 /** The branch the fixture worktree sits on; the coding-session panel shows it. */
 export const SESSION_BRANCH = 'ws-mockproj';
 /** What the seeded session's panel line should contain (its last two path segments). */
-export const WORKTREE_TAIL = 'worktrees/mockproj';
+export const WORKTREE_TAIL = 'mockproj/fixture';
+/** Where the seeded session's worktree is, under the workspace root. */
+export const worktreeOf = (root: string) => join(root, '.local', 'worktrees', PROJECT, 'fixture');
+/** The bare repository the product checkout and the session push to. */
+export const originOf = (root: string) => join(root, '.local', 'fixture-origin.git');
+/** Write `pass`, `findings`, or `incomplete` here to steer the stub `ws verify`. */
+export const verifyStatusFile = (root: string) => join(root, '.local', 'agent', 'stub-verify-status');
 
 /** The three seeded approval requests: one live, one expired, one already decided. */
 export const APPROVALS = {
@@ -67,6 +73,15 @@ if [ "$1" = "agent" ]; then
   else
     echo "session stopped"
   fi
+elif [ "$1" = "verify" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  st="pass"
+  [ -f "$root/.local/agent/stub-verify-status" ] && st="$(cat "$root/.local/agent/stub-verify-status")"
+  cs="pass"; [ "$st" = "pass" ] || cs="failed"
+  printf '{"version": 1, "project": "%s", "status": "%s", "commands": [{"id": "unit-tests", "required": true, "status": "%s", "duration_ms": 1200}]}\\n' "$2" "$st" "$cs"
+  [ "$st" = "pass" ] && exit 0
+  [ "$st" = "findings" ] && exit 1
+  exit 2
 elif [ "$1" = "note" ]; then
   root="$(cd "$(dirname "$0")/../.." && pwd)"
   dir="$root/context/memory/projects/$2/notes"
@@ -118,12 +133,12 @@ fi
 export function createWorkspace(): Workspace {
   const root = mkdtempSync(join(tmpdir(), 'ac-ui-root-'));
   const home = mkdtempSync(join(tmpdir(), 'ac-ui-home-'));
-  const worktree = join(root, '.local', 'worktrees', PROJECT);
+  const worktree = worktreeOf(root);
   const now = Date.now();
 
   mkdirSync(join(root, '.agents', 'bin'), { recursive: true });
   mkdirSync(join(root, 'context'), { recursive: true });
-  mkdirSync(join(root, 'projects', 'mock', PROJECT), { recursive: true });
+  mkdirSync(join(root, '.local', 'worktrees', PROJECT), { recursive: true });
   mkdirSync(join(root, '.local', 'agent', 'approvals', PROJECT), { recursive: true });
   mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
   mkdirSync(join(root, '.local', 'agent', 'coding-sessions'), { recursive: true });
@@ -177,11 +192,22 @@ export function createWorkspace(): Workspace {
   writeFileSync(ws, WS_STUB);
   chmodSync(ws, 0o755);
 
-  // A started session's branch comes from `git rev-parse` in the worktree, so it has to be
-  // a real repository - and needs a commit before HEAD resolves to a branch.
-  execFileSync('git', ['init', '-q', '-b', SESSION_BRANCH, worktree], { stdio: 'ignore' });
-  execFileSync('git', ['-C', worktree, '-c', 'user.email=fixture@example.invalid', '-c', 'user.name=fixture',
-    'commit', '-q', '--allow-empty', '-m', 'fixture'], { stdio: 'ignore' });
+  // What a real session has: a product checkout cloned from a bare origin, and the session
+  // worktree on its own branch beside it - so verify, ship, and discard run real git. A
+  // started session's branch comes from `git rev-parse` in the worktree.
+  const origin = originOf(root);
+  const primary = join(root, 'projects', 'mock', PROJECT);
+  const run = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin], { stdio: 'ignore' });
+  execFileSync('git', ['clone', '-q', origin, primary], { stdio: 'ignore' });
+  run(primary, 'config', 'user.email', 'fixture@example.invalid');
+  run(primary, 'config', 'user.name', 'fixture');
+  writeFileSync(join(primary, 'README.md'), '# mock product\n');
+  run(primary, 'add', '-A');
+  run(primary, 'commit', '-q', '-m', 'fixture');
+  run(primary, 'push', '-q', 'origin', 'HEAD:main');
+  run(primary, 'remote', 'set-head', 'origin', 'main');
+  run(primary, 'worktree', 'add', '-q', '-b', SESSION_BRANCH, worktree);
 
   return { root, home, worktree };
 }

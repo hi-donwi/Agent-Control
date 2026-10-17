@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from '
 import { join } from 'node:path';
 import type { Locator } from '@playwright/test';
 import { test, expect } from './fixtures.js';
-import { HEAD_SHA, PROJECT, SESSION_BRANCH } from './workspace.js';
+import { HEAD_SHA, PROJECT, SESSION_BRANCH, worktreeOf } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
@@ -268,7 +268,7 @@ test('starts a coding session from the agent drawer and shows its changes', asyn
   await expect(bar.getByText(SESSION_BRANCH)).toBeVisible();
 
   // What an agent's write_file would leave in the session's worktree.
-  writeFileSync(join(workspaceRoot(), '.local', 'worktrees', PROJECT, 'NOTES.md'), '# Notes\nfrom the agent\n');
+  writeFileSync(join(worktreeOf(workspaceRoot()), 'NOTES.md'), '# Notes\nfrom the agent\n');
   await bar.getByRole('button', { name: 'Changes' }).click();
   const changes = drawer.getByLabel('Changes in the coding session');
   await expect(changes.getByText('NOTES.md')).toBeVisible();
