@@ -19,6 +19,7 @@ import { usePmAlerts } from './pm/usePm';
 import { DATE_ALERTS, PM_PAGE_TITLE, type PmPage } from './pm/pages';
 import type { Floor, FloorAgent, FloorRoom } from './types';
 import './desk.css';
+import './floor/studio.css';
 
 type DrawerState =
   | { kind: 'menu'; section: MenuSection | null }

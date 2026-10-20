@@ -8,13 +8,21 @@ export interface ProjectEntry {
 
 const KEY_RE = /^[a-z0-9][a-z0-9_-]*$/;
 
-/** Rows of `ws list` (KEY CLIENT GROUP FOLDER STATUS REMOTE), header and noise skipped. */
+/** Rows of `ws list` (with or without KIND column), header and noise skipped. */
 export function parseProjectList(output: string): ProjectEntry[] {
   // eslint-disable-next-line no-control-regex
   const plain = output.replace(/\u001b\[[0-9;]*m/g, '');
   return plain.split('\n').flatMap((line) => {
-    const [key, client, group, folder] = line.trim().split(/\s+/);
-    if (!key || !KEY_RE.test(key) || !folder?.startsWith('projects/')) return [];
-    return [{ key, client, group, folder }];
+    const cols = line.trim().split(/\s+/);
+    if (cols.length < 4) return [];
+    const key = cols[0];
+    if (!key || !KEY_RE.test(key)) return [];
+    if (cols[3]?.startsWith('projects/')) {
+      return [{ key, client: cols[1], group: cols[2], folder: cols[3] }];
+    }
+    if (cols[4]?.startsWith('projects/')) {
+      return [{ key, client: cols[2], group: cols[3], folder: cols[4] }];
+    }
+    return [];
   });
 }

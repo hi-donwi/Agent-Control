@@ -16,6 +16,19 @@ describe('parseProjectList', () => {
     ]);
   });
 
+  it('reads key, client, group, and folder from `ws list` with KIND column', () => {
+    const output = [
+      'KEY                  KIND      CLIENT       GROUP        FOLDER                          STATUS   REMOTE',
+      'demo-api             code      acme         -            projects/acme/demo-api          ok       git@example.com:acme/demo-api.git',
+      'demo-web             code      acme         web          projects/acme/web/demo-web      missing  -',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseProjectList(output), [
+      { key: 'demo-api', client: 'acme', group: '-', folder: 'projects/acme/demo-api' },
+      { key: 'demo-web', client: 'acme', group: 'web', folder: 'projects/acme/web/demo-web' },
+    ]);
+  });
+
   it('ignores colour codes and lines that are not project rows', () => {
     assert.deepEqual(parseProjectList('\u001b[1mKEY CLIENT GROUP FOLDER\u001b[0m\nno projects yet\n'), []);
   });
