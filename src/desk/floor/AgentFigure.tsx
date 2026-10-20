@@ -29,6 +29,7 @@ interface Props {
  */
 export function AgentFigure({ state, tool, size = 64 }: Props) {
   const raised = state === 'waiting';
+  const tone = toolTone(tool);
   return (
     <svg
       className={`fig fig-${state}`}
@@ -39,9 +40,15 @@ export function AgentFigure({ state, tool, size = 64 }: Props) {
       aria-hidden="true"
       focusable="false"
     >
+      <ellipse className="fig-ground" cx="32" cy="60" rx="25" ry="3" />
       <g className="fig-person">
         <rect className="fig-torso" x="21" y="33" width="22" height="15" rx="5" />
+        <path className="fig-insignia" d="M29 38h6v5h-6Z" />
         <g className="fig-head">
+          {tone === 'codex' && <path className="fig-module" d="M14 19h4v10h-4Zm32 0h4v10h-4Z" />}
+          {tone === 'claude' && <path className="fig-module" d="m19 15-4-8 10 5m20 3 4-8-10 5" />}
+          {tone === 'antigravity' && <path className="fig-module" d="m16 17-5 7 7 4m30-11 5 7-7 4" />}
+          {tone === 'host' && <path className="fig-module" d="M23 13V9h18v4" />}
           <line className="fig-antenna" x1="32" y1="12" x2="32" y2="6.5" />
           <circle className="fig-light" cx="32" cy="5" r="2.2" />
           <rect className="fig-skull" x="17" y="12" width="30" height="22" rx="9" />

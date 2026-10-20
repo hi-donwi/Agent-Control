@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AgentFigure } from './AgentFigure';
+import { StudioScene } from './StudioScene';
 import { STATE_LABELS, UNREGISTERED_ZONE, type Floor, type FloorAgent, type FloorRoom, type FloorZone } from '../types';
 import { CloseIcon, SearchIcon } from '../icons';
 
@@ -38,6 +39,8 @@ export function formatLastActive(iso: string | null | undefined): string {
 export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, onAgent, onRoom }: Props) {
   // Default to hiding idle projects (> 1 day inactive).
   const [filterMode, setFilterMode] = useState<'active' | 'all'>('active');
+  const [studio, setStudio] = useState(true);
+  const [scale, setScale] = useState('comfortable');
   const [search, setSearch] = useState('');
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
@@ -116,7 +119,19 @@ export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, 
   }
 
   return (
-    <div className="floor-container">
+    <div className={`floor-container${studio ? ' studio-mode' : ''}`} data-studio-scale={scale}>
+      <header className="studio-intro">
+        <div><p className="studio-eyebrow">LIVE WORKSPACE</p><h1>Your AI studio</h1><p>Explore a project studio or select an agent to see its recorded activity.</p></div>
+        <div className="studio-view-controls">
+          {studio && <label className="studio-scale">View scale<select aria-label="Studio view scale" value={scale} onChange={(event) => setScale(event.target.value)}><option value="overview">Overview</option><option value="comfortable">Comfortable</option><option value="immersive">Immersive</option></select></label>}
+        <button type="button" className="studio-toggle" aria-pressed={studio} onClick={() => setStudio(!studio)}>{studio ? 'Switch to compact view' : 'Switch to studio view'}</button></div>
+      </header>
+      <section className="studio-attention" aria-label="Needs your attention">
+        <span className="studio-eyebrow">NEEDS YOUR ATTENTION</span>
+        {allRooms.some((room) => room.pendingApprovals > 0 || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning')) ? allRooms.filter((room) => room.pendingApprovals > 0 || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning')).map((room) => (
+          <button type="button" key={room.key} onClick={() => onRoom(room)}>{room.key}<span>{room.pendingApprovals > 0 ? `${room.pendingApprovals} pending approvals` : 'Agent needs attention'} →</span></button>
+        )) : <p>No recorded approvals or agent alerts. Your workspace is clear.</p>}
+      </section>
       <div className="floor-toolbar" role="toolbar" aria-label="Floor filters and search">
         <div className="floor-search-box">
           <span className="floor-search-icon" aria-hidden="true"><SearchIcon size={16} /></span>
@@ -333,6 +348,7 @@ function Room({ room, selectedAgentId, onAgent, onRoom }: {
         {room.codingSession && <span className="room-tag room-tag-session">session</span>}
         {room.idle && <span className="room-tag room-tag-idle">idle</span>}
       </header>
+      <StudioScene room={room} />
       {room.agents.length > 0 ? (
         <div className="room-desks">
           {room.agents.map((agent) => (
@@ -364,6 +380,7 @@ function Seat({ agent, selected, onClick }: { agent: FloorAgent; selected: boole
       <AgentFigure key={agent.state} state={agent.state} tool={agent.tool} size={68} />
       <span className="seat-name">{agent.tool}</span>
       <span className="seat-state">{label}</span>
+      {agent.detail && <span className="studio-agent-detail">{agent.detail}</span>}
     </button>
   );
 }
