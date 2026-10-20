@@ -290,7 +290,16 @@ app.post(`${AGENT_API}/chat`, async (c) => {
             : '')
         : SYSTEM_PROMPT,
       messages: body.messages,
-      tools: createChatTools(bridge, scope),
+      tools: createChatTools(bridge, scope, {
+        model, signal: c.req.raw.signal,
+        onUsage: (child) => recordUsage(WORKSPACE_ROOT, {
+          tool: 'agent-control', endpoint: body.provider ?? config.defaultProvider,
+          model: body.model ?? config.defaultModel, locality: resolved.locality,
+          ...(scope ? { project: scope.project, projectRoot: join(WORKSPACE_ROOT, scope.folder) } : {}),
+          start: child.start, end: child.end, finishReason: child.finishReason,
+          tokens: { input: child.inputTokens, output: child.outputTokens, cacheRead: 0, cacheWrite: 0 },
+        }),
+      }),
       stopWhen: stepCountIs(5),
     });
 

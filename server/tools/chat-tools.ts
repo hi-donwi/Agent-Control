@@ -1,5 +1,6 @@
 import { isAbsolute, join, normalize, sep } from 'node:path';
-import { jsonSchema, type Tool } from 'ai';
+import { jsonSchema, type Tool, type LanguageModel } from 'ai';
+import { subagentTools, type SubagentUsage } from './subagents.js';
 import type { WorkspaceBridge } from './workspace.js';
 import { runCommand } from './run-command.js';
 import { editFileTool, writeFileTool } from './worktree-mutate.js';
@@ -43,7 +44,7 @@ function withJsonSchema(tools: Record<string, PlainTool>): Record<string, Tool> 
 }
 
 /** The workspace tools offered to the model in /api/agent/chat. */
-export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope): Record<string, Tool> {
+export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope, child?: { model: LanguageModel; signal?: AbortSignal; onUsage?: (usage: SubagentUsage) => void }): Record<string, Tool> {
   const tools: Record<string, PlainTool> = {
     list_projects: {
       description: 'List all registered projects in the workspace',
@@ -228,7 +229,8 @@ export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope): Rec
       },
     },
   };
-  return withJsonSchema(scope ? bindToProject(tools, scope) : tools);
+  const scoped = scope ? bindToProject(tools, scope) : tools;
+  return withJsonSchema({ ...scoped, ...(scope && child ? subagentTools(scope, scoped, child.model, child.signal, child.onUsage) : {}) });
 }
 
 /**
