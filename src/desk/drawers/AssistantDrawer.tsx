@@ -29,7 +29,11 @@ interface Props {
   onTheme?: (theme: 'light' | 'dark') => void;
   onScope: (scope: string) => void;
   onClose: () => void;
+  initialTab?: AssistantTab;
+  focusApprovalId?: string;
 }
+
+export type AssistantTab = 'chat' | 'changes' | 'runs';
 
 const SEP = '::';
 
@@ -38,12 +42,12 @@ const SEP = '::';
  * project it uses that project's allowed endpoints only (ADR-0021) and shows its pending
  * approvals with explicit approve-once and deny buttons (ADR-0020).
  */
-export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme, onScope, onClose }: Props) {
+export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme, onScope, onClose, initialTab = 'chat', focusApprovalId }: Props) {
   const { providers, defaultProvider, defaultModel } = useProviders();
   const { projects } = useProjects();
   const approvals = useApprovals(scope || undefined);
   const coding = useCodingSession(scope || undefined);
-  const [tab, setTab] = useState<'chat' | 'changes' | 'runs'>('chat');
+  const [tab, setTab] = useState<AssistantTab>(initialTab);
   /** The scope's earlier conversations, shown in place of the tabs and the chat. */
   const [history, setHistory] = useState(false);
 
@@ -63,7 +67,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme
     setChoice((preferred ?? options.find((o) => o.allowed))?.value ?? '');
   }, [options, choice, defaultProvider, defaultModel]);
 
-  useEffect(() => { setTab('chat'); setHistory(false); }, [scope]);
+  useEffect(() => { setTab(initialTab); setHistory(false); }, [initialTab, scope]);
 
   const openEarlier = async (id: string) => {
     await chat.openConversation(id);
@@ -133,7 +137,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme
 
       {agent && <AgentCard agent={agent} />}
       {scope && approvals.pending.length > 0 && (
-        <Approvals requests={approvals.pending} deciding={approvals.decidingIds} onDecide={decide} />
+        <Approvals requests={approvals.pending} deciding={approvals.decidingIds} onDecide={decide} focusApprovalId={focusApprovalId} />
       )}
       {scope && coding.known && (
         <section className="session-bar" aria-label="Coding session">
@@ -266,18 +270,20 @@ function AgentCard({ agent }: { agent: FloorAgent }) {
   );
 }
 
-function Approvals({ requests, deciding, onDecide }: {
+function Approvals({ requests, deciding, onDecide, focusApprovalId }: {
   requests: ApprovalRequest[];
   deciding: string[];
   onDecide: (id: string, decision: 'approved' | 'denied') => void;
+  focusApprovalId?: string;
 }) {
   return (
     <section className="approvals" aria-label="Waiting for you">
       {requests.map((request) => (
-        <div key={request.id} className="approval">
+        <div key={request.id} className={`approval${request.id === focusApprovalId ? ' is-referenced' : ''}`}>
           <div>
             <p className="approval-title">{request.action}</p>
             <p className="approval-meta">revision {request.headSha.slice(0, 8)} · expires {new Date(request.expiresAt).toLocaleTimeString()}</p>
+            {request.id === focusApprovalId && <p className="approval-reference">Referenced from response evidence</p>}
           </div>
           <div className="approval-actions">
             <button type="button" className="btn btn-primary" disabled={deciding.includes(request.id)} onClick={() => onDecide(request.id, 'approved')}>

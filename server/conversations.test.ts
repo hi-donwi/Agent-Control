@@ -100,8 +100,8 @@ describe('captureAssistant', () => {
 
   it('passes the stream through and records the answer and its tool calls', async () => {
     const input = [
-      { type: 'tool-call', toolName: 'read_file' },
-      { type: 'tool-result', output: 'x'.repeat(3000) },
+      { type: 'tool-call', toolCallId: 'call-read-file', toolName: 'read_file' },
+      { type: 'tool-result', toolCallId: 'call-read-file', output: 'x'.repeat(3000) },
       { type: 'text-delta', text: 'Hel' },
       { type: 'text-delta', text: 'lo' },
       { type: 'finish' },
@@ -111,6 +111,7 @@ describe('captureAssistant', () => {
     for await (const part of captureAssistant(parts(input), (m) => { stored = m; })) seen.push(part);
     assert.deepEqual(seen, input);
     assert.equal(stored!.content, 'Hello');
+    assert.equal(stored!.toolCalls![0].id, 'call-read-file');
     assert.equal(stored!.toolCalls![0].name, 'read_file');
     assert.equal(stored!.toolCalls![0].status, 'done');
     assert.match(stored!.toolCalls![0].result!, /\(truncated\)$/);
@@ -122,6 +123,18 @@ describe('captureAssistant', () => {
     await stream.next();
     await stream.return(undefined);
     assert.equal(stored!.content, 'partial');
+  });
+
+  it('does not attach a result to a tool call with a different id', async () => {
+    let stored: StoredMessage | undefined;
+    const input = [
+      { type: 'tool-call', toolCallId: 'call-expected', toolName: 'list_tasks' },
+      { type: 'tool-result', toolCallId: 'call-unmatched', output: { tasks: [{ id: 'task_wrong' }] } },
+    ];
+    for await (const _part of captureAssistant(parts(input), (message) => { stored = message; })) { /* drain */ }
+
+    assert.equal(stored!.toolCalls![0].status, 'pending');
+    assert.equal(stored!.toolCalls![0].result, undefined);
   });
 
   it('records nothing for a turn that produced nothing', async () => {

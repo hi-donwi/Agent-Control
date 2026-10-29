@@ -10,6 +10,8 @@ interface Props {
   projects: string[];
   version: string;
   onOpenTask: (scope: string, id: string) => void;
+  taskDraft?: { scope: string; title: string } | null;
+  onTaskDraftConsumed?: () => void;
 }
 
 function localDay(): string {
@@ -21,7 +23,7 @@ function localDay(): string {
  * Everything not yet done, ranked by hand, per client or per milestone, with the milestones
  * and how far each has come. The rank is a field of the task, so agents read the same order.
  */
-export function BacklogView({ projects, version, onOpenTask }: Props) {
+export function BacklogView({ projects, version, onOpenTask, taskDraft, onTaskDraftConsumed }: Props) {
   const [reloads, setReloads] = useState(0);
   const { data, error } = usePmRead<{ tasks: PmTask[] }>('desk/pm/tasks', `${version}:${reloads}`);
   const clients = usePmRead<{ clients: PmClientPulse[] }>('desk/pm/clients', version);
@@ -57,7 +59,13 @@ export function BacklogView({ projects, version, onOpenTask }: Props) {
         <span className="pm-date">{groups.reduce((n, g) => n + g.tasks.length, 0)} open, ranked by hand</span>
       </header>
       <div className="board-tools">
-        <QuickAdd projects={projects} clients={(clients.data?.clients ?? []).map((c) => c.key)} onAdded={() => setReloads((n) => n + 1)} />
+        <QuickAdd
+          projects={projects}
+          clients={(clients.data?.clients ?? []).map((c) => c.key)}
+          draft={taskDraft}
+          onDraftConsumed={onTaskDraftConsumed}
+          onAdded={() => setReloads((n) => n + 1)}
+        />
         <div className="board-filters">
           <select aria-label="Group by" value={by} onChange={(e) => setBy(e.target.value as 'client' | 'milestone')}>
             <option value="client">Group: client</option>

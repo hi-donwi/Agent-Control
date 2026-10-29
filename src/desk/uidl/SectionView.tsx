@@ -1,4 +1,4 @@
-import { Component, useMemo, type ReactNode } from 'react';
+import { Component, useMemo, useRef, type ReactNode } from 'react';
 import {
   UIDocumentRenderer,
   createDocumentState,
@@ -37,22 +37,27 @@ interface Props {
   document: UIDLDocument;
   dark: boolean;
   commands?: SectionCommands;
+  initialState?: Record<string, unknown>;
 }
 
-export function SectionView({ document, dark, commands }: Props) {
+export function SectionView({ document, dark, commands, initialState }: Props) {
   return (
     <SectionBoundary key={document.id}>
-      <Section key={document.id} document={document} dark={dark} commands={commands} />
+      <Section key={document.id} document={document} dark={dark} commands={commands} initialState={initialState} />
     </SectionBoundary>
   );
 }
 
-function Section({ document, dark, commands }: Props) {
+function Section({ document, dark, commands, initialState }: Props) {
   // Callers rebuild documents on every floor poll; an equal document must keep its identity,
   // or the renderer would abort and refetch its queries every five seconds.
   const content = JSON.stringify(document);
   const stable = useMemo(() => JSON.parse(content) as UIDLDocument, [content]);
-  const stateStore = useMemo(() => createDocumentState(stable.state ?? {}).getState(), [stable]);
+  const initialStateSnapshot = useRef(initialState);
+  const stateStore = useMemo(() => createDocumentState({
+    ...stable.state,
+    ...initialStateSnapshot.current,
+  }).getState(), [stable]);
   // A command the section does not offer fails with a message, never silently.
   const commandHandler = useMemo(() => async (request: CommandRequest) => {
     const run = commands?.[request.name];

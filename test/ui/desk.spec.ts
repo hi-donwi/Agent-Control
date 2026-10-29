@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { HEAD_SHA, PROJECT, SESSION_BRANCH, worktreeOf } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
@@ -31,6 +31,47 @@ function seedApproval(root: string): void {
 }
 
 const workspaceRoot = () => (JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root;
+
+async function selectProjectCommandTarget(page: Page): Promise<void> {
+  const target = page.getByRole('combobox', { name: 'Command target' });
+  const targetPrefix = `agent-control · ${PROJECT}`;
+  const hostOption = target.locator('option').filter({ hasText: targetPrefix });
+  await expect(hostOption).toHaveCount(1);
+  await target.selectOption(await hostOption.getAttribute('value') ?? '');
+}
+
+async function mockCommandTool(page: Page, toolName: string, args: Record<string, unknown>, result: unknown): Promise<void> {
+  await page.route('**/api/agent/chat', async (route) => {
+    const request = route.request().postDataJSON() as { project?: string };
+    expect(request.project).toBe(PROJECT);
+    const toolCallId = 'call-evidence-action';
+    const body = [
+      `9:${JSON.stringify({ toolCallId, toolName, args })}`,
+      `a:${JSON.stringify({ toolCallId, result })}`,
+      `0:${JSON.stringify('Evidence is ready.')}`,
+      `d:${JSON.stringify({ finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } })}`,
+      '',
+    ].join('\n');
+    await route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body });
+  });
+}
+
+async function sendCommandAndInspectEvidence(page: Page): Promise<void> {
+  await selectProjectCommandTarget(page);
+  await page.locator('#command-dock-input').fill('Inspect the referenced record');
+  await page.getByRole('button', { name: 'Send command' }).click();
+  await page.getByRole('button', { name: 'Inspect evidence' }).click();
+  await expect(page.getByRole('region', { name: 'Response evidence' })).toBeVisible();
+  const popover = page.getByRole('complementary', { name: 'Response from agent-control' });
+  const bounds = await popover.boundingBox();
+  const viewport = page.viewportSize();
+  expect(bounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport!.width);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport!.height);
+}
 
 /** What `ws agent activity` or the Claude Code hooks write for an outside agent session. */
 function reportActivity(root: string, session: string, state: string, detail: string): void {
@@ -100,6 +141,175 @@ test('opens the agent drawer bound to its project: approval, chat, and a live po
   await expect(drawer.getByText(/^Approved request /).first()).toBeVisible();
   await expect(page.getByRole('button', { name: `agent-control in ${PROJECT}: idle, turn finished` }))
     .toBeVisible({ timeout: 10_000 });
+});
+
+test('opens a completed task reference from read-only command evidence', async ({ page, deskUrl }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockCommandTool(page, 'list_tasks', {}, {
+    tasks: [{ id: 'task_evidence_link', scope: PROJECT, title: 'Evidence task' }],
+  });
+  await page.route(`**/api/agent/desk/pm/tasks/${PROJECT}/task_evidence_link`, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      id: 'task_evidence_link', title: 'Evidence task', scope: PROJECT, project: PROJECT, client: 'workspace',
+      status: 'ready', priority: 'normal', kind: 'task', owner: '', assignee: '', due: '', remind_at: '', recur: '',
+      rank: 1, parent: '', depends_on: [], labels: [], acceptance_criteria: [], blocked: false, blocked_reason: '',
+      description: '', checklist: [], activity: [], revision: 'mtime:1:size:1', updated_at: '', created_at: '',
+    }),
+  }));
+
+  await page.goto(deskUrl);
+  await sendCommandAndInspectEvidence(page);
+  await page.getByRole('button', { name: 'Open task task_evidence_link' }).click();
+
+  const drawer = page.getByRole('dialog', { name: 'Task' });
+  await expect(drawer.getByRole('heading', { name: `Evidence task · ${PROJECT}` })).toBeVisible();
+  await drawer.getByRole('button', { name: 'Close task' }).click();
+  await expect(page.getByRole('button', { name: 'Open task task_evidence_link' })).toBeFocused();
+});
+
+test('opens the matching approval for review without deciding it from evidence', async ({ page, deskUrl }) => {
+  const approvalId = '123e4567-e89b-12d3-a456-426614174000';
+  await mockCommandTool(page, 'update_task', {}, { approvalRequired: true, requestId: approvalId });
+  await page.route(`**/api/agent/approvals?project=${PROJECT}`, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ pending: [{
+      id: approvalId, project: PROJECT, headSha: 'a'.repeat(40), action: 'task_change', inputHash: 'b'.repeat(64),
+      policyHash: 'c'.repeat(64), requestedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }] }),
+  }));
+
+  await page.goto(deskUrl);
+  await sendCommandAndInspectEvidence(page);
+  await page.getByRole('button', { name: `Review approval ${approvalId.slice(0, 8)}` }).click();
+
+  const drawer = page.getByRole('dialog', { name: 'Assistant' });
+  const approval = drawer.getByText('Referenced from response evidence');
+  await expect(approval).toBeVisible();
+  await expect(drawer.getByRole('button', { name: 'Approve once' })).toBeVisible();
+  await expect(drawer.getByRole('button', { name: 'Deny' })).toBeVisible();
+  await drawer.getByRole('button', { name: 'Close assistant' }).click();
+  await expect(page.getByRole('button', { name: `Review approval ${approvalId.slice(0, 8)}` })).toBeFocused();
+});
+
+test('opens a non-empty diff reference in the same project Changes tab', async ({ page, deskUrl }) => {
+  const worktree = worktreeOf(workspaceRoot());
+  writeFileSync(join(worktree, 'README.md'), '# Updated in the coding worktree\n');
+  await mockCommandTool(page, 'git_diff', {}, {
+    content: 'diff --git a/README.md b/README.md\n+Updated in the coding worktree',
+  });
+
+  await page.goto(deskUrl);
+  await sendCommandAndInspectEvidence(page);
+  const evidence = page.getByRole('region', { name: 'Response evidence' });
+  await expect(evidence.getByRole('button', { name: 'Open diff' })).toBeVisible();
+  await expect(evidence).not.toContainText('Updated in the coding worktree');
+  await evidence.getByRole('button', { name: 'Open diff' }).click();
+
+  const drawer = page.getByRole('dialog', { name: 'Assistant' });
+  await expect(drawer.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true');
+  await expect(drawer.getByLabel('Changes in the coding session')).toContainText('README.md');
+  await drawer.getByRole('button', { name: 'Close assistant' }).click();
+  await expect(evidence.getByRole('button', { name: 'Open diff' })).toBeFocused();
+});
+
+test('compares the current response with a selected earlier response in the same project chat', async ({ page, deskUrl }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let turn = 0;
+  await page.route('**/api/agent/chat', async (route) => {
+    const request = route.request().postDataJSON() as { project?: string };
+    expect(request.project).toBe(PROJECT);
+    const response = turn++ === 0 ? 'Earlier response for this project.' : 'Current response for this project.';
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/plain; charset=utf-8',
+      body: `0:${JSON.stringify(response)}\nd:${JSON.stringify({ finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } })}\n`,
+    });
+  });
+  await page.route(/\/api\/agent\/conversations\/latest\?scope=mockproj$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: null, messages: [] }),
+  }));
+
+  await page.goto(deskUrl);
+  await selectProjectCommandTarget(page);
+  const composer = page.locator('#command-dock-input');
+  await composer.fill('First project response');
+  await page.getByRole('button', { name: 'Send command' }).click();
+  await expect(page.getByText('Earlier response for this project.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Compare responses' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Dismiss response preview' }).click();
+
+  await composer.fill('Second project response');
+  await page.getByRole('button', { name: 'Send command' }).click();
+  await page.getByRole('button', { name: 'Compare responses' }).click();
+
+  const comparison = page.getByRole('dialog', { name: `Compare responses · ${PROJECT}` });
+  const current = comparison.getByRole('article', { name: 'Current response' });
+  const earlier = comparison.getByRole('article', { name: 'Selected earlier response' });
+  await expect(current).toContainText('Current response for this project.');
+  await expect(earlier).toContainText('Earlier response for this project.');
+  await expect(current).toBeVisible();
+  await expect(earlier).toBeVisible();
+  await expect(comparison.getByRole('combobox', { name: 'Compare current response with' })).toBeVisible();
+  const currentBounds = await current.boundingBox();
+  const earlierBounds = await earlier.boundingBox();
+  expect(currentBounds).not.toBeNull();
+  expect(earlierBounds).not.toBeNull();
+  expect(currentBounds!.width).toBeGreaterThan(0);
+  expect(earlierBounds!.width).toBeGreaterThan(0);
+  expect(currentBounds!.y).toBeLessThan(earlierBounds!.y);
+  await comparison.getByRole('button', { name: 'Close comparison' }).click();
+  await expect(page.getByRole('button', { name: 'Compare responses' })).toBeFocused();
+});
+
+test('drafts a scoped task from the response without saving it', async ({ page, deskUrl }) => {
+  await mockCommandTool(page, 'list_tasks', {}, { tasks: [] });
+  let taskWrites = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/agent/desk/pm/tasks')) taskWrites++;
+  });
+
+  await page.goto(deskUrl);
+  await sendCommandAndInspectEvidence(page);
+  await page.getByRole('button', { name: 'Draft task from response' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Backlog' })).toBeVisible();
+  const backlog = page.getByRole('form', { name: 'New mission' });
+  const title = backlog.getByRole('textbox', { name: 'Mission title' });
+  await expect(title).toHaveValue('Evidence is ready');
+  await expect(title).toBeFocused();
+  await expect(backlog.getByRole('combobox', { name: 'For' })).toHaveValue(PROJECT);
+  await expect(backlog.getByText('Suggested from the response. Review and edit before adding.')).toBeVisible();
+  expect(taskWrites).toBe(0);
+});
+
+test('drafts a scoped Markdown note from the response without saving it', async ({ page, deskUrl }) => {
+  await mockCommandTool(page, 'list_tasks', {}, { tasks: [] });
+  let noteWrites = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/agent/desk/notes')) noteWrites++;
+  });
+
+  await page.goto(deskUrl);
+  await sendCommandAndInspectEvidence(page);
+  await page.getByRole('button', { name: 'Draft note from response' }).click();
+
+  const notes = page.getByRole('dialog', { name: 'Notes' });
+  await expect(notes.getByRole('textbox', { name: 'Title' })).toHaveValue('Evidence is ready');
+  await expect(notes.getByRole('textbox', { name: 'Note' })).toHaveValue('Evidence is ready.');
+  await expect(notes.locator('#desk-project')).toBeDisabled();
+  await expect(notes.getByRole('button', { name: 'Add note' })).toBeVisible();
+  expect(noteWrites).toBe(0);
+
+  await notes.getByRole('button', { name: 'Add note' }).click();
+  await expect(notes.locator('.section-doc').getByText('Evidence is ready', { exact: true })).toBeVisible();
+  await expect(notes.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+  const file = join(workspaceRoot(), 'context', 'memory', 'projects', PROJECT, 'notes', 'evidence-is-ready.md');
+  expect(readFileSync(file, 'utf-8')).toContain('Evidence is ready.');
 });
 
 test('moves an outside agent live as its activity record changes, with no reload', async ({ page, deskUrl }) => {

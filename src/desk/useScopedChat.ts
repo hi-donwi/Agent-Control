@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useChat } from '../hooks/useChat';
 import { apiFetch } from '../lib/api';
+import { buildEvidenceMetadata } from '../lib/evidence';
 import type { ChatMessage, ToolCallResult } from '../lib/types';
 
 /** The history scope of a chat bound to no project (server/conversations.ts). */
@@ -9,7 +10,7 @@ const WORKSPACE_SCOPE = '_workspace';
 interface StoredMessage {
   role: 'user' | 'assistant';
   content: string;
-  toolCalls?: Array<{ name: string; status: ToolCallResult['status'] | 'pending'; result?: string }>;
+  toolCalls?: Array<{ id?: string; name: string; status: ToolCallResult['status']; result?: string }>;
   at: string;
 }
 
@@ -23,15 +24,22 @@ function newId(): string {
 }
 
 function toChatMessages(stored: StoredMessage[]): ChatMessage[] {
-  return stored.map((m, index) => ({
-    id: `history-${index}-${m.at}`,
-    role: m.role,
-    content: m.content,
-    createdAt: Date.parse(m.at) || Date.now(),
-    ...(m.toolCalls ? {
-      toolCalls: m.toolCalls.map((call) => ({ name: call.name, args: {}, result: call.result, status: call.status === 'error' ? 'error' : 'done' })),
-    } : {}),
-  }));
+  return stored.map((m, index) => {
+    const toolCalls = m.toolCalls?.map((call) => ({
+      id: call.id,
+      name: call.name,
+      args: {},
+      result: call.result,
+      status: call.status === 'error' ? 'error' : call.status,
+    })) as ToolCallResult[] | undefined;
+    return {
+      id: `history-${index}-${m.at}`,
+      role: m.role,
+      content: m.content,
+      createdAt: Date.parse(m.at) || Date.now(),
+      ...(toolCalls ? { toolCalls, evidence: buildEvidenceMetadata(toolCalls) } : {}),
+    };
+  });
 }
 
 /**

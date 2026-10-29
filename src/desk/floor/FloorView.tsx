@@ -371,6 +371,7 @@ function Seat({ agent, selected, onClick }: { agent: FloorAgent; selected: boole
     <button
       type="button"
       className={`seat seat-${agent.state}`}
+      data-agent-id={agent.id}
       aria-pressed={selected}
       aria-label={`${agent.tool} in ${agent.project}: ${label}${detail}`}
       title={agent.detail || undefined}
