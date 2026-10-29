@@ -38,6 +38,11 @@ export interface ChatChoice {
   model: string;
 }
 
+export interface FanoutCandidate {
+  target: CommandTarget;
+  choice: ChatChoice | null;
+}
+
 export type DispatchStatus = 'ready' | 'routing' | 'responding' | 'waiting' | 'complete' | 'failed' | 'cancelled';
 export type DispatchEvent = 'send' | 'stream-start' | 'stream-end' | 'animation-end' | 'approval' | 'error' | 'cancel' | 'retry';
 
@@ -46,6 +51,21 @@ const PROJECT_CAPABILITIES = ['chat', 'project context'];
 
 export function buildCommandTargets(floor: Floor | null): CommandTarget[] {
   const agents = floor?.zones.flatMap((zone) => zone.rooms.flatMap((room) => room.agents)) ?? [];
+  const rooms = floor?.zones.flatMap((zone) => zone.rooms) ?? [];
+  const hostedProjects = new Set(agents.filter((agent) => agent.source === 'host').map((agent) => agent.project));
+  const unseatedProjectTargets = rooms.filter((room) => !hostedProjects.has(room.key)).map((room): CommandTarget => ({
+    id: `host:${room.key}`,
+    label: 'agent-control',
+    description: `Project agent for ${room.key}`,
+    kind: 'project-agent',
+    project: room.key,
+    agentId: `host:${room.key}`,
+    state: 'ready',
+    writable: true,
+    observedOnly: false,
+    availability: 'ready',
+    capabilities: [...PROJECT_CAPABILITIES, ...(room.codingSession ? ['review'] : [])],
+  }));
   return [
     {
       id: 'control-plane',
@@ -86,7 +106,28 @@ export function buildCommandTargets(floor: Floor | null): CommandTarget[] {
         capabilities,
       };
     }),
+    ...unseatedProjectTargets,
   ];
+}
+
+/** One writable, online project chat target per registered project can receive fan-out. */
+export function eligibleFanoutTargets(targets: CommandTarget[]): CommandTarget[] {
+  const projects = new Set<string>();
+  return targets.filter((target) => {
+    if (target.kind !== 'project-agent' || !target.writable || target.availability !== 'ready'
+      || !target.project || projects.has(target.project)) return false;
+    projects.add(target.project);
+    return true;
+  });
+}
+
+/** Resolve an explicit multi-project selection; incomplete or stale selections send nowhere. */
+export function resolveFanoutRecipients(targets: CommandTarget[], selectedProjects: string[]): CommandTarget[] {
+  const selected = [...new Set(selectedProjects)];
+  if (selected.length < 2) return [];
+  const eligible = eligibleFanoutTargets(targets);
+  const recipients = selected.map((project) => eligible.find((target) => target.project === project));
+  return recipients.every((target): target is CommandTarget => Boolean(target)) ? recipients : [];
 }
 
 export function availableClosureActions(target: CommandTarget, message: ChatMessage): ClosureAction[] {

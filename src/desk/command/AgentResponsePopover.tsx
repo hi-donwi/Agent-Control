@@ -21,6 +21,7 @@ interface Props {
   status: DispatchStatus;
   dismissed: boolean;
   covered: boolean;
+  continueDisabled?: boolean;
   onDismiss: () => void;
   onOpen: () => void;
   onContinue: () => void;
@@ -40,6 +41,7 @@ export function AgentResponsePopover({
   status,
   dismissed,
   covered,
+  continueDisabled = false,
   onDismiss,
   onOpen,
   onContinue,
@@ -61,8 +63,10 @@ export function AgentResponsePopover({
   useEffect(() => {
     if (dismissed) return;
     const update = () => {
-      const anchor = [...document.querySelectorAll<HTMLElement>('.seat[data-agent-id]')]
+      const seat = [...document.querySelectorAll<HTMLElement>('.seat[data-agent-id]')]
         .find((element) => element.dataset.agentId === agentId);
+      const anchor = seat ?? [...document.querySelectorAll<HTMLElement>('.room[data-project]')]
+        .find((element) => element.dataset.project === target.project);
       if (!anchor) {
         setPosition({
           right: 20,
@@ -95,7 +99,7 @@ export function AgentResponsePopover({
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [agentId, dismissed, evidenceOpen]);
+  }, [agentId, dismissed, evidenceOpen, target.project]);
 
   if (dismissed) return null;
   const preview = message.content.trim() || 'The agent is preparing a response.';
@@ -116,7 +120,7 @@ export function AgentResponsePopover({
     <aside
       className="command-response-popover"
       style={{ ...position, zIndex: covered ? 40 : 60, pointerEvents: covered ? 'none' : undefined }}
-      aria-label={`Response from ${target.label}`}
+      aria-label={`Response from ${target.label} in ${target.project}`}
       inert={covered}
     >
       <div className="command-response-head">
@@ -136,7 +140,7 @@ export function AgentResponsePopover({
         >
           {actions.includes('evidence') ? evidenceOpen ? 'Hide evidence' : 'Inspect evidence' : 'Open conversation'}
         </button>
-        <button type="button" className="command-response-action" onClick={onContinue}>Continue</button>
+        <button type="button" className="command-response-action" onClick={onContinue} disabled={continueDisabled}>Continue</button>
         {actions.includes('review') && (
           <button type="button" className="command-response-action" onClick={onReview}>Review changes</button>
         )}

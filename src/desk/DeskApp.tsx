@@ -9,7 +9,8 @@ import { useFloor } from './useFloor';
 import { useTheme } from './useTheme';
 import { useScopedChat } from './useScopedChat';
 import { CommandDock } from './command/CommandDock';
-import { resolveChatChoice, type CommandTarget, type NoteDraft, type TaskDraft } from './command/command-state';
+import { FanoutChatWorker, type FanoutChatState } from './command/FanoutChatWorker';
+import { buildCommandTargets, eligibleFanoutTargets, resolveChatChoice, type CommandTarget, type FanoutCandidate, type NoteDraft, type TaskDraft } from './command/command-state';
 import { SettingsDialog } from '../components/settings/SettingsDialog';
 import { TodayView } from './pm/TodayView';
 import { MissionsView } from './pm/MissionsView';
@@ -75,6 +76,8 @@ export function DeskApp() {
   const [showEndpoints, setShowEndpoints] = useState(false);
   const [commandScope, setCommandScope] = useState('');
   const [commandAgentId, setCommandAgentId] = useState<string | null>(null);
+  const [fanoutScopes, setFanoutScopes] = useState<string[]>([]);
+  const [fanoutChats, setFanoutChats] = useState<Record<string, FanoutChatState>>({});
 
   const assistantScope = drawer?.kind === 'assistant' ? drawer.scope : commandScope;
   const chat = useScopedChat(assistantScope);
@@ -84,6 +87,26 @@ export function DeskApp() {
     () => resolveChatChoice(providers, projects, assistantScope, defaultProvider, defaultModel),
     [assistantScope, defaultModel, defaultProvider, projects, providers],
   );
+  const fanoutCandidates = useMemo<FanoutCandidate[]>(() => eligibleFanoutTargets(buildCommandTargets(floor)).map((target) => ({
+    target,
+    choice: resolveChatChoice(providers, projects, target.project, defaultProvider, defaultModel),
+  })), [defaultModel, defaultProvider, floor, projects, providers]);
+  const fanoutChatForCurrentScope: FanoutChatState = { ...chat, scope: assistantScope };
+  const fanoutChatsForDock = useMemo(() => ({
+    ...(assistantScope ? { [assistantScope]: fanoutChatForCurrentScope } : {}),
+    ...fanoutChats,
+  }), [assistantScope, fanoutChatForCurrentScope, fanoutChats]);
+  const updateFanoutChat = useCallback((next: FanoutChatState) => {
+    setFanoutChats((current) => current[next.scope] === next ? current : { ...current, [next.scope]: next });
+  }, []);
+  const updateFanoutScopes = useCallback((scopes: string[]) => {
+    const selected = new Set(scopes);
+    setFanoutScopes(scopes);
+    setFanoutChats((current) => Object.fromEntries(Object.entries(current).filter(([scope]) => selected.has(scope))));
+  }, []);
+  const persistFanoutSnapshot = useCallback((snapshot: Parameters<typeof chat.adoptSnapshot>[0]) => {
+    chat.adoptSnapshot(snapshot);
+  }, [chat.adoptSnapshot]);
 
   const setProject = useCallback((key: string) => {
     setProjectState(key);
@@ -407,7 +430,18 @@ export function DeskApp() {
         chat={chat}
         providerReady={Boolean(commandChoice)}
         popoverBehindDrawer={Boolean(drawer || task || showEndpoints)}
+        fanoutCandidates={fanoutCandidates}
+        fanoutScopes={fanoutScopes}
+        fanoutChats={fanoutChatsForDock}
         onTargetChange={selectCommandTarget}
+        onFanoutScopesChange={updateFanoutScopes}
+        onFanoutSend={(message, recipients) => {
+          recipients.forEach(({ target, choice }) => {
+            const recipientChat = fanoutChatsForDock[target.project];
+            if (choice && recipientChat) void recipientChat.send(message, choice.provider, choice.model);
+          });
+        }}
+        onStopFanout={(scopes) => scopes.forEach((scope) => fanoutChatsForDock[scope]?.stopStreaming())}
         onOpenTarget={openCommandTarget}
         onOpenReview={openCommandReview}
         onOpenTask={openTask}
@@ -419,6 +453,15 @@ export function DeskApp() {
           if (commandChoice) chat.send(message, commandChoice.provider, commandChoice.model);
         }}
       />
+      {fanoutScopes.map((scope) => (
+        <FanoutChatWorker
+          key={scope}
+          scope={scope}
+          initialSnapshot={chat.snapshotFor(scope)}
+          onChange={updateFanoutChat}
+          onPersist={persistFanoutSnapshot}
+        />
+      ))}
 
       {floor && (
         <footer className="desk-caption" role="status">
@@ -469,10 +512,11 @@ export function DeskApp() {
           scope={drawer.scope}
           agent={agent}
           projectKeys={projectKeys}
-          chat={chat}
+          chat={fanoutScopes.includes(drawer.scope) ? fanoutChats[drawer.scope] ?? chat : chat}
           dark={dark}
           initialTab={drawer.initialTab}
           focusApprovalId={drawer.focusApprovalId}
+          readOnly={fanoutScopes.includes(drawer.scope)}
           onTheme={(t) => setTheme(t)}
           onScope={(scope) => {
             setCommandScope(scope);

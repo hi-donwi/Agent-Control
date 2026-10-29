@@ -31,6 +31,7 @@ interface Props {
   onClose: () => void;
   initialTab?: AssistantTab;
   focusApprovalId?: string;
+  readOnly?: boolean;
 }
 
 export type AssistantTab = 'chat' | 'changes' | 'runs';
@@ -42,7 +43,7 @@ const SEP = '::';
  * project it uses that project's allowed endpoints only (ADR-0021) and shows its pending
  * approvals with explicit approve-once and deny buttons (ADR-0020).
  */
-export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme, onScope, onClose, initialTab = 'chat', focusApprovalId }: Props) {
+export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme, onScope, onClose, initialTab = 'chat', focusApprovalId, readOnly = false }: Props) {
   const { providers, defaultProvider, defaultModel } = useProviders();
   const { projects } = useProjects();
   const approvals = useApprovals(scope || undefined);
@@ -124,10 +125,11 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme
           onClick={() => setHistory((open) => !open)}
           aria-label="Earlier conversations"
           aria-pressed={history}
+          disabled={readOnly}
         >
           <HistoryIcon />
         </button>
-        <button type="button" className="icon-btn" onClick={() => { chat.newConversation(); setHistory(false); }} aria-label="New conversation">
+        <button type="button" className="icon-btn" onClick={() => { chat.newConversation(); setHistory(false); }} aria-label="New conversation" disabled={readOnly}>
           <NewChatIcon />
         </button>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close assistant">
@@ -161,6 +163,8 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme
           {coding.error && <p className="session-error" role="alert">[ERROR] {coding.error}</p>}
         </section>
       )}
+
+      {readOnly && <p className="assistant-note" role="status">This project is selected for fan-out. Clear project recipients to chat with it individually.</p>}
 
       <div className="drawer-scope assistant-controls">
         <label>
@@ -225,7 +229,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme
               )}
               <div className="suggestions">
                 {suggestions.map((text) => (
-                  <button key={text} type="button" className="suggestion" onClick={() => send(text)} disabled={!choice || chat.isStreaming}>
+                  <button key={text} type="button" className="suggestion" onClick={() => send(text)} disabled={!choice || chat.isStreaming || readOnly}>
                     {text}
                   </button>
                 ))}
@@ -237,7 +241,7 @@ export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme
           {chat.error && <p className="assistant-error" role="alert">[ERROR] {chat.error}</p>}
           <InputBar
             onSend={send}
-            disabled={!choice || chat.loading}
+            disabled={!choice || chat.loading || readOnly}
             isStreaming={chat.isStreaming}
             onStop={chat.stopStreaming}
             placeholder={scope ? `Message about ${scope}...` : 'Ask about your workspace...'}

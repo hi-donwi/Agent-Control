@@ -8,8 +8,10 @@ import {
   buildCommandTargets,
   buildNoteDraft,
   buildTaskDraft,
+  eligibleFanoutTargets,
   priorAssistantResponses,
   resolveChatChoice,
+  resolveFanoutRecipients,
   transitionDispatch,
   type DispatchEvent,
 } from './command-state';
@@ -42,6 +44,34 @@ test('builds honest command targets from floor presence', () => {
   assert.equal(targets[2].writable, false);
   assert.equal(targets[2].observedOnly, true);
   assert.equal(targets[2].availability, 'observed-only');
+});
+
+test('fan-out requires multiple distinct writable project targets', () => {
+  const multiProjectFloor: Floor = {
+    ...floor,
+    zones: [{
+      ...floor.zones[0],
+      rooms: [
+        ...floor.zones[0].rooms,
+        {
+          key: 'beta', group: '-', description: 'Beta project', pendingApprovals: 0, codingSession: false,
+          agents: [
+            { id: 'host-beta', tool: 'agent-control', project: 'beta', state: 'idle', detail: '', since: '', source: 'host' },
+            { id: 'offline-beta', tool: 'agent-control', project: 'beta', state: 'offline', detail: '', since: '', source: 'host' },
+          ],
+        },
+        { key: 'gamma', group: '-', description: 'Gamma project', pendingApprovals: 0, codingSession: false, agents: [] },
+      ],
+    }],
+  };
+  const targets = buildCommandTargets(multiProjectFloor);
+
+  assert.deepEqual(eligibleFanoutTargets(targets).map((target) => target.id), ['host-alpha', 'host-beta', 'host:gamma']);
+  assert.deepEqual(resolveFanoutRecipients(targets, ['alpha', 'beta']).map((target) => target.project), ['alpha', 'beta']);
+  assert.deepEqual(resolveFanoutRecipients(targets, ['alpha', 'gamma']).map((target) => target.project), ['alpha', 'gamma']);
+  assert.deepEqual(resolveFanoutRecipients(targets, ['alpha']), []);
+  assert.deepEqual(resolveFanoutRecipients(targets, ['alpha', 'missing']), []);
+  assert.deepEqual(resolveFanoutRecipients(targets, ['alpha', 'alpha']), []);
 });
 
 test('keeps remote providers out of an unbound workspace', () => {

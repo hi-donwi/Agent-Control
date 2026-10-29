@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from '
 import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
-import { HEAD_SHA, PROJECT, SESSION_BRANCH, worktreeOf } from './workspace.js';
+import { addFanoutProject, FANOUT_PROJECT, HEAD_SHA, PROJECT, removeFanoutProject, SESSION_BRANCH, worktreeOf } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
@@ -31,6 +31,8 @@ function seedApproval(root: string): void {
 }
 
 const workspaceRoot = () => (JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root;
+
+test.afterEach(() => removeFanoutProject(workspaceRoot()));
 
 async function selectProjectCommandTarget(page: Page): Promise<void> {
   const target = page.getByRole('combobox', { name: 'Command target' });
@@ -62,7 +64,7 @@ async function sendCommandAndInspectEvidence(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Send command' }).click();
   await page.getByRole('button', { name: 'Inspect evidence' }).click();
   await expect(page.getByRole('region', { name: 'Response evidence' })).toBeVisible();
-  const popover = page.getByRole('complementary', { name: 'Response from agent-control' });
+  const popover = page.getByRole('complementary', { name: `Response from agent-control in ${PROJECT}` });
   const bounds = await popover.boundingBox();
   const viewport = page.viewportSize();
   expect(bounds).not.toBeNull();
@@ -264,6 +266,207 @@ test('compares the current response with a selected earlier response in the same
   expect(currentBounds!.y).toBeLessThan(earlierBounds!.y);
   await comparison.getByRole('button', { name: 'Close comparison' }).click();
   await expect(page.getByRole('button', { name: 'Compare responses' })).toBeFocused();
+});
+
+test('fans out the same prompt to selected projects with separate conversations and responses', async ({ page, deskUrl }) => {
+  const root = workspaceRoot();
+  addFanoutProject(root);
+  const conversationIds = {
+    [PROJECT]: '66666666-6666-4666-8666-666666666666',
+    [FANOUT_PROJECT]: '77777777-7777-4777-8777-777777777777',
+  };
+  const requests: Array<{ project: string; conversation: string; provider: string; messages: Array<{ content: string }> }> = [];
+  const latestScopes: string[] = [];
+  let projectLatestCount = 0;
+  const staleProjectLoad: { release?: () => void } = {};
+  await page.route(/\/api\/agent\/conversations\/latest\?scope=(mockproj|mockpeer)$/, async (route) => {
+    const scope = new URL(route.request().url()).searchParams.get('scope') ?? '';
+    latestScopes.push(scope);
+    if (scope === PROJECT && projectLatestCount++ === 0) {
+      await new Promise<void>((resolve) => { staleProjectLoad.release = resolve; });
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: conversationIds[scope as keyof typeof conversationIds] ?? null, messages: [] }),
+    });
+  });
+  await page.route('**/api/agent/chat', async (route) => {
+    const request = route.request().postDataJSON() as {
+      project: string;
+      conversation: string;
+      provider: string;
+      messages: Array<{ content: string }>;
+    };
+    requests.push(request);
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/plain; charset=utf-8',
+      body: `0:${JSON.stringify(`Response from ${request.project}`)}\nd:${JSON.stringify({ finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } })}\n`,
+    });
+  });
+
+  await page.goto(deskUrl);
+  await selectProjectCommandTarget(page);
+  await page.getByText(/^Send to multiple projects/).click();
+  await expect(page.getByText('Each selected project receives the same prompt in its own scoped conversation.')).toBeVisible();
+  await page.getByRole('checkbox', { name: `Send to ${PROJECT}` }).check();
+  await page.getByRole('checkbox', { name: `Send to ${FANOUT_PROJECT}` }).check();
+  await page.locator('#command-dock-input').fill('Summarize each selected project');
+  await expect(page.getByRole('button', { name: 'Send to selected projects' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Send to selected projects' }).click();
+
+  await expect.poll(() => requests.length).toBe(2);
+  expect(new Set(latestScopes)).toEqual(new Set([PROJECT, FANOUT_PROJECT]));
+  expect(latestScopes.filter((scope) => scope === PROJECT)).toHaveLength(2);
+  expect(requests.map((request) => request.project).sort()).toEqual([PROJECT, FANOUT_PROJECT].sort());
+  expect(Object.fromEntries(requests.map((request) => [request.project, request.conversation]))).toEqual(conversationIds);
+  expect(requests.every((request) => request.provider === 'mock')).toBe(true);
+  expect(requests.every((request) => request.messages.at(-1)?.content === 'Summarize each selected project')).toBe(true);
+  const projectResponse = page.getByRole('complementary', { name: `Response from agent-control in ${PROJECT}` });
+  const peerResponse = page.getByRole('complementary', { name: `Response from agent-control in ${FANOUT_PROJECT}` });
+  await expect(projectResponse).toContainText(`Response from ${PROJECT}`);
+  await expect(peerResponse).toHaveCount(0);
+  const projectBounds = await projectResponse.boundingBox();
+  const viewport = page.viewportSize();
+  expect(projectBounds).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(projectBounds!.x + projectBounds!.width).toBeLessThanOrEqual(viewport!.width);
+
+  expect(staleProjectLoad.release).toBeTruthy();
+  staleProjectLoad.release?.();
+  await projectResponse
+    .getByRole('button', { name: 'Open conversation' }).click();
+  const drawer = page.getByRole('dialog', { name: 'Assistant' });
+  await expect(drawer.getByText('This project is selected for fan-out. Clear project recipients to chat with it individually.')).toBeVisible();
+  await expect(drawer.getByText(`Response from ${PROJECT}`)).toBeVisible();
+  await expect(drawer.locator('#chat-input')).toBeDisabled();
+  await drawer.getByRole('button', { name: 'Close assistant' }).click();
+  await expect(projectResponse.getByRole('button', { name: 'Open conversation' })).toBeFocused();
+  await projectResponse.getByRole('button', { name: 'Dismiss response preview' }).click();
+  await page.getByRole('list', { name: 'Project response statuses' })
+    .getByRole('button', { name: `View response from ${FANOUT_PROJECT}` }).click();
+  await expect(peerResponse).toContainText(`Response from ${FANOUT_PROJECT}`);
+});
+
+test('keeps a completed response from cancelling other fan-out recipients', async ({ page, deskUrl }) => {
+  addFanoutProject(workspaceRoot());
+  const requests: string[] = [];
+  const pendingPeer: { release?: () => void } = {};
+  await page.route(/\/api\/agent\/conversations\/latest\?scope=(mockproj|mockpeer)$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: null, messages: [] }),
+  }));
+  await page.route('**/api/agent/chat', async (route) => {
+    const request = route.request().postDataJSON() as { project: string };
+    requests.push(request.project);
+    if (request.project === FANOUT_PROJECT) {
+      await new Promise<void>((resolve) => { pendingPeer.release = resolve; });
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/plain; charset=utf-8',
+      body: `0:${JSON.stringify(`Response from ${request.project}`)}\nd:${JSON.stringify({ finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } })}\n`,
+    });
+  });
+
+  await page.goto(deskUrl);
+  await selectProjectCommandTarget(page);
+  await page.getByText(/^Send to multiple projects/).click();
+  await page.getByRole('checkbox', { name: `Send to ${PROJECT}` }).check();
+  await page.getByRole('checkbox', { name: `Send to ${FANOUT_PROJECT}` }).check();
+  await page.locator('#command-dock-input').fill('Keep every recipient running');
+  await page.getByRole('button', { name: 'Send to selected projects' }).click();
+
+  await expect.poll(() => requests.length).toBe(2);
+  const projectResponse = page.getByRole('complementary', { name: `Response from agent-control in ${PROJECT}` });
+  await expect(projectResponse).toContainText(`Response from ${PROJECT}`);
+  await expect(projectResponse.getByRole('button', { name: 'Continue' })).toBeDisabled();
+
+  pendingPeer.release?.();
+  await expect(page.getByRole('list', { name: 'Project response statuses' }).getByText('Response ready')).toHaveCount(2);
+  await expect(projectResponse.getByRole('button', { name: 'Continue' })).toBeEnabled();
+});
+
+test('keeps successful project responses when another fan-out recipient fails', async ({ page, deskUrl }) => {
+  addFanoutProject(workspaceRoot());
+  const requestProjects: string[] = [];
+  await page.route(/\/api\/agent\/conversations\/latest\?scope=(mockproj|mockpeer)$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: null, messages: [] }),
+  }));
+  await page.route('**/api/agent/chat', async (route) => {
+    const request = route.request().postDataJSON() as { project: string };
+    requestProjects.push(request.project);
+    if (request.project === FANOUT_PROJECT) {
+      await route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Mock peer is unavailable.' }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/plain; charset=utf-8',
+      body: `0:${JSON.stringify(`Response from ${request.project}`)}\nd:${JSON.stringify({ finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } })}\n`,
+    });
+  });
+
+  await page.goto(deskUrl);
+  await selectProjectCommandTarget(page);
+  await page.getByText(/^Send to multiple projects/).click();
+  await page.getByRole('checkbox', { name: `Send to ${PROJECT}` }).check();
+  await page.getByRole('checkbox', { name: `Send to ${FANOUT_PROJECT}` }).check();
+  await page.locator('#command-dock-input').fill('Inspect each project independently');
+  await page.getByRole('button', { name: 'Send to selected projects' }).click();
+
+  await expect.poll(() => requestProjects.length).toBe(2);
+  await expect(page.getByText(`Response from ${PROJECT}`)).toBeVisible();
+  await expect(page.getByText('Mock peer is unavailable.')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '1 of 2 project responses ready' })).toBeVisible();
+});
+
+test('Stop all project responses cancels every active fan-out recipient', async ({ page, deskUrl }) => {
+  addFanoutProject(workspaceRoot());
+  const requests: string[] = [];
+  const release: Array<() => void> = [];
+  await page.route(/\/api\/agent\/conversations\/latest\?scope=(mockproj|mockpeer)$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: null, messages: [] }),
+  }));
+  await page.route('**/api/agent/chat', async (route) => {
+    const request = route.request().postDataJSON() as { project: string };
+    requests.push(request.project);
+    await new Promise<void>((resolve) => release.push(resolve));
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/plain; charset=utf-8',
+        body: `0:${JSON.stringify(`Response from ${request.project}`)}\nd:${JSON.stringify({ finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } })}\n`,
+      });
+    } catch {
+      // Stopping the fan-out aborts each recipient's independent request.
+    }
+  });
+
+  await page.goto(deskUrl);
+  await selectProjectCommandTarget(page);
+  await page.getByText(/^Send to multiple projects/).click();
+  await page.getByRole('checkbox', { name: `Send to ${PROJECT}` }).check();
+  await page.getByRole('checkbox', { name: `Send to ${FANOUT_PROJECT}` }).check();
+  await page.locator('#command-dock-input').fill('Stop this fan-out');
+  await page.getByRole('button', { name: 'Send to selected projects' }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole('button', { name: 'Stop all project responses' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Stop all project responses' }).click();
+  release.forEach((resolve) => resolve());
+
+  await expect(page.getByRole('status').filter({ hasText: 'Project fan-out stopped' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Project response statuses' }).getByText('Stopped')).toHaveCount(2);
 });
 
 test('drafts a scoped task from the response without saving it', async ({ page, deskUrl }) => {
