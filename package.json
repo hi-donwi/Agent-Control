@@ -24,7 +24,7 @@
     "@ai-sdk/google": "^4.0.87",
     "@ai-sdk/openai": "^4.0.83",
     "@ai-sdk/openai-compatible": "^3.0.62",
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^2.1.5",
     "ai": "^7.0.127",
     "highlight.js": "^11.11.0",
     "hono": "^4.13.11",
@@ -32,7 +32,8 @@
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "uidl-runtime": "^0.1.8"
+    "uidl-runtime": "^0.1.8",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
