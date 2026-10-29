@@ -20,6 +20,7 @@ const KEY_RE = /^[a-z0-9][a-z0-9_-]*$/;
 const RESULT_MAX = 2000;
 
 export interface StoredToolCall {
+  id?: string;
   name: string;
   status: 'pending' | 'done' | 'error';
   result?: string;
@@ -156,6 +157,7 @@ export function listConversations(root: string, scope: string, limit = 30): Conv
 
 interface StreamPart {
   type: string;
+  toolCallId?: string;
   text?: string;
   toolName?: string;
   output?: unknown;
@@ -180,9 +182,9 @@ export async function* captureAssistant<T extends StreamPart>(
   try {
     for await (const part of parts) {
       if (part.type === 'text-delta') content += part.text ?? '';
-      if (part.type === 'tool-call') toolCalls.push({ name: part.toolName ?? 'tool', status: 'pending' });
+      if (part.type === 'tool-call') toolCalls.push({ id: part.toolCallId, name: part.toolName ?? 'tool', status: 'pending' });
       if (part.type === 'tool-result' || part.type === 'tool-error') {
-        const call = [...toolCalls].reverse().find((c) => c.status === 'pending');
+        const call = [...toolCalls].reverse().find((c) => c.status === 'pending' && (!part.toolCallId || c.id === part.toolCallId));
         if (call) {
           call.status = part.type === 'tool-result' ? 'done' : 'error';
           call.result = asText(part.type === 'tool-result' ? part.output : part.error instanceof Error ? part.error.message : part.error);

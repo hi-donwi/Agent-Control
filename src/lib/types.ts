@@ -3,14 +3,30 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: ToolCallResult[];
+  evidence?: EvidenceMetadata[];
   createdAt: number;
 }
 
+export type ToolCallStatus = 'pending' | 'done' | 'error';
+
 export interface ToolCallResult {
+  id?: string;
   name: string;
   args: Record<string, unknown>;
   result?: string;
-  status: 'pending' | 'done' | 'error';
+  status: ToolCallStatus;
+}
+
+export type EvidenceReference =
+  | { kind: 'task'; id: string; scope?: string }
+  | { kind: 'approval'; id: string }
+  | { kind: 'diff'; id: string };
+
+export interface EvidenceMetadata {
+  id: string;
+  tool: string;
+  status: ToolCallStatus;
+  references: EvidenceReference[];
 }
 
 export interface Provider {

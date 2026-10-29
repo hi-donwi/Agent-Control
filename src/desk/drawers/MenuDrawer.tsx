@@ -9,6 +9,7 @@ import type { ThemePref } from '../useTheme';
 import { DayItem } from '../pm/DayItem';
 import type { PmAlert } from '../pm/types';
 import type { PmPage } from '../pm/pages';
+import type { NoteDraft } from '../command/command-state';
 
 export type MenuSection = SectionId | 'settings' | 'inbox';
 
@@ -16,6 +17,8 @@ interface Props {
   floor: Floor | null;
   project: string;
   section: MenuSection | null;
+  noteDraft?: NoteDraft & { id: string };
+  noteDraftKey?: string;
   dark: boolean;
   theme: ThemePref;
   onProject: (key: string) => void;
@@ -32,6 +35,7 @@ interface Props {
   onOpenScope: (scope: string) => void;
   onAssistantScope: (scope: string) => void;
   onOpenTask: (scope: string, id: string) => void;
+  onNoteDraftSaved?: () => void;
 }
 
 const WORKSPACE_ITEMS: SectionId[] = ['projects', 'agents', 'approvals'];
@@ -43,12 +47,14 @@ export function rooms(floor: Floor | null): FloorRoom[] {
 
 /** All navigation in one list; a section opens in place and the drawer widens. */
 export function MenuDrawer(props: Props) {
-  const { floor, project, section, onSection, onClose } = props;
+  const { floor, project, section, onSection, onClose, noteDraft, onNoteDraftSaved } = props;
   // Every write goes through the host to a `ws` command (ADR-0023); the section only names it.
   const commands = useMemo<SectionCommands>(() => ({
-    'notes.add': (state) => {
+    'notes.add': async (state) => {
       const note = (state.note ?? {}) as { title?: string; body?: string };
-      return apiFetch('desk/notes', { method: 'POST', body: JSON.stringify({ project, title: note.title ?? '', body: note.body ?? '' }) });
+      const result = await apiFetch('desk/notes', { method: 'POST', body: JSON.stringify({ project, title: note.title ?? '', body: note.body ?? '' }) });
+      if (noteDraft) onNoteDraftSaved?.();
+      return result;
     },
     'tasks.add': (state) => {
       const task = (state.task ?? {}) as { title?: string; priority?: string };
@@ -58,7 +64,7 @@ export function MenuDrawer(props: Props) {
       apiFetch('desk/tasks/status', { method: 'POST', body: JSON.stringify({ ...payload, project }) }),
     'plans.status': (_state, payload) =>
       apiFetch('desk/plan/status', { method: 'POST', body: JSON.stringify({ ...payload, project }) }),
-  }), [project]);
+  }), [noteDraft, onNoteDraftSaved, project]);
   const title = section ? (section === 'settings' ? 'Settings' : section === 'inbox' ? 'Inbox' : SECTIONS[section].title) : 'Menu';
   return (
     <Drawer label={title} wide={section !== null && section !== 'settings' && section !== 'inbox'} onClose={onClose}>
@@ -78,7 +84,7 @@ export function MenuDrawer(props: Props) {
           <CloseIcon />
         </button>
       </header>
-      {section !== 'inbox' && <ProjectPicker {...props} />}
+      {section !== 'inbox' && <ProjectPicker {...props} disabled={Boolean(noteDraft)} />}
       <div className="drawer-body">
         {section === null && <Nav {...props} />}
         {section === 'settings' && <Settings {...props} />}
@@ -88,9 +94,11 @@ export function MenuDrawer(props: Props) {
             ? <p className="drawer-empty">Choose a project above, or click a room on the floor.</p>
             : (
               <SectionView
+                key={`${section}:${props.noteDraftKey ?? ''}`}
                 document={sectionDocument(section, project || undefined, rooms(floor).find((r) => r.key === project))}
                 dark={props.dark}
                 commands={commands}
+                initialState={section === 'notes' && noteDraft ? { note: { title: noteDraft.title, body: noteDraft.body } } : undefined}
               />
             )
         )}
@@ -99,11 +107,11 @@ export function MenuDrawer(props: Props) {
   );
 }
 
-function ProjectPicker({ floor, project, onProject }: Props) {
+function ProjectPicker({ floor, project, onProject, disabled }: Props & { disabled?: boolean }) {
   return (
     <div className="drawer-scope">
       <label htmlFor="desk-project">Project</label>
-      <select id="desk-project" value={project} onChange={(event) => onProject(event.target.value)}>
+      <select id="desk-project" value={project} onChange={(event) => onProject(event.target.value)} disabled={disabled}>
         <option value="">None selected</option>
         {rooms(floor).map((room) => <option key={room.key} value={room.key}>{room.key}</option>)}
       </select>

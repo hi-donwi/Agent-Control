@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FloorView, zoneLabel } from './floor/FloorView';
 import { ProjectRoom } from './room/ProjectRoom';
 import { MenuDrawer, rooms, type MenuSection } from './drawers/MenuDrawer';
-import { AssistantDrawer } from './drawers/AssistantDrawer';
+import { AssistantDrawer, type AssistantTab } from './drawers/AssistantDrawer';
+import { ResponseCompareDrawer } from './drawers/ResponseCompareDrawer';
 import { AssistantIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
 import { useFloor } from './useFloor';
 import { useTheme } from './useTheme';
 import { useScopedChat } from './useScopedChat';
+import { CommandDock } from './command/CommandDock';
+import { FanoutChatWorker, type FanoutChatState } from './command/FanoutChatWorker';
+import { buildCommandTargets, eligibleFanoutTargets, resolveChatChoice, type CommandTarget, type FanoutCandidate, type NoteDraft, type TaskDraft } from './command/command-state';
 import { SettingsDialog } from '../components/settings/SettingsDialog';
 import { TodayView } from './pm/TodayView';
 import { MissionsView } from './pm/MissionsView';
@@ -16,20 +20,28 @@ import { TimelineView } from './pm/TimelineView';
 import { ClientsView } from './pm/ClientsView';
 import { ClientPage } from './pm/ClientPage';
 import { usePmAlerts } from './pm/usePm';
+import { useProviders } from '../hooks/useProviders';
+import { useProjects } from '../hooks/useProjects';
 import { DATE_ALERTS, PM_PAGE_TITLE, type PmPage } from './pm/pages';
+import type { ChatMessage } from '../lib/types';
 import type { Floor, FloorAgent, FloorRoom } from './types';
 import './desk.css';
 import './floor/studio.css';
 
 type DrawerState =
-  | { kind: 'menu'; section: MenuSection | null }
-  | { kind: 'assistant'; scope: string; agent: FloorAgent | null }
+  | { kind: 'menu'; section: MenuSection | null; noteDraft?: NoteDraft & { id: string }; noteDraftKey?: string }
+  | { kind: 'assistant'; scope: string; agent: FloorAgent | null; initialTab?: AssistantTab; focusApprovalId?: string }
+  | { kind: 'compare'; scope: string; current: ChatMessage; candidates: ChatMessage[] }
   | null;
 
 const PROJECT_KEY = 'desk-project';
 
 function storedProject(): string {
   try { return localStorage.getItem(PROJECT_KEY) ?? ''; } catch { return ''; }
+}
+
+function createLocalDraftId(): string {
+  return typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `note-draft-${Date.now()}`;
 }
 
 function findAgent(floor: Floor | null, id: string): FloorAgent | undefined {
@@ -53,6 +65,7 @@ export function DeskApp() {
   const pm = usePmAlerts();
   /** The task open in its drawer, and a counter its changes bump so the views follow. */
   const [task, setTask] = useState<{ scope: string; id: string } | null>(null);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const [pmChanges, setPmChanges] = useState(0);
   const openTask = useCallback((scope: string, id: string) => {
     setDrawer(null);
@@ -61,9 +74,39 @@ export function DeskApp() {
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [project, setProjectState] = useState(storedProject);
   const [showEndpoints, setShowEndpoints] = useState(false);
+  const [commandScope, setCommandScope] = useState('');
+  const [commandAgentId, setCommandAgentId] = useState<string | null>(null);
+  const [fanoutScopes, setFanoutScopes] = useState<string[]>([]);
+  const [fanoutChats, setFanoutChats] = useState<Record<string, FanoutChatState>>({});
 
-  const assistantScope = drawer?.kind === 'assistant' ? drawer.scope : '';
+  const assistantScope = drawer?.kind === 'assistant' ? drawer.scope : commandScope;
   const chat = useScopedChat(assistantScope);
+  const { providers, defaultProvider, defaultModel } = useProviders();
+  const { projects } = useProjects();
+  const commandChoice = useMemo(
+    () => resolveChatChoice(providers, projects, assistantScope, defaultProvider, defaultModel),
+    [assistantScope, defaultModel, defaultProvider, projects, providers],
+  );
+  const fanoutCandidates = useMemo<FanoutCandidate[]>(() => eligibleFanoutTargets(buildCommandTargets(floor)).map((target) => ({
+    target,
+    choice: resolveChatChoice(providers, projects, target.project, defaultProvider, defaultModel),
+  })), [defaultModel, defaultProvider, floor, projects, providers]);
+  const fanoutChatForCurrentScope: FanoutChatState = { ...chat, scope: assistantScope };
+  const fanoutChatsForDock = useMemo(() => ({
+    ...(assistantScope ? { [assistantScope]: fanoutChatForCurrentScope } : {}),
+    ...fanoutChats,
+  }), [assistantScope, fanoutChatForCurrentScope, fanoutChats]);
+  const updateFanoutChat = useCallback((next: FanoutChatState) => {
+    setFanoutChats((current) => current[next.scope] === next ? current : { ...current, [next.scope]: next });
+  }, []);
+  const updateFanoutScopes = useCallback((scopes: string[]) => {
+    const selected = new Set(scopes);
+    setFanoutScopes(scopes);
+    setFanoutChats((current) => Object.fromEntries(Object.entries(current).filter(([scope]) => selected.has(scope))));
+  }, []);
+  const persistFanoutSnapshot = useCallback((snapshot: Parameters<typeof chat.adoptSnapshot>[0]) => {
+    chat.adoptSnapshot(snapshot);
+  }, [chat.adoptSnapshot]);
 
   const setProject = useCallback((key: string) => {
     setProjectState(key);
@@ -72,11 +115,15 @@ export function DeskApp() {
 
   const openAgent = useCallback((agent: FloorAgent) => {
     setProject(agent.project);
-    setDrawer({ kind: 'assistant', scope: agent.project, agent });
+    setCommandScope(agent.project);
+    setCommandAgentId(agent.id);
+    setDrawer({ kind: 'assistant', scope: agent.project, agent, initialTab: 'chat' });
   }, [setProject]);
 
   const openRoom = useCallback((target: FloorRoom) => {
     setProject(target.key);
+    setCommandScope(target.key);
+    setCommandAgentId(null);
     setPage(null);
     setClientPage(null);
     setRoom(target.key);
@@ -91,15 +138,103 @@ export function DeskApp() {
     } else {
       setClientPage(null);
       setProject(scope);
+      setCommandScope(scope);
+      setCommandAgentId(null);
       setRoom(scope);
     }
   }, [setProject]);
+
+  const selectCommandTarget = useCallback((target: CommandTarget) => {
+    setCommandScope(target.project);
+    setCommandAgentId(target.agentId);
+    if (target.project) setProject(target.project);
+    if (drawer?.kind === 'assistant') {
+      setDrawer({
+        kind: 'assistant',
+        scope: target.project,
+        agent: target.agentId ? findAgent(floor, target.agentId) ?? null : null,
+        initialTab: 'chat',
+      });
+    }
+  }, [drawer, floor, setProject]);
+
+  const openCommandTarget = useCallback((target: CommandTarget, view: AssistantTab = 'chat') => {
+    if (target.kind === 'project-agent' && target.agentId) {
+      const agent = findAgent(floor, target.agentId);
+      if (agent) {
+        setProject(agent.project);
+        setCommandScope(agent.project);
+        setCommandAgentId(agent.id);
+        setDrawer({ kind: 'assistant', scope: agent.project, agent, initialTab: view });
+      } else {
+        setCommandScope(target.project);
+        setCommandAgentId(target.agentId);
+        setDrawer({ kind: 'assistant', scope: target.project, agent: null, initialTab: view });
+      }
+      return;
+    }
+    if (target.kind === 'control-plane') {
+      setCommandScope('');
+      setCommandAgentId(null);
+      setDrawer({ kind: 'assistant', scope: '', agent: null, initialTab: view });
+    }
+  }, [floor, setProject]);
+
+  const openCommandReview = useCallback((target: CommandTarget) => {
+    openCommandTarget(target, 'changes');
+  }, [openCommandTarget]);
+
+  const openResponseComparison = useCallback((target: CommandTarget, current: ChatMessage, candidates: ChatMessage[]) => {
+    if (target.kind !== 'project-agent' || !target.project || !target.writable || candidates.length === 0) return;
+    setProject(target.project);
+    setCommandScope(target.project);
+    setCommandAgentId(target.agentId);
+    setRoom(null);
+    setPage(null);
+    setClientPage(null);
+    setDrawer({ kind: 'compare', scope: target.project, current, candidates });
+  }, [setProject]);
+
+  const openCommandApproval = useCallback((target: CommandTarget, approvalId: string) => {
+    if (target.kind !== 'project-agent' || !target.project || !target.writable) return;
+    const agent = target.agentId ? findAgent(floor, target.agentId) ?? null : null;
+    setProject(target.project);
+    setCommandScope(target.project);
+    setCommandAgentId(target.agentId);
+    setDrawer({ kind: 'assistant', scope: target.project, agent, initialTab: 'chat', focusApprovalId: approvalId });
+  }, [floor, setProject]);
 
   const openPage = useCallback((next: PmPage) => {
     setRoom(null);
     setClientPage(null);
     setPage(next);
     setDrawer(null);
+  }, []);
+
+  const openTaskDraft = useCallback((draft: TaskDraft) => {
+    setTaskDraft(draft);
+    setProject(draft.scope);
+    setCommandScope(draft.scope);
+    setCommandAgentId(null);
+    openPage('backlog');
+  }, [openPage, setProject]);
+  const consumeTaskDraft = useCallback(() => setTaskDraft(null), []);
+
+  const openNoteDraft = useCallback((draft: NoteDraft) => {
+    const id = createLocalDraftId();
+    setProject(draft.scope);
+    setCommandScope(draft.scope);
+    setCommandAgentId(null);
+    setRoom(null);
+    setPage(null);
+    setClientPage(null);
+    setDrawer({ kind: 'menu', section: 'notes', noteDraft: { ...draft, id }, noteDraftKey: id });
+  }, [setProject]);
+
+  const noteDraftSaved = useCallback(() => {
+    setDrawer((current) => current?.kind === 'menu' && current.noteDraft
+      ? { ...current, noteDraft: undefined }
+      : current);
   }, []);
 
   // Escape leaves a room or a view for the floor, unless a drawer is open: then it closes the drawer.
@@ -214,7 +349,15 @@ export function DeskApp() {
             className="bar-btn"
             aria-label="Assistant"
             aria-expanded={drawer?.kind === 'assistant'}
-            onClick={() => setDrawer(drawer?.kind === 'assistant' ? null : { kind: 'assistant', scope: '', agent: null })}
+            onClick={() => {
+              if (drawer?.kind === 'assistant') {
+                setDrawer(null);
+              } else {
+                setCommandScope('');
+                setCommandAgentId(null);
+                setDrawer({ kind: 'assistant', scope: '', agent: null });
+              }
+            }}
           >
             <AssistantIcon />
           </button>
@@ -255,7 +398,13 @@ export function DeskApp() {
         ) : page === 'missions' ? (
           <MissionsView projects={projectKeys} version={alertsVersion} onOpenTask={openTask} />
         ) : page === 'backlog' ? (
-          <BacklogView projects={projectKeys} version={alertsVersion} onOpenTask={openTask} />
+          <BacklogView
+            projects={projectKeys}
+            version={alertsVersion}
+            onOpenTask={openTask}
+            taskDraft={taskDraft}
+            onTaskDraftConsumed={consumeTaskDraft}
+          />
         ) : page === 'timeline' ? (
           <TimelineView version={alertsVersion} onOpenTask={openTask} />
         ) : page === 'clients' ? (
@@ -274,6 +423,46 @@ export function DeskApp() {
         )}
       </main>
 
+      <CommandDock
+        floor={floor}
+        scope={assistantScope}
+        targetAgentId={commandAgentId}
+        chat={chat}
+        providerReady={Boolean(commandChoice)}
+        popoverBehindDrawer={Boolean(drawer || task || showEndpoints)}
+        fanoutCandidates={fanoutCandidates}
+        fanoutScopes={fanoutScopes}
+        fanoutChats={fanoutChatsForDock}
+        onTargetChange={selectCommandTarget}
+        onFanoutScopesChange={updateFanoutScopes}
+        onFanoutSend={(message, recipients) => {
+          recipients.forEach(({ target, choice }) => {
+            const recipientChat = fanoutChatsForDock[target.project];
+            if (choice && recipientChat) void recipientChat.send(message, choice.provider, choice.model);
+          });
+        }}
+        onStopFanout={(scopes) => scopes.forEach((scope) => fanoutChatsForDock[scope]?.stopStreaming())}
+        onOpenTarget={openCommandTarget}
+        onOpenReview={openCommandReview}
+        onOpenTask={openTask}
+        onReviewApproval={openCommandApproval}
+        onDraftTask={openTaskDraft}
+        onDraftNote={openNoteDraft}
+        onCompareResponses={openResponseComparison}
+        onSend={(message) => {
+          if (commandChoice) chat.send(message, commandChoice.provider, commandChoice.model);
+        }}
+      />
+      {fanoutScopes.map((scope) => (
+        <FanoutChatWorker
+          key={scope}
+          scope={scope}
+          initialSnapshot={chat.snapshotFor(scope)}
+          onChange={updateFanoutChat}
+          onPersist={persistFanoutSnapshot}
+        />
+      ))}
+
       {floor && (
         <footer className="desk-caption" role="status">
           <span className={`live-dot${live ? ' is-live' : ''}`} aria-hidden="true" />
@@ -290,6 +479,8 @@ export function DeskApp() {
           floor={floor}
           project={project}
           section={drawer.section}
+          noteDraft={drawer.noteDraft}
+          noteDraftKey={drawer.noteDraftKey}
           dark={dark}
           theme={theme}
           onProject={setProject}
@@ -304,6 +495,7 @@ export function DeskApp() {
           onOpenScope={openScope}
           onAssistantScope={(key) => setDrawer({ kind: 'assistant', scope: key, agent: null })}
           onOpenTask={openTask}
+          onNoteDraftSaved={noteDraftSaved}
         />
       )}
       {task && !drawer && (
@@ -320,10 +512,25 @@ export function DeskApp() {
           scope={drawer.scope}
           agent={agent}
           projectKeys={projectKeys}
-          chat={chat}
+          chat={fanoutScopes.includes(drawer.scope) ? fanoutChats[drawer.scope] ?? chat : chat}
           dark={dark}
+          initialTab={drawer.initialTab}
+          focusApprovalId={drawer.focusApprovalId}
+          readOnly={fanoutScopes.includes(drawer.scope)}
           onTheme={(t) => setTheme(t)}
-          onScope={(scope) => setDrawer({ kind: 'assistant', scope, agent: null })}
+          onScope={(scope) => {
+            setCommandScope(scope);
+            setCommandAgentId(null);
+            setDrawer({ kind: 'assistant', scope, agent: null, initialTab: 'chat' });
+          }}
+          onClose={close}
+        />
+      )}
+      {drawer?.kind === 'compare' && (
+        <ResponseCompareDrawer
+          scope={drawer.scope}
+          current={drawer.current}
+          candidates={drawer.candidates}
           onClose={close}
         />
       )}

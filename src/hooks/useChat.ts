@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { getAuthToken } from '../lib/api';
+import { buildEvidenceMetadata, findPendingToolCall } from '../lib/evidence';
 import type { ChatMessage, ToolCallResult } from '../lib/types';
 
 let messageCounter = 0;
@@ -37,6 +38,7 @@ export function useChat() {
         role: 'assistant',
         content: '',
         toolCalls: [],
+        evidence: [],
         createdAt: Date.now(),
       };
 
@@ -115,6 +117,7 @@ export function useChat() {
                 // Tool call
                 const tool = JSON.parse(data) as { toolCallId: string; toolName: string; args: Record<string, unknown> };
                 toolCalls.push({
+                  id: tool.toolCallId,
                   name: tool.toolName,
                   args: tool.args,
                   status: 'pending',
@@ -123,14 +126,18 @@ export function useChat() {
                   const updated = [...prev];
                   const last = updated[updated.length - 1];
                   if (last?.role === 'assistant') {
-                    updated[updated.length - 1] = { ...last, toolCalls: [...toolCalls] };
+                    updated[updated.length - 1] = {
+                      ...last,
+                      toolCalls: [...toolCalls],
+                      evidence: buildEvidenceMetadata(toolCalls),
+                    };
                   }
                   return updated;
                 });
               } else if (type === 'a') {
                 // Tool result
                 const result = JSON.parse(data) as { toolCallId: string; result: unknown };
-                const tc = toolCalls[toolCalls.length - 1];
+                const tc = findPendingToolCall(toolCalls, result.toolCallId);
                 if (tc) {
                   tc.result = typeof result.result === 'string'
                     ? result.result
@@ -141,7 +148,11 @@ export function useChat() {
                   const updated = [...prev];
                   const last = updated[updated.length - 1];
                   if (last?.role === 'assistant') {
-                    updated[updated.length - 1] = { ...last, toolCalls: [...toolCalls] };
+                    updated[updated.length - 1] = {
+                      ...last,
+                      toolCalls: [...toolCalls],
+                      evidence: buildEvidenceMetadata(toolCalls),
+                    };
                   }
                   return updated;
                 });

@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** The one project the disposable workspace registers. */
 export const PROJECT = 'mockproj';
+export const FANOUT_PROJECT = 'mockpeer';
 /** The branch the fixture worktree sits on; the coding-session panel shows it. */
 export const SESSION_BRANCH = 'ws-mockproj';
 /** What the seeded session's panel line should contain (its last two path segments). */
@@ -202,7 +203,9 @@ elif [ "$1" = "plan" ]; then
   awk -F'|' -v n="$5" -v st="$6" -v q="$q" -v sn="$sn" -v nt="$nt" 'BEGIN { OFS = "|" } { c = $2; gsub(/ /, "", c); if (NF > 4 && c == n) { $4 = " " q st q " "; if (sn == 1) $5 = " " nt " " } print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   printf 'plan %s %s %s mtime:0:size:0\\n' "$4" "$5" "$6"
 else
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
   printf '${PROJECT}\\tframework\\t-\\tprojects/mock/${PROJECT}\\t-\\t-\\t-\\n'
+  if [ -f "$root/.local/stub/extra-projects.tsv" ]; then cat "$root/.local/stub/extra-projects.tsv"; fi
 fi
 `;
 
@@ -296,6 +299,28 @@ export function createWorkspace(): Workspace {
   run(primary, 'worktree', 'add', '-q', '-b', SESSION_BRANCH, worktree);
 
   return { root, home, worktree };
+}
+
+/** Adds a second writable project target for multi-project dispatch journeys. */
+export function addFanoutProject(root: string): void {
+  const project = FANOUT_PROJECT;
+  appendFileSync(join(root, 'context', 'registry.tsv'), `${project}\tframework\t-\tprojects/mock/${project}\n`);
+  const stub = join(root, '.local', 'stub');
+  mkdirSync(stub, { recursive: true });
+  writeFileSync(join(stub, 'extra-projects.tsv'), `${project}\tframework\t-\tprojects/mock/${project}\t-\t-\t-\n`);
+  writeFileSync(join(root, '.local', 'agent', 'policies', `${project}.json`), JSON.stringify({
+    schema_version: 1, default: 'read', llm: { endpoints: [] },
+  }, null, 2));
+}
+
+export function removeFanoutProject(root: string): void {
+  const registry = join(root, 'context', 'registry.tsv');
+  const rows = readFileSync(registry, 'utf-8').split('\n')
+    .filter((line) => !line.startsWith(`${FANOUT_PROJECT}\t`));
+  writeFileSync(registry, rows.join('\n'));
+  rmSync(join(root, '.local', 'stub', 'extra-projects.tsv'), { force: true });
+  rmSync(join(root, '.local', 'agent', 'policies', `${FANOUT_PROJECT}.json`), { force: true });
+  rmSync(join(root, '.local', 'agent', 'approvals', FANOUT_PROJECT), { recursive: true, force: true });
 }
 
 export function removeWorkspace(ws: Workspace): void {
