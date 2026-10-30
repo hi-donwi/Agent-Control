@@ -24,6 +24,8 @@
     "@ai-sdk/google": "^4.0.87",
     "@ai-sdk/openai": "^4.0.83",
     "@ai-sdk/openai-compatible": "^3.0.62",
+    "@context-atlas/model": "github:hi-donwi/Context-Atlas#2fd5794746fc6f78827a1ad5a9e02493b7ff5655&path:/packages/model",
+    "@context-atlas/viewer": "github:hi-donwi/Context-Atlas#2fd5794746fc6f78827a1ad5a9e02493b7ff5655&path:/packages/viewer",
     "@hono/node-server": "^2.1.5",
     "ai": "^7.0.127",
     "highlight.js": "^11.11.0",

@@ -26,6 +26,11 @@ export default defineConfig({
           groups: [
             { name: 'react', test: /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react|react-dom|scheduler)[\\/]/, priority: 30 },
             { name: 'uidl-runtime', test: /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?uidl-runtime[\\/]/, priority: 20 },
+            {
+              name: 'context-atlas',
+              test: /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@context-atlas|@xyflow|@reactflow)[\\/]|node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(?:ajv|d3(?:-[^\\/]+)?|fast-deep-equal|fast-uri|json-schema-traverse|lucide-react|use-sync-external-store|zustand)[\\/]/,
+              priority: 15,
+            },
             { name: 'vendor', test: /node_modules[\\/]/, priority: 10 },
           ],
         },
