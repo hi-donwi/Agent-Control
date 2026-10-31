@@ -71,6 +71,72 @@ test('opens a project room from the floor with its memory, blockers, and context
   await expect(page.getByRole('article', { name: `Project ${PROJECT}` })).toBeVisible();
 });
 
+test('opens a read-only visual context map from the selected project room', async ({ page, deskUrl }) => {
+  const run = '2026-10-30-140000-context-atlas-test';
+  const dir = join(workspaceRoot(), 'context', 'runs', PROJECT, run);
+  const planPath = join(dir, 'plan.md');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'brief.md'), '# Visual context fixture\n');
+  writeFileSync(join(dir, 'handoff.md'), '## State\n\n`in progress`\n');
+  writeFileSync(planPath, '| # | Task | Status | Notes |\n|---|---|---|---|\n| 1 | Draw the synthetic system | `pending` | Read-only fixture |\n');
+  const originalPlan = readFileSync(planPath, 'utf-8');
+
+  await page.goto(deskUrl);
+  await page.getByRole('article', { name: `Project ${PROJECT}` }).getByRole('button', { name: PROJECT, exact: true }).click();
+  const room = page.getByLabel(`Project room ${PROJECT}`);
+  await room.getByRole('button', { name: 'Visual context' }).click();
+
+  const context = room.getByRole('region', { name: 'Visual project context' });
+  await expect(context.getByRole('heading', { level: 1, name: PROJECT })).toBeVisible();
+  const views = context.getByRole('navigation', { name: 'Project views' });
+  await views.getByRole('button', { name: /^Run plan/ }).click();
+  await expect(context.getByRole('heading', { name: 'Run plan' })).toBeVisible();
+  await expect(context.getByText('Draw the synthetic system')).toBeVisible();
+
+  await room.getByRole('button', { name: 'Room', exact: true }).click();
+  await expect(room.getByRole('region', { name: 'Mission board' })).toBeVisible();
+  expect(readFileSync(planPath, 'utf-8')).toBe(originalPlan);
+});
+
+test('keeps the visual project context reachable on mobile', async ({ page, deskUrl }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(deskUrl);
+  await page
+    .getByRole('article', { name: `Project ${PROJECT}` })
+    .getByRole('button', { name: PROJECT, exact: true })
+    .click();
+
+  const room = page.getByLabel(`Project room ${PROJECT}`);
+  await room.getByRole('button', { name: 'Visual context' }).click();
+  const context = room.getByRole('region', { name: 'Visual project context' });
+  await expect(context.getByRole('heading', { level: 1, name: PROJECT })).toBeVisible();
+  const openNavigation = context.getByRole('button', { name: 'Open navigation', exact: true });
+  await expect(openNavigation).toBeInViewport();
+  await openNavigation.click();
+  const navigation = context.getByRole('complementary', { name: 'Project navigation' });
+  await expect(navigation).toBeVisible();
+  await navigation.getByRole('button', { name: 'Overview', exact: true }).click();
+  await expect(context.getByRole('heading', { level: 2, name: 'Overview' })).toBeVisible();
+  await expect(context.getByRole('button', { name: 'Close navigation' })).toHaveCount(0);
+  await expect(context.locator('.atlas-sidebar')).toHaveCSS(
+    'transform',
+    /^matrix\(1, 0, 0, 1, -/,
+  );
+  await expect
+    .poll(async () => {
+      const bounds = await context.locator('.atlas-sidebar').boundingBox();
+      return (bounds?.x ?? 0) + (bounds?.width ?? 0);
+    })
+    .toBeLessThanOrEqual(0);
+  const documentFits = await page
+    .locator('html')
+    .evaluate((element) => element.scrollWidth <= element.clientWidth);
+  expect(documentFits).toBe(true);
+  await page.screenshot({
+    path: 'test-results/project-context-atlas-mobile.png',
+  });
+});
+
 test('adds a mission, moves it to In hands, and blocks it with a reason, through ws task', async ({ page, deskUrl }) => {
   const file = join(workspaceRoot(), 'context', 'tasks', PROJECT, 'task_map_the_room.md');
   await page.goto(deskUrl);

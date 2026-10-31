@@ -1,3 +1,4 @@
+import { lazy, Suspense, useState } from 'react';
 import { AgentFigure } from '../floor/AgentFigure';
 import { HandGlyph } from './glyphs';
 import { MissionBoard } from './MissionBoard';
@@ -5,6 +6,8 @@ import { useProject } from './useProject';
 import { useCodingSession } from '../../hooks/useCodingSession';
 import { STATE_LABELS, type FloorAgent, type ProjectDetail } from '../types';
 import { ago } from '../time';
+
+const ProjectContextAtlas = lazy(() => import('./ProjectContextAtlas'));
 
 interface Props {
   project: string;
@@ -41,6 +44,7 @@ const KIND_LABEL: Record<Blocker['kind'], string> = { approval: 'needs you', tas
 export function ProjectRoom({ project, version, onAgent, onAssistant, onNotes }: Props) {
   const { detail, error, reload } = useProject(project, version);
   const coding = useCodingSession(project);
+  const [roomView, setRoomView] = useState<'room' | 'context'>('room');
   if (error && !detail) return <p className="desk-loading" role="alert">[ERROR] {error}</p>;
   if (!detail) return <p className="desk-loading" role="status">Opening {project}...</p>;
 
@@ -69,7 +73,17 @@ export function ProjectRoom({ project, version, onAgent, onAssistant, onNotes }:
         </div>
       </header>
 
-      <div className="room-grid">
+      <div className="room-view-switch" role="group" aria-label="Project room views">
+        <button type="button" aria-pressed={roomView === 'room'} onClick={() => setRoomView('room')}>Room</button>
+        <button type="button" aria-pressed={roomView === 'context'} onClick={() => setRoomView('context')}>Visual context</button>
+      </div>
+
+      {roomView === 'context' ? (
+        <Suspense fallback={<p className="desk-loading" role="status">Loading visual project context...</p>}>
+          <ProjectContextAtlas detail={detail} />
+        </Suspense>
+      ) : (
+        <div className="room-grid">
         <MissionBoard
           detail={detail}
           coding={coding}
@@ -152,7 +166,8 @@ export function ProjectRoom({ project, version, onAgent, onAssistant, onNotes }:
             </p>
           </section>
         </aside>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
