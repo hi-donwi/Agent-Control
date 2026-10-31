@@ -26,11 +26,11 @@ importers:
         specifier: ^3.0.62
         version: 3.0.62(zod@4.6.7)
       '@context-atlas/model':
-        specifier: github:hi-donwi/Context-Atlas#2fd5794746fc6f78827a1ad5a9e02493b7ff5655&path:/packages/model
-        version: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/model
+        specifier: github:hi-donwi/Context-Atlas#da61e0a257450ef89b798f6fe03d2057c32b2f07&path:/packages/model
+        version: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/model
       '@context-atlas/viewer':
-        specifier: github:hi-donwi/Context-Atlas#2fd5794746fc6f78827a1ad5a9e02493b7ff5655&path:/packages/viewer
-        version: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/viewer(@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/model)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: github:hi-donwi/Context-Atlas#da61e0a257450ef89b798f6fe03d2057c32b2f07&path:/packages/viewer
+        version: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/viewer(@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/model)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.13)
@@ -135,12 +135,12 @@ packages:
     resolution: {integrity: sha512-UpbC9C1oht8dhfKPbVXSLRZS3DI8uk8n5v2uMjBPNIYGsC2kL045ywq7D8Hh9KgnH9rP5W/GxQdYtWScRouqlA==}
     engines: {node: '>=22'}
 
-  '@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/model':
-    resolution: {path: /packages/model, tarball: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655}
+  '@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/model':
+    resolution: {path: /packages/model, tarball: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07}
     version: 0.1.0
 
-  '@context-atlas/viewer@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/viewer':
-    resolution: {path: /packages/viewer, tarball: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655}
+  '@context-atlas/viewer@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/viewer':
+    resolution: {path: /packages/viewer, tarball: https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07}
     version: 0.1.0
     peerDependencies:
       '@context-atlas/model': 0.1.0
@@ -1377,11 +1377,11 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/model': {}
+  '@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/model': {}
 
-  '@context-atlas/viewer@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/viewer(@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/model)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@context-atlas/viewer@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/viewer(@context-atlas/model@https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/model)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@context-atlas/model': https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/2fd5794746fc6f78827a1ad5a9e02493b7ff5655#path:/packages/model
+      '@context-atlas/model': https://codeload.github.com/hi-donwi/Context-Atlas/tar.gz/da61e0a257450ef89b798f6fe03d2057c32b2f07#path:/packages/model
       '@xyflow/react': 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       lucide-react: 1.64.0(@types/react@19.3.0)(react@19.3.0)
       react: 19.3.0
