@@ -23,6 +23,7 @@ import { usePmAlerts } from './pm/usePm';
 import { useProviders } from '../hooks/useProviders';
 import { useProjects } from '../hooks/useProjects';
 import { DATE_ALERTS, PM_PAGE_TITLE, type PmPage } from './pm/pages';
+import { historyEntry, parseRoute, routeAddress, routeHash, type DeskRoute } from './route';
 import type { ChatMessage } from '../lib/types';
 import type { Floor, FloorAgent, FloorRoom } from './types';
 import './desk.css';
@@ -55,14 +56,22 @@ function findAgent(floor: Floor | null, id: string): FloorAgent | undefined {
 export function DeskApp() {
   const { theme, setTheme, dark } = useTheme();
   const { floor, error, live } = useFloor();
-  const [focusClient, setFocusClient] = useState<string | null>(null);
+  /** Where the address put the desk when it opened; a reload lands back there. */
+  const [start] = useState(() => parseRoute(window.location.hash));
+  const [focusClient, setFocusClient] = useState<string | null>(start.view === 'floor' ? start.level : null);
+  /** The page of tables each level shows, so a level reopens where you left it. */
+  const [levelPages, setLevelPages] = useState<Record<string, number>>(
+    start.view === 'floor' && start.level ? { [start.level]: start.page } : {},
+  );
+  /** The busiest client when the floor first arrived: the level the bare address opens. */
+  const [home, setHome] = useState<string | null>(null);
   const [floorNavbarTarget, setFloorNavbarTarget] = useState<HTMLDivElement | null>(null);
   /** The project whose room fills the main area, or null for the floor. */
-  const [room, setRoom] = useState<string | null>(null);
+  const [room, setRoom] = useState<string | null>(start.view === 'project' ? start.key : null);
   /** A project management view filling the main area (Today, ...), or null. */
-  const [page, setPage] = useState<PmPage | null>(null);
+  const [page, setPage] = useState<PmPage | null>(start.view === 'pm' ? start.page : null);
   /** The client whose dossier fills the main area, opened from Clients or a client scope. */
-  const [clientPage, setClientPage] = useState<string | null>(null);
+  const [clientPage, setClientPage] = useState<string | null>(start.view === 'client' ? start.client : null);
   const pm = usePmAlerts();
   /** The task open in its drawer, and a counter its changes bump so the views follow. */
   const [task, setTask] = useState<{ scope: string; id: string } | null>(null);
@@ -73,9 +82,9 @@ export function DeskApp() {
     setTask({ scope, id });
   }, []);
   const [drawer, setDrawer] = useState<DrawerState>(null);
-  const [project, setProjectState] = useState(storedProject);
+  const [project, setProjectState] = useState(() => start.view === 'project' ? start.key : storedProject());
   const [showEndpoints, setShowEndpoints] = useState(false);
-  const [commandScope, setCommandScope] = useState('');
+  const [commandScope, setCommandScope] = useState(start.view === 'project' ? start.key : '');
   const [commandAgentId, setCommandAgentId] = useState<string | null>(null);
   const [fanoutScopes, setFanoutScopes] = useState<string[]>([]);
   const [fanoutChats, setFanoutChats] = useState<Record<string, FanoutChatState>>({});
@@ -121,29 +130,46 @@ export function DeskApp() {
     setDrawer({ kind: 'assistant', scope: agent.project, agent, initialTab: 'chat' });
   }, [setProject]);
 
-  const openRoom = useCallback((target: FloorRoom) => {
-    setProject(target.key);
-    setCommandScope(target.key);
+  const openProject = useCallback((key: string) => {
+    setProject(key);
+    setCommandScope(key);
     setCommandAgentId(null);
     setPage(null);
     setClientPage(null);
-    setRoom(target.key);
+    setRoom(key);
   }, [setProject]);
+
+  const openRoom = useCallback((target: FloorRoom) => openProject(target.key), [openProject]);
 
   // A task's scope: a project opens its room; a client's own work opens the client's dossier.
   const openScope = useCallback((scope: string) => {
-    setPage(null);
     if (scope.startsWith('@')) {
+      setPage(null);
       setRoom(null);
       setClientPage(scope.slice(1));
     } else {
-      setClientPage(null);
-      setProject(scope);
-      setCommandScope(scope);
-      setCommandAgentId(null);
-      setRoom(scope);
+      openProject(scope);
     }
-  }, [setProject]);
+  }, [openProject]);
+
+  /** A move on the floor: the level it shows, and the page of tables on that level. */
+  const moveFloor = useCallback((client: string, index: number) => {
+    setFocusClient(client);
+    setLevelPages((current) => current[client] === index ? current : { ...current, [client]: index });
+  }, []);
+
+  const applyRoute = useCallback((next: DeskRoute) => {
+    if (next.view === 'project') {
+      openProject(next.key);
+      return;
+    }
+    setRoom(null);
+    setPage(next.view === 'pm' ? next.page : null);
+    setClientPage(next.view === 'client' ? next.client : null);
+    if (next.view !== 'floor') return;
+    if (next.level) moveFloor(next.level, next.page);
+    else setFocusClient(null);
+  }, [moveFloor, openProject]);
 
   const selectCommandTarget = useCallback((target: CommandTarget) => {
     setCommandScope(target.project);
@@ -247,6 +273,33 @@ export function DeskApp() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [room, page, clientPage, drawer, task]);
+
+  const route: DeskRoute = room ? { view: 'project', key: room }
+    : clientPage ? { view: 'client', client: clientPage }
+    : page ? { view: 'pm', page }
+    : { view: 'floor', level: focusClient, page: focusClient ? levelPages[focusClient] ?? 0 : 0 };
+  const hash = routeHash(route);
+
+  // The address follows the desk: a new view adds a history entry, a move on the floor replaces it.
+  useEffect(() => {
+    const next = parseRoute(hash);
+    const { pathname, search } = window.location;
+    const address = routeAddress(next, search);
+    if (address === `${search}${window.location.hash}`) return;
+    const fresh = historyEntry(next) !== historyEntry(parseRoute(window.location.hash));
+    window.history[fresh ? 'pushState' : 'replaceState'](null, '', `${pathname}${address}`);
+  }, [hash]);
+
+  // Back and forward walk the desk's own history: the address says where to go.
+  useEffect(() => {
+    const onPop = () => applyRoute(parseRoute(window.location.hash));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [applyRoute]);
+
+  useEffect(() => {
+    if (home === null && floor?.zones[0]) setHome(floor.zones[0].client);
+  }, [floor, home]);
 
   // The menu or the assistant takes the right-hand side; an open task gives way to it.
   useEffect(() => {
@@ -417,8 +470,10 @@ export function DeskApp() {
             floor={floor}
             navbarTarget={floorNavbarTarget}
             focusClient={focusClient}
+            home={home ?? floor.zones[0]?.client ?? null}
+            pages={levelPages}
             selectedAgentId={agent?.id ?? null}
-            onFocusClient={setFocusClient}
+            onMove={moveFloor}
             onAgent={openAgent}
             onRoom={openRoom}
           />
