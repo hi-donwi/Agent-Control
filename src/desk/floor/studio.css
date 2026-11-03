@@ -7,6 +7,21 @@
 .studio-world-stat dd { margin: 0; color: var(--d-ink); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .studio-world-stat.is-attention dd { color: var(--d-attn); }
 .studio-world-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; width: 100%; }
+.desk-floor-hud { flex-wrap: nowrap; justify-content: center; gap: clamp(8px, 1.4vw, 18px); padding: 0; }
+.desk-floor-hud h1 { flex: 0 1 auto; min-width: 0; font-size: clamp(16px, 1.6vw, 20px); white-space: nowrap; }
+.desk-floor-hud .studio-world-status { flex: 0 0 auto; }
+.desk-floor-hud .studio-world-stat { min-width: 56px; padding: 2px 8px; }
+.desk-floor-hud .studio-world-stat dd { font-size: 15px; }
+.desk-floor-hud .studio-world-actions { flex: 0 0 auto; flex-wrap: nowrap; width: auto; }
+.desk-floor-hud .studio-attention summary, .desk-floor-hud .floor-explore summary { min-height: 40px; padding: 7px 10px; }
+.desk-floor-hud .floor-explore[open] { flex: 0 0 auto; }
+.desk-floor-hud .floor-explore-panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(760px, calc(100vw - 32px));
+}
 .studio-attention, .floor-explore { position: relative; }
 .studio-attention summary, .floor-explore summary, .studio-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: 9px;
@@ -112,10 +127,12 @@
 .studio-scene .fig { overflow: visible; }
 .studio-scene .fig-desk, .studio-scene .fig-leg { opacity: .65; }
 @media (max-width: 700px) {
-  .studio-world-hud { gap: 8px 12px; }
-  .studio-world-hud h1 { min-width: 0; }
-  .studio-world-status { order: 2; }
-  .studio-world-actions { order: 3; justify-content: space-between; }
+  .desk-floor-hud { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title stats" "actions actions"; gap: 4px 8px; }
+  .desk-floor-hud h1 { grid-area: title; font-size: clamp(15px, 5vw, 18px); }
+  .desk-floor-hud .studio-world-status { grid-area: stats; justify-self: end; }
+  .desk-floor-hud .studio-world-stat { min-width: 0; padding: 2px 5px; }
+  .desk-floor-hud .studio-world-stat dt { font-size: 9px; }
+  .desk-floor-hud .studio-world-actions { grid-area: actions; justify-content: flex-end; width: 100%; }
   .floor-explore { margin-left: auto; }
   .floor-explore[open] { margin-left: 0; }
   .floor-explore-panel .floor-toolbar, .floor-explore-panel .floor-filter-group { align-items: stretch; }
