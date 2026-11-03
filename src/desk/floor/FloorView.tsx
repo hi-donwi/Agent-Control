@@ -60,6 +60,8 @@ export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, 
     const list = focusClient ? floor.zones.find((z) => z.client === focusClient)?.rooms ?? [] : allRooms;
     return [...list].sort((a, b) => a.key.localeCompare(b.key));
   }, [floor, focusClient, allRooms]);
+  const attentionRooms = allRooms.filter((room) => room.pendingApprovals > 0
+    || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning'));
 
   // Compute filtered zones and rooms
   const { filteredZones, visibleRoomCount, totalZonesCount } = useMemo(() => {
@@ -120,141 +122,174 @@ export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, 
 
   return (
     <div className={`floor-container${studio ? ' studio-mode' : ''}`} data-studio-scale={scale}>
-      <header className="studio-intro">
-        <div><p className="studio-eyebrow">LIVE WORKSPACE</p><h1>Your AI studio</h1><p>Explore a project studio or select an agent to see its recorded activity.</p></div>
-        <div className="studio-view-controls">
-          {studio && <label className="studio-scale">View scale<select aria-label="Studio view scale" value={scale} onChange={(event) => setScale(event.target.value)}><option value="overview">Overview</option><option value="comfortable">Comfortable</option><option value="immersive">Immersive</option></select></label>}
-        <button type="button" className="studio-toggle" aria-pressed={studio} onClick={() => setStudio(!studio)}>{studio ? 'Switch to compact view' : 'Switch to studio view'}</button></div>
+      <header className="studio-world-hud">
+        <h1>Workspace map</h1>
+        <dl className="studio-world-status" aria-label="Workspace agent activity">
+          <div className="studio-world-stat">
+            <dt>Active</dt>
+            <dd>{floor.totals.active}</dd>
+          </div>
+          <div className={`studio-world-stat${floor.totals.waiting > 0 ? ' is-attention' : ''}`}>
+            <dt>Waiting</dt>
+            <dd>{floor.totals.waiting}</dd>
+          </div>
+          <div className="studio-world-stat">
+            <dt>Agents</dt>
+            <dd>{floor.totals.agents}</dd>
+          </div>
+        </dl>
+        <div className="studio-world-actions">
+          {attentionRooms.length > 0 && (
+            <details className="studio-attention">
+              <summary>Attention · {attentionRooms.length} {attentionRooms.length === 1 ? 'project' : 'projects'}</summary>
+              <div className="studio-attention-list" role="region" aria-label="Projects needing attention">
+                {attentionRooms.map((room) => (
+                  <button type="button" key={room.key} onClick={() => onRoom(room)}>
+                    <strong>{room.key}</strong>
+                    <span>{room.pendingApprovals > 0 ? `${room.pendingApprovals} pending approvals` : 'Agent needs attention'}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+          <details className="floor-explore">
+            <summary>Explore map</summary>
+            <div className="floor-explore-panel">
+              <div className="floor-toolbar" role="toolbar" aria-label="Floor filters and search">
+                <div className="floor-search-box">
+                  <span className="floor-search-icon" aria-hidden="true"><SearchIcon size={16} /></span>
+                  <input
+                    type="search"
+                    className="floor-search-input"
+                    placeholder="Search projects, clients, tags..."
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    aria-label="Search projects"
+                  />
+                  {search && (
+                    <button type="button" className="floor-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
+                      <CloseIcon />
+                    </button>
+                  )}
+                </div>
+
+                <div className="floor-filter-group">
+                  <div className="floor-segmented" role="radiogroup" aria-label="Activity filter">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={filterMode === 'active'}
+                      className={`segment-btn${filterMode === 'active' ? ' is-active' : ''}`}
+                      onClick={() => setFilterMode('active')}
+                      title="Show only projects active within 1 day"
+                    >
+                      Active (&le; 1d)
+                      <span className="segment-count">{activeCount}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={filterMode === 'all'}
+                      className={`segment-btn${filterMode === 'all' ? ' is-active' : ''}`}
+                      onClick={() => setFilterMode('all')}
+                      title="Show all projects including idle ones"
+                    >
+                      All
+                      <span className="segment-count">{allRooms.length}</span>
+                    </button>
+                  </div>
+
+                  <div className="floor-select-wrap">
+                    <label htmlFor="floor-client-filter" className="visually-hidden">Filter by client</label>
+                    <select
+                      id="floor-client-filter"
+                      className="floor-select"
+                      value={focusClient ?? 'all'}
+                      onChange={(event) => {
+                        const val = event.target.value === 'all' ? null : event.target.value;
+                        onFocusClient(val);
+                        setSelectedProject(null);
+                      }}
+                      title="Filter by client"
+                    >
+                      <option value="all">All Clients ({clientOptions.length})</option>
+                      {clientOptions.map((client) => (
+                        <option key={client.client} value={client.client}>
+                          {zoneLabel(client.client)} ({client.activeRooms} active / {client.totalRooms})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="floor-select-wrap">
+                    <label htmlFor="floor-project-filter" className="visually-hidden">Filter by project</label>
+                    <select
+                      id="floor-project-filter"
+                      className="floor-select"
+                      value={selectedProject ?? 'all'}
+                      onChange={(event) => {
+                        const val = event.target.value === 'all' ? null : event.target.value;
+                        setSelectedProject(val);
+                      }}
+                      title="Filter by project"
+                    >
+                      <option value="all">All Projects ({projectOptions.length})</option>
+                      {projectOptions.map((project) => (
+                        <option key={project.key} value={project.key}>
+                          {project.key} {project.idle ? '(idle)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="studio-view-controls">
+                {studio && (
+                  <label className="studio-scale">
+                    View scale
+                    <select aria-label="Studio view scale" value={scale} onChange={(event) => setScale(event.target.value)}>
+                      <option value="overview">Overview</option>
+                      <option value="comfortable">Comfortable</option>
+                      <option value="immersive">Immersive</option>
+                    </select>
+                  </label>
+                )}
+                <button type="button" className="studio-toggle" aria-pressed={studio} onClick={() => setStudio(!studio)}>
+                  {studio ? 'Switch to compact view' : 'Switch to studio view'}
+                </button>
+              </div>
+
+              <div className="floor-status-strip" aria-live="polite">
+                <span className="floor-status-text">
+                  Showing {visibleRoomCount} {visibleRoomCount === 1 ? 'project' : 'projects'} in {totalZonesCount} {totalZonesCount === 1 ? 'client' : 'clients'}
+                  {filterMode === 'active' && idleCount > 0 && !search && !selectedProject && (
+                    <>
+                      &nbsp;&middot;&nbsp;{idleCount} idle hidden (&gt; 1d)
+                      <button type="button" className="floor-status-link" onClick={() => setFilterMode('all')}>
+                        show all
+                      </button>
+                    </>
+                  )}
+                  {filterMode === 'all' && idleCount > 0 && !search && !selectedProject && (
+                    <>
+                      &nbsp;&middot;&nbsp;
+                      <button type="button" className="floor-status-link" onClick={() => setFilterMode('active')}>
+                        hide idle (&gt; 1d)
+                      </button>
+                    </>
+                  )}
+                </span>
+                {isCustomFiltered && (
+                  <button type="button" className="floor-btn-reset" onClick={resetFilters}>
+                    Reset filters
+                  </button>
+                )}
+              </div>
+            </div>
+          </details>
+        </div>
       </header>
-      <section className="studio-attention" aria-label="Needs your attention">
-        <span className="studio-eyebrow">NEEDS YOUR ATTENTION</span>
-        {allRooms.some((room) => room.pendingApprovals > 0 || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning')) ? allRooms.filter((room) => room.pendingApprovals > 0 || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning')).map((room) => (
-          <button type="button" key={room.key} onClick={() => onRoom(room)}>{room.key}<span>{room.pendingApprovals > 0 ? `${room.pendingApprovals} pending approvals` : 'Agent needs attention'} →</span></button>
-        )) : <p>No recorded approvals or agent alerts. Your workspace is clear.</p>}
-      </section>
-      <div className="floor-toolbar" role="toolbar" aria-label="Floor filters and search">
-        <div className="floor-search-box">
-          <span className="floor-search-icon" aria-hidden="true"><SearchIcon size={16} /></span>
-          <input
-            type="search"
-            className="floor-search-input"
-            placeholder="Search projects, clients, tags..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search projects"
-          />
-          {search && (
-            <button type="button" className="floor-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
-              <CloseIcon />
-            </button>
-          )}
-        </div>
-
-        <div className="floor-filter-group">
-          <div className="floor-segmented" role="radiogroup" aria-label="Activity filter">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={filterMode === 'active'}
-              className={`segment-btn${filterMode === 'active' ? ' is-active' : ''}`}
-              onClick={() => setFilterMode('active')}
-              title="Show only projects active within 1 day"
-            >
-              Active (&le; 1d)
-              <span className="segment-count">{activeCount}</span>
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={filterMode === 'all'}
-              className={`segment-btn${filterMode === 'all' ? ' is-active' : ''}`}
-              onClick={() => setFilterMode('all')}
-              title="Show all projects including idle ones"
-            >
-              All
-              <span className="segment-count">{allRooms.length}</span>
-            </button>
-          </div>
-
-          <div className="floor-select-wrap">
-            <label htmlFor="floor-client-filter" className="visually-hidden">Filter by client</label>
-            <select
-              id="floor-client-filter"
-              className="floor-select"
-              value={focusClient ?? 'all'}
-              onChange={(e) => {
-                const val = e.target.value === 'all' ? null : e.target.value;
-                onFocusClient(val);
-                setSelectedProject(null);
-              }}
-              title="Filter by client"
-            >
-              <option value="all">All Clients ({clientOptions.length})</option>
-              {clientOptions.map((c) => (
-                <option key={c.client} value={c.client}>
-                  {zoneLabel(c.client)} ({c.activeRooms} active / {c.totalRooms})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="floor-select-wrap">
-            <label htmlFor="floor-project-filter" className="visually-hidden">Filter by project</label>
-            <select
-              id="floor-project-filter"
-              className="floor-select"
-              value={selectedProject ?? 'all'}
-              onChange={(e) => {
-                const val = e.target.value === 'all' ? null : e.target.value;
-                setSelectedProject(val);
-              }}
-              title="Filter by project"
-            >
-              <option value="all">All Projects ({projectOptions.length})</option>
-              {projectOptions.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.key} {p.idle ? '(idle)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="floor-status-strip">
-        <span className="floor-status-text">
-          Showing {visibleRoomCount} {visibleRoomCount === 1 ? 'project' : 'projects'} in {totalZonesCount} {totalZonesCount === 1 ? 'client' : 'clients'}
-          {filterMode === 'active' && idleCount > 0 && !search && !selectedProject && (
-            <>
-              &nbsp;&middot;&nbsp;{idleCount} idle hidden (&gt; 1d)
-              <button
-                type="button"
-                className="floor-status-link"
-                onClick={() => setFilterMode('all')}
-              >
-                show all
-              </button>
-            </>
-          )}
-          {filterMode === 'all' && idleCount > 0 && !search && !selectedProject && (
-            <>
-              &nbsp;&middot;&nbsp;
-              <button
-                type="button"
-                className="floor-status-link"
-                onClick={() => setFilterMode('active')}
-              >
-                hide idle (&gt; 1d)
-              </button>
-            </>
-          )}
-        </span>
-        {isCustomFiltered && (
-          <button type="button" className="floor-btn-reset" onClick={resetFilters}>
-            Reset filters
-          </button>
-        )}
-      </div>
 
       {filteredZones.length === 0 ? (
         <div className="floor-no-results">
