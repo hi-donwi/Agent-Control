@@ -49,13 +49,14 @@ function findAgent(floor: Floor | null, id: string): FloorAgent | undefined {
 }
 
 /**
- * The desk: the floor fills the screen; the only chrome is the assistant and menu icons
- * at the top right. See docs/desk/README.md and docs/desk/wireframe.md.
+ * The desk: the floor fills the screen; its activity HUD joins the main bar only while
+ * the home floor is active. See docs/desk/README.md and docs/desk/wireframe.md.
  */
 export function DeskApp() {
   const { theme, setTheme, dark } = useTheme();
   const { floor, error, live } = useFloor();
   const [focusClient, setFocusClient] = useState<string | null>(null);
+  const [floorNavbarTarget, setFloorNavbarTarget] = useState<HTMLDivElement | null>(null);
   /** The project whose room fills the main area, or null for the floor. */
   const [room, setRoom] = useState<string | null>(null);
   /** A project management view filling the main area (Today, ...), or null. */
@@ -260,6 +261,7 @@ export function DeskApp() {
     : null;
   const projectKeys = useMemo(() => rooms(floor).map((r) => r.key), [floor]);
   const roomClient = floor?.zones.find((z) => z.rooms.some((r) => r.key === room))?.client ?? '-';
+  const showFloorNavbar = !room && !page && !clientPage && Boolean(floor?.zones.some((zone) => zone.rooms.length > 0));
   // The room reloads when its own corner of the floor moves, not when another project's does.
   const roomVersion = useMemo(() => {
     const entry = floor?.zones.flatMap((z) => z.rooms).find((r) => r.key === room);
@@ -299,7 +301,7 @@ export function DeskApp() {
 
   return (
     <div className="desk">
-      <header className="desk-bar">
+      <header className={`desk-bar${showFloorNavbar ? ' has-floor-hud' : ''}`}>
         <div className="desk-crumbs">
           <span className="desk-mark" aria-hidden="true" />
           {clientPage ? (
@@ -334,6 +336,7 @@ export function DeskApp() {
             <span className="desk-name">desk</span>
           )}
         </div>
+        {showFloorNavbar && <div className="desk-floor-nav-slot" ref={setFloorNavbarTarget} />}
         <div className="desk-actions">
           <button
             type="button"
@@ -374,7 +377,7 @@ export function DeskApp() {
         </div>
       </header>
 
-      <main className="desk-main">
+      <main className={`desk-main${showFloorNavbar ? ' has-floor-navbar' : ''}`}>
         {room ? (
           <ProjectRoom
             project={room}
@@ -412,6 +415,7 @@ export function DeskApp() {
         ) : floor ? (
           <FloorView
             floor={floor}
+            navbarTarget={floorNavbarTarget}
             focusClient={focusClient}
             selectedAgentId={agent?.id ?? null}
             onFocusClient={setFocusClient}

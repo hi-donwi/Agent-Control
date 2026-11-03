@@ -99,6 +99,9 @@
   pointer-events: none;
 }
 .desk-bar > * { pointer-events: auto; }
+.desk-bar.has-floor-hud { gap: 16px; }
+.desk-floor-nav-slot { flex: 1 1 auto; display: flex; justify-content: center; min-width: 0; }
+.desk-floor-nav-slot > * { width: 100%; min-width: 0; }
 
 .desk-crumbs { display: flex; align-items: center; gap: 10px; color: var(--d-ink-2); }
 .desk-mark {
@@ -154,6 +157,24 @@
 /* ── Floor ───────────────────────────────────────────────────────────── */
 .desk-main { flex: 1; overflow: auto; padding: 76px 24px 148px; }
 .desk-loading { color: var(--d-ink-3); padding: 24px; }
+
+@media (max-width: 700px) {
+  .desk-bar.has-floor-hud {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "crumbs actions" "hud hud";
+    align-content: start;
+    gap: 4px 12px;
+    height: auto;
+    min-height: 112px;
+    padding: 8px 12px;
+    background: var(--d-bg);
+  }
+  .desk-bar.has-floor-hud .desk-crumbs { grid-area: crumbs; }
+  .desk-bar.has-floor-hud .desk-actions { grid-area: actions; }
+  .desk-bar.has-floor-hud .desk-floor-nav-slot { grid-area: hud; width: 100%; }
+  .desk-main.has-floor-navbar { padding-top: 140px; }
+}
 
 .floor-container {
   max-width: 1600px;

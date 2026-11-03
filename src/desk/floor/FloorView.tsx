@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AgentFigure } from './AgentFigure';
 import { StudioScene } from './StudioScene';
 import { STATE_LABELS, UNREGISTERED_ZONE, type Floor, type FloorAgent, type FloorRoom, type FloorZone } from '../types';
@@ -6,6 +7,7 @@ import { CloseIcon, SearchIcon } from '../icons';
 
 interface Props {
   floor: Floor;
+  navbarTarget: HTMLElement | null;
   focusClient: string | null;
   selectedAgentId: string | null;
   onFocusClient: (client: string | null) => void;
@@ -36,7 +38,7 @@ export function formatLastActive(iso: string | null | undefined): string {
 }
 
 /** Clients as zones, projects as rooms, agents at their desks, with search, client/project navigation, and idle filtering. */
-export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, onAgent, onRoom }: Props) {
+export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, onFocusClient, onAgent, onRoom }: Props) {
   // Default to hiding idle projects (> 1 day inactive).
   const [filterMode, setFilterMode] = useState<'active' | 'all'>('active');
   const [studio, setStudio] = useState(true);
@@ -122,7 +124,8 @@ export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, 
 
   return (
     <div className={`floor-container${studio ? ' studio-mode' : ''}`} data-studio-scale={scale}>
-      <header className="studio-world-hud">
+      {navbarTarget && createPortal(
+      <div className="studio-world-hud desk-floor-hud">
         <h1>Workspace map</h1>
         <dl className="studio-world-status" aria-label="Workspace agent activity">
           <div className="studio-world-stat">
@@ -289,7 +292,7 @@ export function FloorView({ floor, focusClient, selectedAgentId, onFocusClient, 
             </div>
           </details>
         </div>
-      </header>
+      </div>, navbarTarget)}
 
       {filteredZones.length === 0 ? (
         <div className="floor-no-results">
