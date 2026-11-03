@@ -79,6 +79,7 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
   const [dismissedFanoutTargets, setDismissedFanoutTargets] = useState<string[]>([]);
   const [flightText, setFlightText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [dock, setDock] = useState<HTMLElement | null>(null);
   const isOpen = !minimized && (expanded || hovered);
   const targetIsUsable = Boolean(target?.writable && target.availability === 'ready');
   const sendableTargets = fanoutCandidates.filter((candidate) => candidate.choice).map((candidate) => candidate.target);
@@ -124,6 +125,18 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
   const contextLabel = fanoutMode
     ? `${fanoutScopes.length} project ${fanoutScopes.length === 1 ? 'recipient' : 'recipients'}`
     : target?.project ? `Project: ${target.project}` : 'Workspace context';
+
+  // The floor keeps clear of the dock at rest; an expanded dock may overlap it for a while.
+  useEffect(() => {
+    if (!dock || isOpen) return;
+    const root = document.documentElement;
+    const observer = new ResizeObserver(() => root.style.setProperty('--command-dock-rest', `${Math.ceil(dock.offsetHeight)}px`));
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [dock, isOpen]);
+  useEffect(() => () => {
+    document.documentElement.style.removeProperty('--command-dock-rest');
+  }, []);
 
   useEffect(() => {
     if (!request) return;
@@ -247,7 +260,7 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
 
   if (minimized) {
     return (
-      <div className="command-dock command-dock-minimized" aria-label="Agent command dock">
+      <div ref={setDock} className="command-dock command-dock-minimized" aria-label="Agent command dock">
         <button type="button" className="command-restore" onClick={restore} aria-label="Restore agent command dock">
           <span className="command-plane" aria-hidden="true"><PlaneIcon /></span>
           <span>{visibleStatus === 'ready' ? 'Ask the floor' : statusText}</span>
@@ -259,6 +272,7 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
   return (
     <>
       <section
+        ref={setDock}
         className={`command-dock${isOpen ? ' is-expanded' : ''}`}
         aria-label="Agent command dock"
         onPointerEnter={() => setHovered(true)}
