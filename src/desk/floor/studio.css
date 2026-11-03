@@ -97,8 +97,16 @@
   min-height: 36px; max-width: min(340px, 56vw); padding: 6px 28px 6px 10px; border: 1px solid var(--d-line); border-radius: 10px;
   background: var(--d-room); color: var(--d-ink); font: inherit; font-size: 12.5px;
 }
-/* The pager sits in the empty corner the isometric floor leaves at the bottom left. */
-.level-pages { position: absolute; left: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 6px; color: var(--d-ink-2); font-size: 12px; }
+/* The pager sits centred under the stage, with the keys that walk the building beside it. */
+.level-pages { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; color: var(--d-ink-2); font-size: 12px; }
+.level-keys { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--d-line); color: var(--d-ink-3); font-size: 11px; }
+.level-keys kbd {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border: 1px solid var(--d-line); border-bottom-width: 2px;
+  border-radius: 5px; background: var(--d-room); color: var(--d-ink-2); font: 600 10px/1 var(--font-mono);
+}
+.level-keys kbd + kbd { margin-left: -1px; }
+.level-keys kbd:nth-of-type(3) { margin-left: 8px; }
+@media (hover: none) { .level-keys { display: none; } }
 .level-page-dots { display: flex; }
 .level-page-dot { position: relative; width: 18px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
 .level-page-dot::before {
@@ -148,6 +156,16 @@
 @keyframes level-from-below { from { opacity: 0; transform: translateY(7%); } }
 @keyframes page-from-left { from { opacity: 0; transform: translateX(-5%); } }
 @keyframes page-from-right { from { opacity: 0; transform: translateX(5%); } }
+/* Into a room the floor zooms toward its table; back out of it, from that table. */
+.level-stage:is([data-enter="zoom-in"], [data-enter="zoom-out"]) { transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%); }
+.level-stage[data-enter="zoom-in"] { animation: level-zoom-in 300ms cubic-bezier(.4, 0, .2, 1) forwards; }
+.level-stage[data-enter="zoom-out"] { animation: level-zoom-out 360ms cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes level-zoom-in { to { opacity: 0; transform: scale(2.4); } }
+@keyframes level-zoom-out { from { opacity: 0; transform: scale(2.4); } }
+/* A page of inactive projects has its lights off. */
+.level-stage.is-lights-off .studio-scene { filter: saturate(.45) brightness(.88); }
+[data-theme="dark"] .level-stage.is-lights-off .studio-scene { filter: saturate(.5) brightness(.68); }
+.level-cards.is-lights-off .room { opacity: .78; }
 
 /* Voxel office levels: each client a storey, each project a table on it, seen in cutaway.
    Materials are tokens; studio-scene shading comes from .vx-t/l/r. */
@@ -299,7 +317,7 @@
   display: flex; flex-flow: row wrap; align-items: center; justify-content: center; gap: 3px;
   width: max-content; max-width: 22%; min-width: 0; min-height: 0; padding: 0;
   border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; opacity: 1;
-  font-size: clamp(9.5px, 1.3cqw, 13px);
+  font-size: clamp(9px, 1.15cqw, 12px);
 }
 .studio-mode .room:is(:hover, :focus-within) { z-index: 2; }
 .studio-mode .room-door { position: static; display: flex; justify-content: center; gap: 4px; min-width: 0; max-width: 100%; pointer-events: auto; }
@@ -314,6 +332,27 @@
 .studio-mode .room.is-waiting .room-name { border-color: var(--d-attn); animation: vx-call 2.4s ease-in-out infinite; }
 .studio-mode .room.is-warning .room-name { border-color: var(--d-warn); }
 .studio-mode .room.is-highlighted .room-name { border-color: var(--d-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--d-accent) 45%, transparent); }
+/* The floor under a table: teal while its agents work, orange while one needs you, lit under the plate in focus. */
+.vx-glow { opacity: .24; transition: opacity 200ms ease; }
+.vx-glow polygon { fill: var(--d-accent); }
+.vx-glow.is-attention polygon { fill: var(--d-attn); }
+.vx-glow.is-quiet polygon { fill: var(--d-ink-3); }
+.vx-glow.is-attention { animation: vx-glow-call 2.4s ease-in-out infinite; }
+.vx-glow.is-focus { opacity: .46; animation: none; }
+@keyframes vx-glow-call { 50% { opacity: .42; } }
+/* A plate's card: what the project is, when it was last active, and who is at its table. */
+.room-card { display: none; }
+.studio-mode .room:is(:hover, :focus-within) .room-card {
+  position: absolute; top: calc(100% + 6px); left: 50%; z-index: 1; display: block; width: max-content; max-width: 17rem;
+  padding: 8px 10px; border: 1px solid var(--d-line); border-radius: 10px; background: var(--d-panel); box-shadow: var(--d-shadow);
+  color: var(--d-ink-2); font-size: 11.5px; line-height: 1.4; text-align: left; transform: translateX(-50%); pointer-events: none;
+}
+.studio-mode .room.is-low .room-card { top: auto; bottom: calc(100% + 6px); }
+.room-card-about { margin: 0 0 6px; color: var(--d-ink); }
+.room-card dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; }
+.room-card dl > div { display: contents; }
+.room-card dt { color: var(--d-ink-3); }
+.room-card dd { margin: 0; }
 
 /* The chips flow on beside the name and wrap only when the plate runs out of width. */
 .studio-mode .room-desks { display: contents; }
@@ -478,7 +517,7 @@
   .floor-explore { margin-left: auto; }
   .floor-explore[open] { margin-left: 0; }
   .desk-main.has-floor-navbar { padding-bottom: calc(var(--command-dock-rest, 212px) + 20px + env(safe-area-inset-bottom)); }
-  .level-pages { position: static; justify-content: center; }
+  .level-keys { display: none; }
   .level-meta { flex-basis: 100%; order: 1; }
   .level-select { max-width: 46vw; }
   /* The page arrows sit over the stage edges, so the stage keeps the full width. */

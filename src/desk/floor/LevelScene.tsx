@@ -1,8 +1,9 @@
 import { Fragment, type ReactNode } from 'react';
 import { toolTone } from './AgentFigure';
+import { roomSignal } from './levels';
 import { UNIT, boxFaces, faceX, faceY, faceZ, localFrame, project, segment, type BoxFaces, type Frame, type Vec3 } from './voxel';
 import {
-  LEVEL_HEIGHT, PITCH, REACH, SLAB, WALL, poseFor, tableSeats,
+  BACK, LEVEL_HEIGHT, PITCH, REACH, SLAB, WALL, poseFor, tableSeats,
   type LevelPlan, type LevelTheme, type Pose, type SeatSpot,
 } from './voxel-level';
 import type { FloorAgent, FloorRoom } from '../types';
@@ -22,9 +23,18 @@ interface Piece {
 /**
  * One page of a client's level as a voxel office in cutaway: window wall, lift wall, a floor in
  * the level's theme, and a table per project whose agents sit in the pose of their recorded
- * state. Decorative; the table plates are rendered over it by the floor.
+ * state. The floor under a table glows when its project needs you or is at work, and under the
+ * table in `focus` whatever its state. Decorative; the table plates are rendered over it by the floor.
  */
-export function LevelScene({ plan, rooms }: { plan: LevelPlan; rooms: readonly FloorRoom[] }) {
+export function LevelScene({ plan, rooms, focus = null }: { plan: LevelPlan; rooms: readonly FloorRoom[]; focus?: string | null }) {
+  const glows = plan.tables.flatMap((slot, index) => {
+    const room = rooms[index];
+    if (!room) return [];
+    const signal = roomSignal(room);
+    const focused = room.key === focus;
+    if (signal === 'quiet' && !focused) return [];
+    return [<TableGlow key={room.key} spots={tableSeats(slot, room.agents.length)} className={`vx-glow is-${signal}${focused ? ' is-focus' : ''}`} />];
+  });
   const pieces: Piece[] = [];
   plan.tables.forEach((slot, index) => {
     const room = rooms[index];
@@ -53,8 +63,26 @@ export function LevelScene({ plan, rooms }: { plan: LevelPlan; rooms: readonly F
       <g transform={offset(plan.w - DECOR_WALL, 0)}><WallDecor theme={plan.theme} /></g>
       <BackCorner theme={plan.theme} />
       {plan.theme !== 'lab' && <polygon className={`vx-rug vx-rug-${plan.theme}`} points={faceZ(0.01, ...plan.rug)} />}
+      {glows}
       {pieces.map((piece) => <Fragment key={piece.key}>{piece.node}</Fragment>)}
     </svg>
+  );
+}
+
+/** The floor a table's chairs and desk take, a little wider; one group, so its opacity applies once. */
+function TableGlow({ spots, className }: { spots: readonly SeatSpot[]; className: string }) {
+  const pad = 0.35;
+  return (
+    <g className={className}>
+      {spots.map(({ at: [x, y], facing }, index) => (
+        <polygon
+          key={index}
+          points={facing === 'y'
+            ? faceZ(0.02, x - PITCH / 2 - pad, x + PITCH / 2 + pad, y - BACK - pad, y + REACH + pad)
+            : faceZ(0.02, x - BACK - pad, x + REACH + pad, y - PITCH / 2 - pad, y + PITCH / 2 + pad)}
+        />
+      ))}
+    </g>
   );
 }
 
