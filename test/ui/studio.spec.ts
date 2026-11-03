@@ -25,8 +25,8 @@ test('keeps the project map as the home focus and tucks exploration tools away',
   await expect(page.locator('.desk-main').getByRole('heading', { name: 'Workspace map' })).toHaveCount(0);
   await page.screenshot({ path: '/tmp/agent-control-home-map-desktop.png' });
   await expect(page.getByRole('heading', { name: 'Your AI studio' })).toHaveCount(0);
-  await expect(navbar.getByLabel('Workspace agent activity')).toContainText('Active');
-  await expect(navbar.getByLabel('Workspace agent activity')).toContainText('Waiting');
+  await expect(navbar.getByLabel('Workspace agent activity')).toContainText('Working');
+  await expect(navbar.getByLabel('Workspace agent activity')).toContainText('Needs you');
   const room = page.getByRole('article', { name: `Project ${PROJECT}` });
   await expect(page.locator('.level-stage .studio-scene')).toBeVisible();
   await expect(room.getByRole('button', { name: new RegExp(`^agent-control in ${PROJECT}`) })).toBeVisible();
@@ -194,6 +194,16 @@ test('walks the levels with up and down, and the pages of project tables with le
     await levels.getByRole('button', { name: 'Level up' }).click();
     await expect(title).toHaveText('framework');
     await expect(goTo).toHaveValue('framework');
+
+    // The building beside the level: a stop per floor, the current one marked; a click rides there.
+    const building = page.getByRole('navigation', { name: 'Building' });
+    await expect(building.getByRole('button')).toHaveCount(await goTo.locator('option').count());
+    await expect(building.getByRole('button', { name: /^Level 2, framework,/ })).toHaveAttribute('aria-current', 'location');
+    await building.getByRole('button', { name: /^Level 1, zenith,/ }).click();
+    await expect(title).toHaveText('zenith');
+    await expect(building.getByRole('button', { name: /^Level 1, zenith,/ })).toHaveAttribute('aria-current', 'location');
+    await building.getByRole('button', { name: /^Level 2, framework,/ }).click();
+    await expect(title).toHaveText('framework');
 
     // Pages: active tables first, quiet ones after, six at most to a page, every project once.
     const pager = page.locator('.level-pages');

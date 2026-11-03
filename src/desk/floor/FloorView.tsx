@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentFigure } from './AgentFigure';
 import { LevelScene } from './LevelScene';
-import { levelOrder, levelPages, moveFor, pageOf, searchProjects, storeyLevels } from './levels';
+import { levelOrder, levelPages, levelSignal, moveFor, pageOf, roomSignal, searchProjects, storeyLevels, type Signal } from './levels';
 import { MAX_SEATS, TABLES_PER_PAGE, levelPlan } from './voxel-level';
 import { STATE_LABELS, UNREGISTERED_ZONE, type Floor, type FloorAgent, type FloorRoom } from '../types';
 import { BackIcon, CloseIcon, DownIcon, ForwardIcon, SearchIcon, UpIcon } from '../icons';
@@ -71,8 +71,7 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
   const levels = useMemo(() => storeyLevels(order), [order]);
   const zones = useMemo(() => new Map(floor.zones.map((zone) => [zone.client, zone])), [floor]);
   const allRooms = useMemo(() => floor.zones.flatMap((zone) => zone.rooms), [floor]);
-  const attentionRooms = allRooms.filter((room) => room.pendingApprovals > 0
-    || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning'));
+  const attentionRooms = allRooms.filter((room) => roomSignal(room) === 'attention');
   const matches = useMemo(() => searchProjects(floor.zones, search), [floor, search]);
 
   const wanted = focusClient ?? home;
@@ -131,6 +130,7 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
   }
 
   const agents = zone.rooms.reduce((n, room) => n + room.agents.length, 0);
+  const signals = new Map(order.map((entry) => [entry, levelSignal(zones.get(entry)?.rooms ?? [])]));
   const activeRooms = levelPagesList.filter((entry) => entry.active).reduce((n, entry) => n + entry.rooms.length, 0);
   const headingId = `level-${level}`;
   const table = (room: FloorRoom, index: number) => (
@@ -152,11 +152,11 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
         <h1>Workspace map</h1>
         <dl className="studio-world-status" aria-label="Workspace agent activity">
           <div className="studio-world-stat">
-            <dt>Active</dt>
+            <dt>Working</dt>
             <dd>{floor.totals.active}</dd>
           </div>
           <div className={`studio-world-stat${floor.totals.waiting > 0 ? ' is-attention' : ''}`}>
-            <dt>Waiting</dt>
+            <dt>Needs you</dt>
             <dd>{floor.totals.waiting}</dd>
           </div>
           <div className="studio-world-stat">
@@ -232,7 +232,7 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
           <span className="storey-level" aria-hidden="true">L{level}</span>
           <h2 id={headingId} className="level-title">{zoneLabel(client)}</h2>
           <span className="level-meta">
-            {zone.rooms.length} {zone.rooms.length === 1 ? 'project' : 'projects'} · {activeRooms} active
+            {activeRooms} of {zone.rooms.length} {zone.rooms.length === 1 ? 'project' : 'projects'} active
             {agents > 0 && ` · ${agents} ${agents === 1 ? 'agent' : 'agents'}`}
           </span>
           <nav className="level-nav" aria-label="Levels">
@@ -262,6 +262,13 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
         </header>
 
         <div className="level-body">
+          <Elevator
+            order={order}
+            current={client}
+            levels={levels}
+            signals={signals}
+            onLevel={(entry) => goLevel(order.indexOf(entry))}
+          />
           <button type="button" className="page-arrow page-prev" aria-label="Previous projects" disabled={pageIndex === 0} onClick={() => goPage(pageIndex - 1)}>
             <BackIcon />
           </button>
@@ -313,6 +320,41 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
         </footer>
       </section>
     </div>
+  );
+}
+
+const SIGNAL_LABEL: Record<Signal, string> = { attention: 'needs you', working: 'agents at work', quiet: 'quiet' };
+
+/** The building beside the level: every floor at a glance, the current one lit, and where agents need you. */
+function Elevator({ order, current, levels, signals, onLevel }: {
+  order: readonly string[];
+  current: string;
+  levels: ReadonlyMap<string, number>;
+  signals: ReadonlyMap<string, Signal>;
+  onLevel: (client: string) => void;
+}) {
+  return (
+    <nav className="level-elevator" aria-label="Building">
+      <ol>
+        {order.map((entry) => {
+          const signal = signals.get(entry) ?? 'quiet';
+          return (
+            <li key={entry}>
+              <button
+                type="button"
+                className={`elevator-stop is-${signal}`}
+                aria-label={`Level ${levels.get(entry)}, ${zoneLabel(entry)}, ${SIGNAL_LABEL[signal]}`}
+                aria-current={entry === current ? 'location' : undefined}
+                title={`L${levels.get(entry)} · ${zoneLabel(entry)}`}
+                onClick={() => onLevel(entry)}
+              >
+                {levels.get(entry)}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 

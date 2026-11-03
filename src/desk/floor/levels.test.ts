@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { levelOrder, levelPages, moveFor, pageOf, searchProjects, sortRooms, storeyLevels } from './levels';
+import { levelOrder, levelPages, levelSignal, moveFor, pageOf, roomSignal, searchProjects, sortRooms, storeyLevels } from './levels';
 import type { ActivityState, FloorRoom, FloorZone } from '../types';
 
 function room(key: string, options: { idle?: boolean; at?: string; agents?: ActivityState[]; approvals?: number; description?: string } = {}): FloorRoom {
@@ -36,6 +36,19 @@ test('tables put projects that need you first, then those at work, then by lates
     room('asking', { agents: ['waiting'] }),
   ]);
   assert.deepEqual(sorted.map((entry) => entry.key), ['approvals', 'asking', 'working', 'resting', 'recent', 'quiet']);
+});
+
+test('a project signals that it needs you over that it is at work, and a level signals its loudest project', () => {
+  assert.equal(roomSignal(room('approvals', { approvals: 2 })), 'attention');
+  assert.equal(roomSignal(room('asking', { agents: ['typing', 'waiting'] })), 'attention');
+  assert.equal(roomSignal(room('broken', { agents: ['warning'] })), 'attention');
+  assert.equal(roomSignal(room('working', { agents: ['idle', 'reading'] })), 'working');
+  assert.equal(roomSignal(room('resting', { agents: ['idle', 'offline'] })), 'quiet');
+  assert.equal(roomSignal(room('empty')), 'quiet');
+  assert.equal(levelSignal([room('a'), room('b', { agents: ['typing'] })]), 'working');
+  assert.equal(levelSignal([room('a', { agents: ['typing'] }), room('b', { approvals: 1 })]), 'attention');
+  assert.equal(levelSignal([room('a', { agents: ['idle'] })]), 'quiet');
+  assert.equal(levelSignal([]), 'quiet');
 });
 
 test('a level pages its active projects first, and inactive ones always start a page of their own', () => {

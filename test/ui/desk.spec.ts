@@ -100,6 +100,27 @@ test('shows each project as a room, with the host agent raising its hand', async
   await expect(page.getByRole('status').filter({ hasText: '1 waiting for you' })).toBeVisible();
 });
 
+test('the command dock rests as one line beside the floor, and opens while it has focus', async ({ page, deskUrl }) => {
+  await page.goto(deskUrl);
+  const dock = page.getByRole('region', { name: 'Agent command dock' });
+  const target = dock.getByRole('combobox', { name: 'Command target' });
+  const fanout = dock.getByText(/^Send to multiple projects/);
+  await expect(target).toBeVisible();
+  await expect(dock.locator('#command-dock-input')).toBeVisible();
+  await expect(fanout).toBeHidden();
+  const resting = (await dock.boundingBox())!;
+  expect(resting.height).toBeLessThan(80);
+
+  await target.focus();
+  await expect(fanout).toBeVisible();
+  await expect(dock.getByRole('button', { name: 'Explore', exact: true })).toBeVisible();
+  expect((await dock.boundingBox())!.height).toBeGreaterThan(resting.height * 2);
+
+  // Focus elsewhere lets it rest again.
+  await page.locator('section.level').getByRole('heading', { level: 2 }).click();
+  await expect(fanout).toBeHidden();
+});
+
 test('renders a menu section as a UIDL document read through the desk adapter', async ({ page, deskUrl }) => {
   await page.goto(deskUrl);
   await page.getByRole('button', { name: /^Menu/ }).click();

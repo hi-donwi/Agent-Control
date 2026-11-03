@@ -30,6 +30,20 @@ function urgency(room: FloorRoom): number {
   return 3;
 }
 
+/** What a project or a level shows from afar: it needs you, it is at work, or it is quiet. */
+export type Signal = 'attention' | 'working' | 'quiet';
+
+const SIGNALS: readonly Signal[] = ['attention', 'working', 'quiet'];
+
+export function roomSignal(room: FloorRoom): Signal {
+  return SIGNALS[Math.min(urgency(room), 2)]!;
+}
+
+/** A level's loudest project. */
+export function levelSignal(rooms: readonly FloorRoom[]): Signal {
+  return SIGNALS[Math.min(2, ...rooms.map(urgency))]!;
+}
+
 const lastActive = (room: FloorRoom) => Date.parse(room.lastActiveAt ?? '') || 0;
 
 /** Projects that need you first, then those at work, then those with agents, then by latest activity. */

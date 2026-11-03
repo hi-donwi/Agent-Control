@@ -666,6 +666,23 @@
 .command-foot-action:disabled { opacity: .65; cursor: not-allowed; }
 .command-error { margin: 6px 3px 0; color: var(--d-warn); font-size: 11.5px; overflow-wrap: anywhere; }
 .command-dock-minimized { width: auto; padding: 6px; }
+/* At rest the dock is one line: the target beside the composer. Focus inside opens the rest; the
+   status stays in the accessibility tree, and the foot shows only when it has a warning or an action. */
+.command-dock.is-resting { display: grid; grid-template-columns: minmax(0, min(15rem, 38%)) minmax(0, 1fr); align-items: center; gap: 6px 8px; padding: 6px; }
+.command-dock.is-resting > * { grid-column: 1 / -1; }
+.command-dock.is-resting > .command-dock-controls { grid-column: 1; padding: 0; }
+.command-dock.is-resting > .command-form { grid-column: 2; }
+.command-dock.is-resting :is(.command-context, .command-fanout, .command-control > span) { display: none; }
+.command-dock.is-resting .command-control { flex-basis: 100%; min-width: 0; }
+.command-dock.is-resting > :is(.command-dock-head, .command-dock-foot:not(:has(.command-foot-warning, .command-foot-action))) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.command-dock.is-resting > .command-dock-foot { padding-top: 0; }
+.command-dock.is-resting .command-form textarea { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Resting, it leaves the bottom corners to the floor's caption and pager. */
+@media (min-width: 721px) {
+  .command-dock.is-resting { width: min(640px, calc(100vw - 400px)); }
+}
 .command-restore { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 12px 4px 5px; border: none; border-radius: 999px; background: transparent; color: var(--d-ink); font: inherit; font-size: 12px; cursor: pointer; }
 .command-restore:hover { background: var(--d-hover); }
 .command-response-popover { position: fixed; z-index: 60; width: min(330px, calc(100vw - 32px)); max-height: min(420px, calc(100vh - 32px)); overflow: auto; padding: 12px; border: 1px solid color-mix(in srgb, var(--d-accent) 30%, var(--d-line)); border-radius: 14px; background: var(--d-panel); color: var(--d-ink); box-shadow: var(--d-shadow); animation: command-popover-in 220ms cubic-bezier(.2, .8, .2, 1); }
