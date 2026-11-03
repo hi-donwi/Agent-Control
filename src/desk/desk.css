@@ -710,12 +710,12 @@
 /* ── Agent figure ────────────────────────────────────────────────────── */
 .fig { display: block; overflow: visible; animation: fig-enter 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .fig [class] { transform-box: fill-box; transform-origin: center; }
-.fig[data-tone="host"] { --tone: #0f8a7e; }
-.fig[data-tone="claude"] { --tone: #d97757; }
-.fig[data-tone="opencode"] { --tone: #5b6ee1; }
-.fig[data-tone="codex"] { --tone: #10a37f; }
-.fig[data-tone="antigravity"] { --tone: #8b5cf6; }
-.fig[data-tone="cursor"] { --tone: #3b82f6; }
+:is(.fig, .vx-agent)[data-tone="host"] { --tone: #0f8a7e; }
+:is(.fig, .vx-agent)[data-tone="claude"] { --tone: #d97757; }
+:is(.fig, .vx-agent)[data-tone="opencode"] { --tone: #5b6ee1; }
+:is(.fig, .vx-agent)[data-tone="codex"] { --tone: #10a37f; }
+:is(.fig, .vx-agent)[data-tone="antigravity"] { --tone: #8b5cf6; }
+:is(.fig, .vx-agent)[data-tone="cursor"] { --tone: #3b82f6; }
 
 .fig-torso { fill: var(--fig-body); }
 .fig-skull { fill: var(--fig-skull); stroke: var(--tone); stroke-width: 2; }

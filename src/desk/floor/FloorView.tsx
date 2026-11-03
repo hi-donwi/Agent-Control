@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentFigure } from './AgentFigure';
 import { StudioScene } from './StudioScene';
+import { ROOM_VIEW, deskSlots, seatSlots, storeyLevels } from './voxel-room';
 import { STATE_LABELS, UNREGISTERED_ZONE, type Floor, type FloorAgent, type FloorRoom, type FloorZone } from '../types';
 import { CloseIcon, SearchIcon } from '../icons';
 
@@ -47,6 +48,7 @@ export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, o
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
   const allRooms = useMemo(() => floor.zones.flatMap((z) => z.rooms), [floor]);
+  const levels = useMemo(() => storeyLevels(floor.zones.map((z) => z.client)), [floor]);
   const activeCount = useMemo(() => allRooms.filter((r) => !r.idle).length, [allRooms]);
   const idleCount = allRooms.length - activeCount;
 
@@ -307,6 +309,7 @@ export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, o
             <Zone
               key={zone.client}
               zone={zone}
+              level={levels.get(zone.client) ?? 0}
               focused={focusClient === zone.client}
               selectedAgentId={selectedAgentId}
               onFocus={() => onFocusClient(focusClient === zone.client ? null : zone.client)}
@@ -320,8 +323,10 @@ export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, o
   );
 }
 
-function Zone({ zone, focused, selectedAgentId, onFocus, onAgent, onRoom }: {
+/** A client's storey: its level plate and name, then its project rooms on one slab. */
+function Zone({ zone, level, focused, selectedAgentId, onFocus, onAgent, onRoom }: {
   zone: FloorZone;
+  level: number;
   focused: boolean;
   selectedAgentId: string | null;
   onFocus: () => void;
@@ -336,6 +341,7 @@ function Zone({ zone, focused, selectedAgentId, onFocus, onAgent, onRoom }: {
       aria-labelledby={headingId}
     >
       <header className="zone-head">
+        <span className="storey-level" aria-hidden="true">L{level}</span>
         <h2 id={headingId} className="zone-title">
           <button type="button" className="zone-name" onClick={onFocus} aria-pressed={focused}>
             {zoneLabel(zone.client)}
@@ -375,6 +381,11 @@ function Room({ room, selectedAgentId, onAgent, onRoom }: {
 
   const lastActiveText = formatLastActive(room.lastActiveAt);
   const title = [room.description || room.key, `Last active: ${lastActiveText}`].filter(Boolean).join(' · ');
+  // Each seated agent's name plate hangs over its desk in the scene; the rest queue below it.
+  const plates = seatSlots(room.agents.length).map((slot) => deskSlots()[slot]!.plate);
+  const seat = (agent: FloorAgent, index: number) => (
+    <Seat key={agent.id} agent={agent} plate={plates[index]} selected={agent.id === selectedAgentId} onClick={() => onAgent(agent)} />
+  );
 
   return (
     <article className={classes} aria-label={`Project ${room.key}`} data-project={room.key}>
@@ -386,29 +397,39 @@ function Room({ room, selectedAgentId, onAgent, onRoom }: {
         {room.codingSession && <span className="room-tag room-tag-session">session</span>}
         {room.idle && <span className="room-tag room-tag-idle">idle</span>}
       </header>
-      <StudioScene room={room} />
-      {room.agents.length > 0 ? (
-        <div className="room-desks">
-          {room.agents.map((agent) => (
-            <Seat key={agent.id} agent={agent} selected={agent.id === selectedAgentId} onClick={() => onAgent(agent)} />
-          ))}
-        </div>
-      ) : (
-        <div className="room-vacant" aria-hidden="true">
-          <span className="vacant-desk" />
-        </div>
-      )}
+      <div className="room-stage" style={{ aspectRatio: `${ROOM_VIEW.width} / ${ROOM_VIEW.height}` }}>
+        <StudioScene room={room} />
+        {room.agents.length > 0 ? (
+          <div className="room-desks">
+            {room.agents.slice(0, plates.length).map(seat)}
+            {room.agents.length > plates.length && (
+              <div className="room-queue">{room.agents.slice(plates.length).map((agent, index) => seat(agent, plates.length + index))}</div>
+            )}
+          </div>
+        ) : (
+          <div className="room-vacant" aria-hidden="true">
+            <span className="vacant-desk" />
+          </div>
+        )}
+      </div>
     </article>
   );
 }
 
-function Seat({ agent, selected, onClick }: { agent: FloorAgent; selected: boolean; onClick: () => void }) {
+function Seat({ agent, plate, selected, onClick }: {
+  agent: FloorAgent;
+  plate?: { left: number; top: number };
+  selected: boolean;
+  onClick: () => void;
+}) {
   const label = STATE_LABELS[agent.state];
   const detail = agent.detail ? `, ${agent.detail}` : '';
+  const position = plate && ({ '--plate-left': `${plate.left}%`, '--plate-top': `${plate.top}%` } as CSSProperties);
   return (
     <button
       type="button"
-      className={`seat seat-${agent.state}`}
+      className={`seat seat-${agent.state}${plate ? ' is-seated' : ''}`}
+      style={position || undefined}
       data-agent-id={agent.id}
       aria-pressed={selected}
       aria-label={`${agent.tool} in ${agent.project}: ${label}${detail}`}
