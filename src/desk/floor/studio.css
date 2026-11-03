@@ -108,7 +108,25 @@
 .level-page-dot.is-active-page::before { border-color: var(--d-accent); background: color-mix(in srgb, var(--d-accent) 35%, transparent); }
 .level-page-dot[aria-current="page"]::before { width: 11px; height: 11px; border-color: var(--d-ink-2); background: var(--d-ink-2); }
 .level-page-dot.is-active-page[aria-current="page"]::before { border-color: var(--d-accent); background: var(--d-accent); }
-.level-body { flex: 1 1 auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 0; }
+.level-body { flex: 1 1 auto; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 0; }
+/* The building beside the level: a stop per floor, the current one lit like the storey badge, a dot
+   where agents are at work or need you. */
+.level-elevator {
+  max-height: 100%; overflow-y: auto; scrollbar-width: none; padding: 4px; border: 1px solid var(--d-line); border-radius: 12px;
+  background: color-mix(in srgb, var(--d-room) 72%, transparent);
+}
+.level-elevator ol { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.elevator-stop {
+  position: relative; display: grid; place-items: center; width: 32px; height: 22px; padding: 0; border: 0; border-radius: 6px;
+  background: none; color: var(--d-ink-3); font: 650 11px/1 var(--font-mono); cursor: pointer;
+}
+.elevator-stop:hover { background: var(--d-hover); color: var(--d-ink); }
+.elevator-stop[aria-current] { background: var(--vx-roof); color: #f4f6f8; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .28); }
+.elevator-stop:is(.is-working, .is-attention)::after {
+  content: ''; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--d-accent);
+}
+.elevator-stop[aria-current]::after { outline: 1.5px solid #f4f6f8; }
+.elevator-stop.is-attention::after { background: var(--d-attn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--d-attn) 25%, transparent); }
 .level-viewport { align-self: stretch; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
 .level-stage {
   position: relative; width: min(100cqw, calc(100cqh * var(--level-ratio))); aspect-ratio: var(--level-ratio);
@@ -465,6 +483,7 @@
   .level-select { max-width: 46vw; }
   /* The page arrows sit over the stage edges, so the stage keeps the full width. */
   .level-body { position: relative; grid-template-columns: minmax(0, 1fr); }
+  .level-elevator { display: none; }
   .page-arrow { position: absolute; z-index: 3; top: 50%; width: 30px; height: 52px; transform: translateY(-50%); background: color-mix(in srgb, var(--d-room) 88%, transparent); }
   .page-prev { left: -4px; }
   .page-next { right: -4px; }

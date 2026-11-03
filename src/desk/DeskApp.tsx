@@ -523,12 +523,21 @@ export function DeskApp() {
       ))}
 
       {floor && (
+        // On the floor the navbar carries the counts, so the caption keeps to what needs you.
         <footer className="desk-caption" role="status">
           <span className={`live-dot${live ? ' is-live' : ''}`} aria-hidden="true" />
           <span className="visually-hidden">{live ? 'Live. ' : 'Reconnecting. '}</span>
-          {floor.totals.agents} {floor.totals.agents === 1 ? 'agent' : 'agents'}
-          {floor.totals.active > 0 && ` · ${floor.totals.active} active`}
-          {waiting > 0 && <strong className="caption-attn"> · {waiting} waiting for you</strong>}
+          {showFloorNavbar ? (
+            waiting > 0
+              ? <strong className="caption-attn">{waiting} waiting for you</strong>
+              : <span aria-hidden="true">{live ? 'Live' : 'Reconnecting'}</span>
+          ) : (
+            <>
+              {floor.totals.agents} {floor.totals.agents === 1 ? 'agent' : 'agents'}
+              {floor.totals.active > 0 && ` · ${floor.totals.active} working`}
+              {waiting > 0 && <strong className="caption-attn"> · {waiting} waiting for you</strong>}
+            </>
+          )}
           {error && <span className="caption-error"> · [WARN] floor not updated: {error}</span>}
         </footer>
       )}

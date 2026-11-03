@@ -70,7 +70,6 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
   const [value, setValue] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const [status, setStatus] = useState<DispatchStatus>('ready');
   const [request, setRequest] = useState<DispatchRequest | null>(null);
   const [fanoutRequest, setFanoutRequest] = useState<FanoutRequest | null>(null);
@@ -80,7 +79,8 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
   const [flightText, setFlightText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [dock, setDock] = useState<HTMLElement | null>(null);
-  const isOpen = !minimized && (expanded || hovered);
+  // At rest the dock is one line, the target and the composer; focus inside opens the rest.
+  const isOpen = !minimized && expanded;
   const targetIsUsable = Boolean(target?.writable && target.availability === 'ready');
   const sendableTargets = fanoutCandidates.filter((candidate) => candidate.choice).map((candidate) => candidate.target);
   const selectedRecipients = resolveFanoutRecipients(sendableTargets, fanoutScopes);
@@ -273,10 +273,8 @@ export function CommandDock({ floor, scope, targetAgentId, chat, providerReady, 
     <>
       <section
         ref={setDock}
-        className={`command-dock${isOpen ? ' is-expanded' : ''}`}
+        className={`command-dock ${isOpen ? 'is-expanded' : 'is-resting'}`}
         aria-label="Agent command dock"
-        onPointerEnter={() => setHovered(true)}
-        onPointerLeave={() => setHovered(false)}
         onFocus={() => setExpanded(true)}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false);
