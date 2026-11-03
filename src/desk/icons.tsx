@@ -44,6 +44,18 @@ export const ChevronIcon = () => (
   <Icon size={16}><path d="M9 6l6 6-6 6" /></Icon>
 );
 
+export const ForwardIcon = () => (
+  <Icon><path d="M9 6l6 6-6 6" /></Icon>
+);
+
+export const UpIcon = () => (
+  <Icon><path d="M6 15l6-6 6 6" /></Icon>
+);
+
+export const DownIcon = () => (
+  <Icon><path d="M6 9l6 6 6-6" /></Icon>
+);
+
 export const NewChatIcon = () => (
   <Icon><path d="M12 5v14M5 12h14" /></Icon>
 );

@@ -54,21 +54,85 @@
   display: grid; gap: 10px; width: 100%; margin-top: 8px; padding: 12px; border: 1px solid var(--d-line); border-radius: 14px;
   background: var(--d-panel); box-shadow: var(--d-shadow);
 }
-.floor-explore-panel .floor-toolbar { align-items: stretch; padding: 0; border: 0; background: transparent; }
 .floor-explore-panel .floor-search-box { max-width: none; }
 .floor-explore-panel .floor-search-input { min-height: 40px; }
-.floor-explore-panel .floor-select, .floor-explore-panel .segment-btn { min-height: 40px; }
-.floor-explore-panel .studio-view-controls { justify-content: flex-end; }
+.floor-results { display: grid; gap: 4px; max-height: min(320px, 50vh); margin: 0; padding: 0; overflow: auto; list-style: none; }
+.floor-results button {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; width: 100%; padding: 8px 10px;
+  border: 1px solid var(--d-line); border-radius: 8px; background: var(--d-room); color: var(--d-ink); font: inherit; text-align: left; cursor: pointer;
+}
+.floor-results button:hover { border-color: var(--d-accent); }
+.floor-results strong { overflow-wrap: anywhere; font-size: 12.5px; }
+.floor-results span, .floor-results-empty { color: var(--d-ink-3); font-size: 11.5px; white-space: nowrap; }
+.floor-results-empty { margin: 0; padding: 0 2px; }
+.studio-view-controls { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .studio-toggle { color: var(--d-ink-2); }
-.floor-explore-panel .floor-status-strip { border-top: 1px solid var(--d-line); padding: 8px 2px 0; }
-.studio-scene, .studio-agent-detail, .storey-level { display: none; }
-.room-stage, .room-queue { display: contents; }
-.studio-view-controls { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
-.studio-scale { display: grid; gap: 4px; font-size: 11px; color: var(--d-ink-2); }
-.studio-scale select { min-height: 44px; padding: 8px 28px 8px 12px; border: 1px solid var(--d-line); border-radius: 10px; background: var(--d-room); color: var(--d-ink); font: inherit; font-size: 13px; }
 
-/* Voxel office tower: the building is the workspace, each client a storey, each project a
-   voxel room in cutaway. Materials are tokens; studio-scene shading comes from .vx-t/l/r. */
+/* One level per screen: the floor fills the space under the navbar and the page never scrolls.
+   Up and down change the level, left and right the page of project tables. */
+.desk-main.has-floor-navbar {
+  display: flex; flex-direction: column; overflow: hidden;
+  padding-bottom: calc(var(--command-dock-rest, 212px) + 30px + env(safe-area-inset-bottom));
+}
+.desk-main.has-floor-navbar > .floor-container { flex: 1 1 auto; min-height: 0; }
+.level { position: relative; display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+.level-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.storey-level {
+  display: inline-grid; place-items: center; min-width: 34px; height: 24px; padding: 0 7px; border-radius: 6px;
+  background: var(--vx-roof); color: #f4f6f8; font: 700 12px/1 var(--font-mono); letter-spacing: .04em;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .28);
+}
+.level-title { margin: 0; color: var(--d-ink); font: 700 13px/1.2 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }
+.level-meta { color: var(--d-ink-2); font-size: 12px; }
+.level-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.level-nav-btn, .page-arrow {
+  display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--d-line); background: var(--d-room);
+  color: var(--d-ink-2); cursor: pointer;
+}
+.level-nav-btn { width: 36px; height: 36px; border-radius: 10px; }
+.page-arrow { width: 40px; height: 72px; border-radius: 12px; }
+.level-nav-btn:hover:not(:disabled), .page-arrow:hover:not(:disabled) { border-color: var(--d-accent); color: var(--d-ink); }
+.level-nav-btn:disabled, .page-arrow:disabled { opacity: .35; cursor: default; }
+.level-select {
+  min-height: 36px; max-width: min(340px, 56vw); padding: 6px 28px 6px 10px; border: 1px solid var(--d-line); border-radius: 10px;
+  background: var(--d-room); color: var(--d-ink); font: inherit; font-size: 12.5px;
+}
+/* The pager sits in the empty corner the isometric floor leaves at the bottom left. */
+.level-pages { position: absolute; left: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 6px; color: var(--d-ink-2); font-size: 12px; }
+.level-page-dots { display: flex; }
+.level-page-dot { position: relative; width: 18px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+.level-page-dot::before {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; border: 1.5px solid var(--d-ink-3); border-radius: 50%;
+  transform: translate(-50%, -50%); box-sizing: border-box;
+}
+.level-page-dot.is-active-page::before { border-color: var(--d-accent); background: color-mix(in srgb, var(--d-accent) 35%, transparent); }
+.level-page-dot[aria-current="page"]::before { width: 11px; height: 11px; border-color: var(--d-ink-2); background: var(--d-ink-2); }
+.level-page-dot.is-active-page[aria-current="page"]::before { border-color: var(--d-accent); background: var(--d-accent); }
+.level-body { flex: 1 1 auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 0; }
+.level-viewport { align-self: stretch; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
+.level-stage {
+  position: relative; width: min(100cqw, calc(100cqh * var(--level-ratio))); aspect-ratio: var(--level-ratio);
+  container-type: inline-size;
+}
+.level-stage .studio-scene { display: block; width: 100%; height: 100%; overflow: visible; }
+.level-empty { position: absolute; inset: 40% 0 auto; margin: 0; color: var(--d-ink-2); text-align: center; }
+.level-cards {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 30px 14px; width: 100%; height: 100%; padding-top: 16px;
+}
+.level-cards .room { min-height: 0; overflow: hidden; }
+.level-stage[data-enter], .level-cards[data-enter] { animation: 280ms cubic-bezier(.2, .8, .2, 1) both; }
+[data-enter="up"] { animation-name: level-from-above; }
+[data-enter="down"] { animation-name: level-from-below; }
+[data-enter="left"] { animation-name: page-from-left; }
+[data-enter="right"] { animation-name: page-from-right; }
+@keyframes level-from-above { from { opacity: 0; transform: translateY(-7%); } }
+@keyframes level-from-below { from { opacity: 0; transform: translateY(7%); } }
+@keyframes page-from-left { from { opacity: 0; transform: translateX(-5%); } }
+@keyframes page-from-right { from { opacity: 0; transform: translateX(5%); } }
+
+/* Voxel office levels: each client a storey, each project a table on it, seen in cutaway.
+   Materials are tokens; studio-scene shading comes from .vx-t/l/r. */
 .desk {
   --vx-facade: #e8e2d6;
   --vx-facade-line: rgba(28, 35, 48, 0.05);
@@ -162,71 +226,97 @@
   --vx-rug-library: #33477a;
 }
 
-.studio-mode { --room-w: 340px; }
-.studio-mode[data-studio-scale="overview"] { --room-w: 260px; }
-.studio-mode[data-studio-scale="immersive"] { --room-w: 460px; }
-
-/* The building: roof, storeys stacked on slabs, ground. */
-.studio-mode .floor {
-  display: flex; flex-direction: column; align-items: stretch; gap: 0;
-  width: fit-content; max-width: 100%; min-width: min(100%, 440px); margin: 4px auto 0; padding: 0 14px;
-  border: 0; border-radius: 0; overflow: visible;
-  background-color: var(--vx-facade);
-  background-image: repeating-linear-gradient(to bottom, transparent 0 23px, var(--vx-facade-line) 23px 24px);
-  box-shadow: inset 8px 0 0 var(--vx-column), inset -8px 0 0 var(--vx-column);
+/* The other two looks: a library in sage and navy, a lab in cool greys on tiles. */
+.level-scene.theme-library {
+  --vx-floor: #b9875a;
+  --vx-plank: rgba(70, 40, 16, 0.34);
+  --vx-cream: #dfe7d5;
+  --vx-cream-cap: #c3cfb6;
+  --vx-teal: #3c5a8a;
+  --vx-teal-cap: #2f4870;
+  --vx-chair: #4f7fbf;
+  --vx-desk: #c99d6b;
+  --vx-skirting: #8f6b45;
 }
-.studio-mode .floor::before, .studio-mode .floor::after { content: ''; display: block; margin: 0 -14px; }
-.studio-mode .floor::before { height: 18px; border-radius: 4px 4px 0 0; background: linear-gradient(var(--vx-roof-cap) 0 5px, var(--vx-roof) 5px); }
-.studio-mode .floor::after { height: 16px; border-radius: 0 0 6px 6px; background: linear-gradient(var(--vx-ground) 0 6px, var(--vx-soil) 6px); }
-
-.studio-mode .zone { position: relative; min-width: 0; margin: 0; padding: 12px 4px 18px; border: 0; border-radius: 0; background: none; backdrop-filter: none; }
-.studio-mode .zone::after {
-  content: ''; position: absolute; left: -14px; right: -14px; bottom: 0; height: 12px;
-  background: linear-gradient(var(--vx-slab-top) 0 3px, var(--vx-slab) 3px 9px, var(--vx-slab-dark) 9px);
+.level-scene.theme-lab {
+  --vx-floor: #d7dde3;
+  --vx-plank: rgba(60, 75, 95, 0.2);
+  --vx-cream: #eef2f5;
+  --vx-cream-cap: #d3dae1;
+  --vx-teal: #5b6b7d;
+  --vx-teal-cap: #4a5868;
+  --vx-chair: #2fa58f;
+  --vx-desk: #f1f3f5;
+  --vx-desk-frame: #9ea7b1;
+  --vx-skirting: #9aa6b2;
 }
-.studio-mode .zone-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 2px; padding: 0 2px; border: 0; }
-.studio-mode .storey-level {
-  display: inline-grid; place-items: center; min-width: 32px; height: 22px; padding: 0 6px; border-radius: 5px;
-  background: var(--vx-roof); color: #f4f6f8; font: 700 11px/1 var(--font-mono); letter-spacing: .04em;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .28);
+[data-theme="dark"] .level-scene.theme-library {
+  --vx-floor: #5e4630;
+  --vx-plank: rgba(0, 0, 0, 0.3);
+  --vx-cream: #3c4637;
+  --vx-cream-cap: #2f382b;
+  --vx-teal: #263a5c;
+  --vx-teal-cap: #1d2d48;
+  --vx-chair: #355a8c;
+  --vx-desk: #7a5c3e;
+  --vx-skirting: #3e3326;
 }
-.studio-mode .zone-name { color: var(--d-ink); letter-spacing: .12em; }
-.studio-mode .zone-name:hover, .studio-mode .zone-name[aria-pressed="true"] { color: var(--d-accent); }
-.studio-mode .zone-meta { color: var(--d-ink-2); }
-.studio-mode .zone-rooms, .studio-mode .floor.is-focused .zone-rooms { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 10px; }
+[data-theme="dark"] .level-scene.theme-lab {
+  --vx-floor: #3a424c;
+  --vx-plank: rgba(0, 0, 0, 0.28);
+  --vx-cream: #4a525c;
+  --vx-cream-cap: #3a414a;
+  --vx-teal: #2c3642;
+  --vx-teal-cap: #232b35;
+  --vx-chair: #1f6d60;
+  --vx-desk: #6f7782;
+  --vx-desk-frame: #4a525c;
+  --vx-skirting: #2f363f;
+}
 
-/* A room is its scene; the door plate and agent name plates hang over it. */
+/* A table's plate hangs above its chairs: the project name, then a chip per agent. */
+.studio-mode .level-tables { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .studio-mode .room {
-  position: relative; flex: 0 1 auto; width: var(--room-w); max-width: 100%; min-width: 0; min-height: 0; padding: 0;
+  position: absolute; left: var(--plate-left); top: var(--plate-top); transform: translate(-50%, -100%);
+  display: flex; flex-flow: row wrap; align-items: center; justify-content: center; gap: 3px;
+  width: max-content; max-width: 22%; min-width: 0; min-height: 0; padding: 0;
   border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; opacity: 1;
+  font-size: clamp(9.5px, 1.3cqw, 13px);
 }
-.studio-mode .room-stage { display: block; position: relative; container-type: inline-size; }
-.studio-mode .studio-scene { display: block; width: 100%; height: 100%; overflow: visible; }
-.studio-mode .room.is-idle .studio-scene { filter: saturate(.55) brightness(.88); }
-[data-theme="dark"] .studio-mode .room.is-idle .studio-scene { filter: saturate(.5) brightness(.62); }
-.studio-mode .room-door { position: relative; z-index: 2; inset: auto; flex-wrap: nowrap; gap: 4px; margin: 0 0 -2px; padding: 0 2%; }
+.studio-mode .room:is(:hover, :focus-within) { z-index: 2; }
+.studio-mode .room-door { position: static; display: flex; justify-content: center; gap: 4px; min-width: 0; max-width: 100%; pointer-events: auto; }
 .studio-mode .room-name {
-  padding: 3px 10px; border-radius: 7px; background: var(--d-room); font: 650 13px/18px var(--font-sans);
+  padding: 2px 9px; border-radius: 7px; background: var(--d-room); font: 650 1.08em/1.5 var(--font-sans);
   box-shadow: 0 2px 0 color-mix(in srgb, var(--d-ink) 14%, transparent);
 }
 .studio-mode .room-tag { background: var(--d-room); }
+.studio-mode :is(.room-tag-idle, .room-vacant), .studio-mode .room-tag:not(.room-tag-session) { display: none; }
+.studio-mode .room.is-idle .room-name { color: var(--d-ink-2); border-style: dashed; }
 .studio-mode .room.is-busy .room-name { border-color: color-mix(in srgb, var(--d-accent) 50%, var(--d-room-line)); }
 .studio-mode .room.is-waiting .room-name { border-color: var(--d-attn); animation: vx-call 2.4s ease-in-out infinite; }
 .studio-mode .room.is-warning .room-name { border-color: var(--d-warn); }
-.studio-mode .room-vacant { display: none; }
+.studio-mode .room.is-highlighted .room-name { border-color: var(--d-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--d-accent) 45%, transparent); }
 
-.studio-mode .room-desks { position: absolute; inset: 0; z-index: 1; display: block; padding: 0; pointer-events: none; }
+/* The chips flow on beside the name and wrap only when the plate runs out of width. */
+.studio-mode .room-desks { display: contents; }
 .studio-mode .seat {
-  position: absolute; left: var(--plate-left); top: var(--plate-top); transform: translate(-50%, -100%);
   display: inline-flex; flex-direction: row; align-items: center; gap: 4px;
-  width: auto; max-width: 48%; min-width: 0; padding: 2px 7px 2px 6px;
+  width: auto; min-width: 0; padding: 1px 6px 1px 5px;
   border: 1px solid var(--d-room-line); border-radius: 6px;
   background: color-mix(in srgb, var(--d-room) 94%, transparent);
   box-shadow: 0 2px 0 color-mix(in srgb, var(--d-ink) 12%, transparent);
-  font-size: clamp(9.5px, 3cqw, 11.5px); line-height: 1.3; white-space: nowrap; pointer-events: auto;
+  font-size: .9em; line-height: 1.35; white-space: nowrap; pointer-events: auto;
 }
-/* The plate also answers clicks on the character below it. */
-.studio-mode .seat.is-seated::after { content: ''; position: absolute; left: 50%; top: 100%; width: 11cqw; height: 15cqw; transform: translateX(-50%); }
+/* A table has four chairs; the agents past them fold into one +N chip that opens the project.
+   Compact view has room to list them all. */
+.studio-mode .seat:not(.is-seated) { display: none; }
+.seat-more { display: none; }
+.studio-mode .seat-more {
+  display: inline-flex; align-items: center; padding: 1px 6px; border: 1px dashed var(--d-ink-3); border-radius: 6px;
+  background: color-mix(in srgb, var(--d-room) 94%, transparent); color: var(--d-ink-2);
+  font: 650 .9em/1.35 var(--font-sans); cursor: pointer; pointer-events: auto;
+}
+.studio-mode .seat-more:hover { border-color: var(--d-accent); color: var(--d-ink); }
 .studio-mode .seat::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--d-ink-3); }
 .studio-mode :is(.seat-working, .seat-thinking, .seat-reading, .seat-typing, .seat-running, .seat-learning)::before { background: var(--d-accent); }
 .studio-mode .seat-waiting { border-color: var(--d-attn); }
@@ -236,10 +326,22 @@
 .studio-mode .seat:hover { border-color: var(--d-accent); background: var(--d-room); }
 .studio-mode .seat[aria-pressed="true"] { border-color: var(--d-accent); background: var(--d-room); box-shadow: 0 0 0 2px var(--d-accent); }
 .studio-mode .seat .fig { display: none; }
-.studio-mode .seat-name { min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; font-size: inherit; font-weight: 650; }
-.studio-mode .seat-state { font-size: inherit; color: var(--d-ink-2); }
-.studio-mode .room-queue { position: absolute; right: 2%; bottom: 3%; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.studio-mode .room-queue .seat { position: relative; left: auto; top: auto; transform: none; max-width: 100%; }
+.studio-mode .seat-name { min-width: 0; max-width: 10ch; overflow: hidden; text-overflow: ellipsis; font-size: inherit; font-weight: 650; }
+/* The pose in the scene already shows what an agent does; the chip spells out only what needs you. */
+.studio-mode .seat-state { display: none; font-size: inherit; }
+.studio-mode :is(.seat-waiting, .seat-warning) .seat-state { display: inline; }
+
+/* On a small stage a chip shrinks to its status dot; the tool and state stay in its name and tooltip. */
+@container (max-width: 760px) {
+  .studio-mode .seat { justify-content: center; width: 1.25em; height: 1.25em; padding: 0; border-radius: 50%; }
+  .studio-mode .seat :is(.seat-name, .seat-state),
+  .studio-mode :is(.seat-waiting, .seat-warning) .seat-state { display: none; }
+}
+
+/* Compact view: the same page of tables as cards, three by two. */
+.level-cards .room { display: flex; flex-direction: column; min-height: 0; }
+.level-cards .room.is-highlighted { box-shadow: 0 0 0 3px color-mix(in srgb, var(--d-accent) 45%, transparent); }
+.level-cards .room-desks { flex: 1 1 auto; align-content: flex-start; min-height: 0; overflow: auto; }
 
 /* Materials: top lit, left face as is, right face in shade. */
 .vx { --m: var(--vx-metal); }
@@ -357,19 +459,20 @@
   .desk-floor-hud .studio-world-actions { grid-area: actions; justify-content: flex-end; width: 100%; }
   .floor-explore { margin-left: auto; }
   .floor-explore[open] { margin-left: 0; }
-  .floor-explore-panel .floor-toolbar, .floor-explore-panel .floor-filter-group { align-items: stretch; }
-  .floor-explore-panel .floor-toolbar, .floor-explore-panel .floor-filter-group { flex-flow: column nowrap; }
-  .floor-explore-panel .floor-search-box, .floor-explore-panel .floor-filter-group { flex: 0 0 auto; min-width: 0; width: 100%; }
-  .floor-explore-panel .floor-filter-group > * { flex: 0 0 auto; }
-  .floor-explore-panel .floor-select-wrap, .floor-explore-panel .floor-select { width: 100%; max-width: none; }
-  .studio-mode .floor { width: 100%; min-width: 0; padding: 0 8px; box-shadow: inset 5px 0 0 var(--vx-column), inset -5px 0 0 var(--vx-column); }
-  .studio-mode .floor::before, .studio-mode .floor::after { margin: 0 -8px; }
-  .studio-mode .zone { padding: 10px 0 16px; }
-  .studio-mode .zone::after { left: -8px; right: -8px; }
-  .studio-mode .room { flex: 1 1 100%; width: 100%; }
+  .desk-main.has-floor-navbar { padding-bottom: calc(var(--command-dock-rest, 212px) + 20px + env(safe-area-inset-bottom)); }
+  .level-pages { position: static; justify-content: center; }
+  .level-meta { flex-basis: 100%; order: 1; }
+  .level-select { max-width: 46vw; }
+  /* The page arrows sit over the stage edges, so the stage keeps the full width. */
+  .level-body { position: relative; grid-template-columns: minmax(0, 1fr); }
+  .page-arrow { position: absolute; z-index: 3; top: 50%; width: 30px; height: 52px; transform: translateY(-50%); background: color-mix(in srgb, var(--d-room) 88%, transparent); }
+  .page-prev { left: -4px; }
+  .page-next { right: -4px; }
+  .level-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 22px 8px; }
+  .studio-mode .room { max-width: 46%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .studio-mode .fig *, .studio-mode .fig, .studio-mode .room, .studio-mode .room-name, .studio-scene * { animation: none !important; transition: none !important; }
+  .studio-mode .fig *, .studio-mode .fig, .studio-mode .room, .studio-mode .room-name, .studio-scene *, [data-enter] { animation: none !important; transition: none !important; }
   .studio-scene .vx-spark { opacity: 1; }
 }
 .fig-ground { fill: var(--fig-face); opacity: .08; }

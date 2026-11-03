@@ -1,10 +1,11 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentFigure } from './AgentFigure';
-import { StudioScene } from './StudioScene';
-import { ROOM_VIEW, deskSlots, seatSlots, storeyLevels } from './voxel-room';
-import { STATE_LABELS, UNREGISTERED_ZONE, type Floor, type FloorAgent, type FloorRoom, type FloorZone } from '../types';
-import { CloseIcon, SearchIcon } from '../icons';
+import { LevelScene } from './LevelScene';
+import { levelOrder, levelPages, moveFor, pageOf, searchProjects, storeyLevels } from './levels';
+import { MAX_SEATS, TABLES_PER_PAGE, levelPlan } from './voxel-level';
+import { STATE_LABELS, UNREGISTERED_ZONE, type Floor, type FloorAgent, type FloorRoom } from '../types';
+import { BackIcon, CloseIcon, DownIcon, ForwardIcon, SearchIcon, UpIcon } from '../icons';
 
 interface Props {
   floor: Floor;
@@ -16,8 +17,11 @@ interface Props {
   onRoom: (room: FloorRoom) => void;
 }
 
+type Enter = 'up' | 'down' | 'left' | 'right';
+
 const QUIET = new Set(['idle', 'offline']);
-const LARGE_ZONE_ROOMS = 5;
+/** How long a project found by search or jump stays highlighted. */
+const HIGHLIGHT_MS = 2400;
 
 export function zoneLabel(client: string): string {
   return client === UNREGISTERED_ZONE ? 'unregistered' : client;
@@ -38,85 +42,85 @@ export function formatLastActive(iso: string | null | undefined): string {
   }
 }
 
-/** Clients as zones, projects as rooms, agents at their desks, with search, client/project navigation, and idle filtering. */
+/** A key press meant for a control, a text field, or an open drawer, not for walking the floor. */
+function ownedElsewhere(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return true;
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], summary')) return true;
+  return document.querySelector('[role="dialog"]') !== null;
+}
+
+/**
+ * The floor as a building, one client per screen: up and down walk the levels, left and right
+ * the pages of a level's project tables, active projects first. Each project is a table its
+ * agents sit at, posed by their recorded state.
+ */
 export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, onFocusClient, onAgent, onRoom }: Props) {
-  // Default to hiding idle projects (> 1 day inactive).
-  const [filterMode, setFilterMode] = useState<'active' | 'all'>('active');
   const [studio, setStudio] = useState(true);
-  const [scale, setScale] = useState('comfortable');
   const [search, setSearch] = useState('');
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [pages, setPages] = useState<Record<string, number>>({});
+  const [enter, setEnter] = useState<Enter | null>(null);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  // The busiest client when the desk opened; the floor stays there until you move.
+  const [home] = useState(() => floor.zones[0]?.client ?? null);
 
-  const allRooms = useMemo(() => floor.zones.flatMap((z) => z.rooms), [floor]);
-  const levels = useMemo(() => storeyLevels(floor.zones.map((z) => z.client)), [floor]);
-  const activeCount = useMemo(() => allRooms.filter((r) => !r.idle).length, [allRooms]);
-  const idleCount = allRooms.length - activeCount;
-
-  const clientOptions = useMemo(() => {
-    return floor.zones.map((z) => ({
-      client: z.client,
-      totalRooms: z.rooms.length,
-      activeRooms: z.rooms.filter((r) => !r.idle).length,
-    }));
-  }, [floor]);
-
-  const projectOptions = useMemo(() => {
-    const list = focusClient ? floor.zones.find((z) => z.client === focusClient)?.rooms ?? [] : allRooms;
-    return [...list].sort((a, b) => a.key.localeCompare(b.key));
-  }, [floor, focusClient, allRooms]);
+  const order = useMemo(() => levelOrder(floor.zones), [floor]);
+  const levels = useMemo(() => storeyLevels(order), [order]);
+  const zones = useMemo(() => new Map(floor.zones.map((zone) => [zone.client, zone])), [floor]);
+  const allRooms = useMemo(() => floor.zones.flatMap((zone) => zone.rooms), [floor]);
   const attentionRooms = allRooms.filter((room) => room.pendingApprovals > 0
     || room.agents.some((agent) => agent.state === 'waiting' || agent.state === 'warning'));
+  const matches = useMemo(() => searchProjects(floor.zones, search), [floor, search]);
 
-  // Compute filtered zones and rooms
-  const { filteredZones, visibleRoomCount, totalZonesCount } = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const wanted = focusClient ?? home;
+  const levelIndex = Math.max(0, order.indexOf(wanted ?? ''));
+  const client = order[levelIndex];
+  const zone = client === undefined ? undefined : zones.get(client);
+  const level = client === undefined ? 0 : levels.get(client) ?? 0;
+  const levelPagesList = useMemo(() => levelPages(zone?.rooms ?? [], TABLES_PER_PAGE), [zone]);
+  const pageIndex = Math.min(pages[client ?? ''] ?? 0, levelPagesList.length - 1);
+  const page = levelPagesList[pageIndex]!;
+  const plan = levelPlan(level);
 
-    const zones = floor.zones
-      .filter((zone) => {
-        if (focusClient && zone.client !== focusClient) return false;
-        return true;
-      })
-      .map((zone) => {
-        const rooms = zone.rooms.filter((room) => {
-          if (selectedProject && room.key !== selectedProject) return false;
-
-          if (q) {
-            const matchKey = room.key.toLowerCase().includes(q);
-            const matchDesc = room.description?.toLowerCase().includes(q);
-            const matchGroup = room.group?.toLowerCase().includes(q);
-            const matchClient = zone.client.toLowerCase().includes(q);
-            const matchAgent = room.agents.some((a) => a.tool.toLowerCase().includes(q) || a.detail.toLowerCase().includes(q));
-            if (!matchKey && !matchDesc && !matchGroup && !matchClient && !matchAgent) {
-              return false;
-            }
-          }
-
-          // In active mode (unless overridden by specific search or project selection):
-          if (filterMode === 'active' && !selectedProject && !q) {
-            if (room.idle) return false;
-          }
-
-          return true;
-        });
-
-        return { ...zone, rooms };
-      })
-      .filter((zone) => zone.rooms.length > 0);
-
-    const count = zones.reduce((n, z) => n + z.rooms.length, 0);
-    return { filteredZones: zones, visibleRoomCount: count, totalZonesCount: zones.length };
-  }, [floor, focusClient, selectedProject, search, filterMode]);
-
-  const resetFilters = () => {
-    setSearch('');
-    setSelectedProject(null);
-    onFocusClient(null);
-    setFilterMode('active');
+  const goLevel = (index: number) => {
+    const next = order[index];
+    if (next === undefined || index === levelIndex) return;
+    setEnter(index < levelIndex ? 'up' : 'down');
+    onFocusClient(next);
+  };
+  const goPage = (index: number) => {
+    if (client === undefined || index < 0 || index >= levelPagesList.length || index === pageIndex) return;
+    setEnter(index < pageIndex ? 'left' : 'right');
+    setPages((current) => ({ ...current, [client]: index }));
+  };
+  const jumpTo = (target: string, key: string) => {
+    const rooms = zones.get(target)?.rooms ?? [];
+    setEnter(null);
+    setPages((current) => ({ ...current, [target]: pageOf(rooms, key, TABLES_PER_PAGE) }));
+    onFocusClient(target);
+    setHighlight(key);
   };
 
-  const isCustomFiltered = Boolean(search || selectedProject || focusClient || filterMode === 'all');
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (ownedElsewhere(event)) return;
+      const move = moveFor(event.key);
+      if (!move) return;
+      event.preventDefault();
+      if (move.axis === 'level') goLevel(levelIndex + move.step);
+      else goPage(pageIndex + move.step);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
-  if (allRooms.length === 0) {
+  useEffect(() => {
+    if (!highlight) return undefined;
+    const timer = setTimeout(() => setHighlight(null), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlight]);
+
+  if (allRooms.length === 0 || client === undefined || !zone) {
     return (
       <div className="floor floor-empty" role="region" aria-label="Workspace floor">
         <p>No projects are registered yet. Add one with <code>ws new</code>.</p>
@@ -124,8 +128,23 @@ export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, o
     );
   }
 
+  const agents = zone.rooms.reduce((n, room) => n + room.agents.length, 0);
+  const activeRooms = levelPagesList.filter((entry) => entry.active).reduce((n, entry) => n + entry.rooms.length, 0);
+  const headingId = `level-${level}`;
+  const table = (room: FloorRoom, index: number) => (
+    <Table
+      key={room.key}
+      room={room}
+      plate={studio ? plan.tables[index]?.plate : undefined}
+      highlighted={highlight === room.key}
+      selectedAgentId={selectedAgentId}
+      onAgent={onAgent}
+      onRoom={onRoom}
+    />
+  );
+
   return (
-    <div className={`floor-container${studio ? ' studio-mode' : ''}`} data-studio-scale={scale}>
+    <div className={`floor-container${studio ? ' studio-mode' : ''}`}>
       {navbarTarget && createPortal(
       <div className="studio-world-hud desk-floor-hud">
         <h1>Workspace map</h1>
@@ -160,209 +179,146 @@ export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, o
           <details className="floor-explore">
             <summary>Explore map</summary>
             <div className="floor-explore-panel">
-              <div className="floor-toolbar" role="toolbar" aria-label="Floor filters and search">
-                <div className="floor-search-box">
-                  <span className="floor-search-icon" aria-hidden="true"><SearchIcon size={16} /></span>
-                  <input
-                    type="search"
-                    className="floor-search-input"
-                    placeholder="Search projects, clients, tags..."
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    aria-label="Search projects"
-                  />
-                  {search && (
-                    <button type="button" className="floor-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
-                      <CloseIcon />
-                    </button>
-                  )}
-                </div>
-
-                <div className="floor-filter-group">
-                  <div className="floor-segmented" role="radiogroup" aria-label="Activity filter">
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={filterMode === 'active'}
-                      className={`segment-btn${filterMode === 'active' ? ' is-active' : ''}`}
-                      onClick={() => setFilterMode('active')}
-                      title="Show only projects active within 1 day"
-                    >
-                      Active (&le; 1d)
-                      <span className="segment-count">{activeCount}</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={filterMode === 'all'}
-                      className={`segment-btn${filterMode === 'all' ? ' is-active' : ''}`}
-                      onClick={() => setFilterMode('all')}
-                      title="Show all projects including idle ones"
-                    >
-                      All
-                      <span className="segment-count">{allRooms.length}</span>
-                    </button>
-                  </div>
-
-                  <div className="floor-select-wrap">
-                    <label htmlFor="floor-client-filter" className="visually-hidden">Filter by client</label>
-                    <select
-                      id="floor-client-filter"
-                      className="floor-select"
-                      value={focusClient ?? 'all'}
-                      onChange={(event) => {
-                        const val = event.target.value === 'all' ? null : event.target.value;
-                        onFocusClient(val);
-                        setSelectedProject(null);
-                      }}
-                      title="Filter by client"
-                    >
-                      <option value="all">All Clients ({clientOptions.length})</option>
-                      {clientOptions.map((client) => (
-                        <option key={client.client} value={client.client}>
-                          {zoneLabel(client.client)} ({client.activeRooms} active / {client.totalRooms})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="floor-select-wrap">
-                    <label htmlFor="floor-project-filter" className="visually-hidden">Filter by project</label>
-                    <select
-                      id="floor-project-filter"
-                      className="floor-select"
-                      value={selectedProject ?? 'all'}
-                      onChange={(event) => {
-                        const val = event.target.value === 'all' ? null : event.target.value;
-                        setSelectedProject(val);
-                      }}
-                      title="Filter by project"
-                    >
-                      <option value="all">All Projects ({projectOptions.length})</option>
-                      {projectOptions.map((project) => (
-                        <option key={project.key} value={project.key}>
-                          {project.key} {project.idle ? '(idle)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="studio-view-controls">
-                {studio && (
-                  <label className="studio-scale">
-                    View scale
-                    <select aria-label="Studio view scale" value={scale} onChange={(event) => setScale(event.target.value)}>
-                      <option value="overview">Overview</option>
-                      <option value="comfortable">Comfortable</option>
-                      <option value="immersive">Immersive</option>
-                    </select>
-                  </label>
+              <div className="floor-search-box">
+                <span className="floor-search-icon" aria-hidden="true"><SearchIcon size={16} /></span>
+                <input
+                  type="search"
+                  className="floor-search-input"
+                  placeholder="Search projects, clients, agents..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  aria-label="Search projects"
+                />
+                {search && (
+                  <button type="button" className="floor-search-clear" onClick={() => setSearch('')} aria-label="Clear search">
+                    <CloseIcon />
+                  </button>
                 )}
+              </div>
+              {search.trim() && (
+                matches.length > 0 ? (
+                  <ul className="floor-results" aria-label="Matching projects">
+                    {matches.map((match) => (
+                      <li key={match.room.key}>
+                        <button type="button" onClick={() => jumpTo(match.client, match.room.key)}>
+                          <strong>{match.room.key}</strong>
+                          <span>L{levels.get(match.client)} · {zoneLabel(match.client)}{match.room.idle ? ' · inactive' : ''}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="floor-results-empty">No project matches.</p>
+                )
+              )}
+              <div className="studio-view-controls">
                 <button type="button" className="studio-toggle" aria-pressed={studio} onClick={() => setStudio(!studio)}>
                   {studio ? 'Switch to compact view' : 'Switch to studio view'}
                 </button>
-              </div>
-
-              <div className="floor-status-strip" aria-live="polite">
-                <span className="floor-status-text">
-                  Showing {visibleRoomCount} {visibleRoomCount === 1 ? 'project' : 'projects'} in {totalZonesCount} {totalZonesCount === 1 ? 'client' : 'clients'}
-                  {filterMode === 'active' && idleCount > 0 && !search && !selectedProject && (
-                    <>
-                      &nbsp;&middot;&nbsp;{idleCount} idle hidden (&gt; 1d)
-                      <button type="button" className="floor-status-link" onClick={() => setFilterMode('all')}>
-                        show all
-                      </button>
-                    </>
-                  )}
-                  {filterMode === 'all' && idleCount > 0 && !search && !selectedProject && (
-                    <>
-                      &nbsp;&middot;&nbsp;
-                      <button type="button" className="floor-status-link" onClick={() => setFilterMode('active')}>
-                        hide idle (&gt; 1d)
-                      </button>
-                    </>
-                  )}
-                </span>
-                {isCustomFiltered && (
-                  <button type="button" className="floor-btn-reset" onClick={resetFilters}>
-                    Reset filters
-                  </button>
-                )}
               </div>
             </div>
           </details>
         </div>
       </div>, navbarTarget)}
 
-      {filteredZones.length === 0 ? (
-        <div className="floor-no-results">
-          <p>No projects match your filter or search criteria.</p>
-          <button type="button" className="floor-btn-reset" onClick={resetFilters}>
-            Reset filters
+      <section
+        className={`level level-${plan.layout} level-theme-${plan.theme}`}
+        aria-labelledby={headingId}
+        data-level={level}
+      >
+        <header className="level-head">
+          <span className="storey-level" aria-hidden="true">L{level}</span>
+          <h2 id={headingId} className="level-title">{zoneLabel(client)}</h2>
+          <span className="level-meta">
+            {zone.rooms.length} {zone.rooms.length === 1 ? 'project' : 'projects'} · {activeRooms} active
+            {agents > 0 && ` · ${agents} ${agents === 1 ? 'agent' : 'agents'}`}
+          </span>
+          <nav className="level-nav" aria-label="Levels">
+            <button type="button" className="level-nav-btn" aria-label="Level up" disabled={levelIndex === 0} onClick={() => goLevel(levelIndex - 1)}>
+              <UpIcon />
+            </button>
+            <select
+              className="level-select"
+              aria-label="Go to level"
+              value={client}
+              onChange={(event) => goLevel(order.indexOf(event.target.value))}
+            >
+              {order.map((entry) => {
+                const rooms = zones.get(entry)?.rooms ?? [];
+                const busy = rooms.reduce((n, room) => n + room.agents.length, 0);
+                return (
+                  <option key={entry} value={entry}>
+                    L{levels.get(entry)} · {zoneLabel(entry)} ({rooms.length} {rooms.length === 1 ? 'project' : 'projects'}{busy ? `, ${busy} ${busy === 1 ? 'agent' : 'agents'}` : ''})
+                  </option>
+                );
+              })}
+            </select>
+            <button type="button" className="level-nav-btn" aria-label="Level down" disabled={levelIndex === order.length - 1} onClick={() => goLevel(levelIndex + 1)}>
+              <DownIcon />
+            </button>
+          </nav>
+        </header>
+
+        <div className="level-body">
+          <button type="button" className="page-arrow page-prev" aria-label="Previous projects" disabled={pageIndex === 0} onClick={() => goPage(pageIndex - 1)}>
+            <BackIcon />
+          </button>
+          <div className="level-viewport">
+            {studio ? (
+              <div
+                key={`${client}:${pageIndex}`}
+                className="level-stage"
+                data-enter={enter ?? undefined}
+                style={{ '--level-ratio': `${plan.view.width} / ${plan.view.height}` } as CSSProperties}
+              >
+                <LevelScene plan={plan} rooms={page.rooms} />
+                <div className="level-tables">{page.rooms.map(table)}</div>
+                {page.rooms.length === 0 && <p className="level-empty">No projects on this level.</p>}
+              </div>
+            ) : (
+              <div key={`${client}:${pageIndex}`} className="level-cards" data-enter={enter ?? undefined}>
+                {page.rooms.map(table)}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="page-arrow page-next"
+            aria-label="Next projects"
+            disabled={pageIndex === levelPagesList.length - 1}
+            onClick={() => goPage(pageIndex + 1)}
+          >
+            <ForwardIcon />
           </button>
         </div>
-      ) : (
-        <div className={`floor${focusClient ? ' is-focused' : ''}`} role="region" aria-label="Workspace floor">
-          {filteredZones.map((zone) => (
-            <Zone
-              key={zone.client}
-              zone={zone}
-              level={levels.get(zone.client) ?? 0}
-              focused={focusClient === zone.client}
-              selectedAgentId={selectedAgentId}
-              onFocus={() => onFocusClient(focusClient === zone.client ? null : zone.client)}
-              onAgent={onAgent}
-              onRoom={onRoom}
-            />
-          ))}
-        </div>
-      )}
+
+        <footer className="level-pages" aria-label="Project pages">
+          <span className="level-page-label" aria-live="polite">
+            {page.active ? 'Active projects' : 'Inactive projects'} · page {pageIndex + 1} of {levelPagesList.length}
+          </span>
+          <span className="level-page-dots">
+            {levelPagesList.map((entry, index) => (
+              <button
+                type="button"
+                key={index}
+                className={`level-page-dot${entry.active ? ' is-active-page' : ''}`}
+                aria-label={`Page ${index + 1} of ${levelPagesList.length}, ${entry.active ? 'active' : 'inactive'} projects`}
+                aria-current={index === pageIndex ? 'page' : undefined}
+                onClick={() => goPage(index)}
+              />
+            ))}
+          </span>
+        </footer>
+      </section>
     </div>
   );
 }
 
-/** A client's storey: its level plate and name, then its project rooms on one slab. */
-function Zone({ zone, level, focused, selectedAgentId, onFocus, onAgent, onRoom }: {
-  zone: FloorZone;
-  level: number;
-  focused: boolean;
-  selectedAgentId: string | null;
-  onFocus: () => void;
-  onAgent: (agent: FloorAgent) => void;
-  onRoom: (room: FloorRoom) => void;
-}) {
-  const agents = zone.rooms.reduce((n, room) => n + room.agents.length, 0);
-  const headingId = `zone-${zone.client}`;
-  return (
-    <section
-      className={`zone${agents ? '' : ' is-quiet'}${zone.rooms.length >= LARGE_ZONE_ROOMS ? ' is-large' : ''}`}
-      aria-labelledby={headingId}
-    >
-      <header className="zone-head">
-        <span className="storey-level" aria-hidden="true">L{level}</span>
-        <h2 id={headingId} className="zone-title">
-          <button type="button" className="zone-name" onClick={onFocus} aria-pressed={focused}>
-            {zoneLabel(zone.client)}
-          </button>
-        </h2>
-        <span className="zone-meta">
-          {zone.rooms.length} {zone.rooms.length === 1 ? 'project' : 'projects'}
-          {agents > 0 && ` · ${agents} ${agents === 1 ? 'agent' : 'agents'}`}
-        </span>
-      </header>
-      <div className="zone-rooms">
-        {zone.rooms.map((room) => (
-          <Room key={room.key} room={room} selectedAgentId={selectedAgentId} onAgent={onAgent} onRoom={onRoom} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Room({ room, selectedAgentId, onAgent, onRoom }: {
+/** A project's table plate: its name, then a control for each agent at the table. */
+function Table({ room, plate, highlighted, selectedAgentId, onAgent, onRoom }: {
   room: FloorRoom;
+  plate?: { left: number; top: number };
+  highlighted: boolean;
   selectedAgentId: string | null;
   onAgent: (agent: FloorAgent) => void;
   onRoom: (room: FloorRoom) => void;
@@ -377,18 +333,13 @@ function Room({ room, selectedAgentId, onAgent, onRoom }: {
     waiting ? 'is-waiting' : '',
     warning ? 'is-warning' : '',
     room.idle ? 'is-idle' : '',
+    highlighted ? 'is-highlighted' : '',
   ].filter(Boolean).join(' ');
-
-  const lastActiveText = formatLastActive(room.lastActiveAt);
-  const title = [room.description || room.key, `Last active: ${lastActiveText}`].filter(Boolean).join(' · ');
-  // Each seated agent's name plate hangs over its desk in the scene; the rest queue below it.
-  const plates = seatSlots(room.agents.length).map((slot) => deskSlots()[slot]!.plate);
-  const seat = (agent: FloorAgent, index: number) => (
-    <Seat key={agent.id} agent={agent} plate={plates[index]} selected={agent.id === selectedAgentId} onClick={() => onAgent(agent)} />
-  );
+  const title = [room.description || room.key, `Last active: ${formatLastActive(room.lastActiveAt)}`].join(' · ');
+  const position = plate && ({ '--plate-left': `${plate.left}%`, '--plate-top': `${plate.top}%` } as CSSProperties);
 
   return (
-    <article className={classes} aria-label={`Project ${room.key}`} data-project={room.key}>
+    <article className={classes} aria-label={`Project ${room.key}`} data-project={room.key} style={position || undefined}>
       <header className="room-door">
         <button type="button" className="room-name" onClick={() => onRoom(room)} title={title}>
           {room.key}
@@ -397,39 +348,49 @@ function Room({ room, selectedAgentId, onAgent, onRoom }: {
         {room.codingSession && <span className="room-tag room-tag-session">session</span>}
         {room.idle && <span className="room-tag room-tag-idle">idle</span>}
       </header>
-      <div className="room-stage" style={{ aspectRatio: `${ROOM_VIEW.width} / ${ROOM_VIEW.height}` }}>
-        <StudioScene room={room} />
-        {room.agents.length > 0 ? (
-          <div className="room-desks">
-            {room.agents.slice(0, plates.length).map(seat)}
-            {room.agents.length > plates.length && (
-              <div className="room-queue">{room.agents.slice(plates.length).map((agent, index) => seat(agent, plates.length + index))}</div>
-            )}
-          </div>
-        ) : (
-          <div className="room-vacant" aria-hidden="true">
-            <span className="vacant-desk" />
-          </div>
-        )}
-      </div>
+      {room.agents.length > 0 ? (
+        <div className="room-desks">
+          {room.agents.map((agent, index) => (
+            <Seat
+              key={agent.id}
+              agent={agent}
+              seated={index < MAX_SEATS}
+              selected={agent.id === selectedAgentId}
+              onClick={() => onAgent(agent)}
+            />
+          ))}
+          {room.agents.length > MAX_SEATS && (
+            <button
+              type="button"
+              className="seat-more"
+              aria-label={`${room.agents.length - MAX_SEATS} more ${room.agents.length - MAX_SEATS === 1 ? 'agent' : 'agents'} in ${room.key}`}
+              onClick={() => onRoom(room)}
+            >
+              +{room.agents.length - MAX_SEATS}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="room-vacant" aria-hidden="true">
+          <span className="vacant-desk" />
+        </div>
+      )}
     </article>
   );
 }
 
-function Seat({ agent, plate, selected, onClick }: {
+function Seat({ agent, seated, selected, onClick }: {
   agent: FloorAgent;
-  plate?: { left: number; top: number };
+  seated: boolean;
   selected: boolean;
   onClick: () => void;
 }) {
   const label = STATE_LABELS[agent.state];
   const detail = agent.detail ? `, ${agent.detail}` : '';
-  const position = plate && ({ '--plate-left': `${plate.left}%`, '--plate-top': `${plate.top}%` } as CSSProperties);
   return (
     <button
       type="button"
-      className={`seat seat-${agent.state}${plate ? ' is-seated' : ''}`}
-      style={position || undefined}
+      className={`seat seat-${agent.state}${seated ? ' is-seated' : ''}`}
       data-agent-id={agent.id}
       aria-pressed={selected}
       aria-label={`${agent.tool} in ${agent.project}: ${label}${detail}`}
@@ -437,10 +398,9 @@ function Seat({ agent, plate, selected, onClick }: {
       onClick={onClick}
     >
       {/* Keyed by state: a new pose mounts fresh and plays its entrance. */}
-      <AgentFigure key={agent.state} state={agent.state} tool={agent.tool} size={68} />
+      <AgentFigure key={agent.state} state={agent.state} tool={agent.tool} size={56} />
       <span className="seat-name">{agent.tool}</span>
       <span className="seat-state">{label}</span>
-      {agent.detail && <span className="studio-agent-detail">{agent.detail}</span>}
     </button>
   );
 }

@@ -61,6 +61,45 @@ export function faceZ(z: number, x0: number, x1: number, y0: number, y1: number)
   return points([[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]]);
 }
 
+/** Which way something faces: toward +y (screen lower right) or +x (screen lower left). */
+export type Facing = 'x' | 'y';
+
+/**
+ * Local coordinates for a piece that faces a way: u runs across it, v forward, z up. Facing +x
+ * mirrors facing +y across the floor's diagonal, so every face turned toward the viewer stays
+ * turned toward the viewer.
+ */
+export interface Frame {
+  at(u: number, v: number, z: number): Vec3;
+  box(from: Vec3, to: Vec3): BoxFaces;
+  /** A rectangle on the plane v = `v`, seen from the front. */
+  front(v: number, u0: number, u1: number, z0: number, z1: number): string;
+  /** A rectangle on the plane u = `u`, seen from the side turned toward the viewer. */
+  side(u: number, v0: number, v1: number, z0: number, z1: number): string;
+}
+
+export function localFrame([ox, oy, oz]: Vec3, facing: Facing): Frame {
+  const mirrored = facing === 'x';
+  const at = (u: number, v: number, z: number): Vec3 => (mirrored ? [ox + v, oy + u, oz + z] : [ox + u, oy + v, oz + z]);
+  return {
+    at,
+    box(from, to) {
+      const a = at(...from);
+      const b = at(...to);
+      return boxFaces(
+        [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])],
+        [Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2])],
+      );
+    },
+    front: (v, u0, u1, z0, z1) => (mirrored
+      ? faceX(ox + v, oy + u0, oy + u1, oz + z0, oz + z1)
+      : faceY(oy + v, ox + u0, ox + u1, oz + z0, oz + z1)),
+    side: (u, v0, v1, z0, z1) => (mirrored
+      ? faceY(oy + u, ox + v0, ox + v1, oz + z0, oz + z1)
+      : faceX(ox + u, oy + v0, oy + v1, oz + z0, oz + z1)),
+  };
+}
+
 /** One straight line as an SVG path fragment. */
 export function segment(from: Vec3, to: Vec3): string {
   const [ax, ay] = project(from).map(round);

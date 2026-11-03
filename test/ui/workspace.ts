@@ -323,6 +323,18 @@ export function removeFanoutProject(root: string): void {
   rmSync(join(root, '.local', 'agent', 'approvals', FANOUT_PROJECT), { recursive: true, force: true });
 }
 
+/** Registers projects only the floor sees (no dispatch target answers for them): more tables and levels. */
+export function addFloorProjects(root: string, rows: ReadonlyArray<readonly [key: string, client: string]>): void {
+  appendFileSync(join(root, 'context', 'registry.tsv'), rows.map(([key, client]) => `${key}\t${client}\t-\tprojects/mock/${key}\n`).join(''));
+}
+
+export function removeFloorProjects(root: string, keys: readonly string[]): void {
+  const registry = join(root, 'context', 'registry.tsv');
+  const rows = readFileSync(registry, 'utf-8').split('\n')
+    .filter((line) => !keys.some((key) => line.startsWith(`${key}\t`)));
+  writeFileSync(registry, rows.join('\n'));
+}
+
 export function removeWorkspace(ws: Workspace): void {
   rmSync(ws.root, { recursive: true, force: true });
   rmSync(ws.home, { recursive: true, force: true });
