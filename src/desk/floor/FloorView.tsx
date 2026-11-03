@@ -19,15 +19,21 @@ interface Props {
   selectedAgentId: string | null;
   /** A move to a level, at a page of its tables. */
   onMove: (client: string, page: number) => void;
+  /** The project whose room the desk just came back from; the floor zooms back out of its table. */
+  returnTo: string | null;
   onAgent: (agent: FloorAgent) => void;
   onRoom: (room: FloorRoom) => void;
 }
 
-type Enter = 'up' | 'down' | 'left' | 'right';
+type Enter = 'up' | 'down' | 'left' | 'right' | 'zoom-out';
 
 const QUIET = new Set(['idle', 'offline']);
 /** How long a project found by search or jump stays highlighted. */
 const HIGHLIGHT_MS = 2400;
+/** How long the floor zooms into a table before its room opens. */
+const ZOOM_MS = 300;
+
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 export function zoneLabel(client: string): string {
   return client === UNREGISTERED_ZONE ? 'unregistered' : client;
@@ -61,11 +67,17 @@ function ownedElsewhere(event: KeyboardEvent): boolean {
  * the pages of a level's project tables, active projects first. Each project is a table its
  * agents sit at, posed by their recorded state.
  */
-export function FloorView({ floor, navbarTarget, focusClient, home, pages, selectedAgentId, onMove, onAgent, onRoom }: Props) {
+export function FloorView({ floor, navbarTarget, focusClient, home, pages, selectedAgentId, onMove, onAgent, onRoom, returnTo }: Props) {
   const [studio, setStudio] = useState(true);
   const [search, setSearch] = useState('');
-  const [enter, setEnter] = useState<Enter | null>(null);
-  const [highlight, setHighlight] = useState<string | null>(null);
+  // Back from a room, the floor zooms out of the table it entered, and rings it for a moment.
+  const [arrival] = useState(returnTo);
+  const [enter, setEnter] = useState<Enter | null>(returnTo ? 'zoom-out' : null);
+  const [highlight, setHighlight] = useState<string | null>(returnTo);
+  /** The table under the pointer or the focus, lit on the floor. */
+  const [pointed, setPointed] = useState<string | null>(null);
+  /** A room being entered: the floor zooms into its table first. */
+  const [zoom, setZoom] = useState<FloorRoom | null>(null);
 
   const order = useMemo(() => levelOrder(floor.zones), [floor]);
   const levels = useMemo(() => storeyLevels(order), [order]);
@@ -83,6 +95,10 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
   const pageIndex = Math.min(pages[client ?? ''] ?? 0, levelPagesList.length - 1);
   const page = levelPagesList[pageIndex]!;
   const plan = levelPlan(level);
+  const plateOf = (key: string | null) => {
+    const index = key === null ? -1 : page.rooms.findIndex((room) => room.key === key);
+    return studio && index >= 0 ? plan.tables[index]?.plate : undefined;
+  };
 
   const goLevel = (index: number) => {
     const next = order[index];
@@ -94,6 +110,11 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
     if (client === undefined || index < 0 || index >= levelPagesList.length || index === pageIndex) return;
     setEnter(index < pageIndex ? 'left' : 'right');
     onMove(client, index);
+  };
+  const enterRoom = (room: FloorRoom) => {
+    if (zoom) return;
+    if (!plateOf(room.key) || reducedMotion()) onRoom(room);
+    else setZoom(room);
   };
   const jumpTo = (target: string, key: string) => {
     const rooms = zones.get(target)?.rooms ?? [];
@@ -114,6 +135,12 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  useEffect(() => {
+    if (!zoom) return undefined;
+    const timer = setTimeout(() => onRoom(zoom), ZOOM_MS);
+    return () => clearTimeout(timer);
+  }, [zoom, onRoom]);
 
   useEffect(() => {
     if (!highlight) return undefined;
@@ -141,9 +168,12 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
       highlighted={highlight === room.key}
       selectedAgentId={selectedAgentId}
       onAgent={onAgent}
-      onRoom={onRoom}
+      onRoom={enterRoom}
+      onPoint={setPointed}
     />
   );
+  const zoomPlate = plateOf(zoom?.key ?? (enter === 'zoom-out' ? arrival : null));
+  const lightsOff = !page.active && page.rooms.length > 0;
 
   return (
     <div className={`floor-container${studio ? ' studio-mode' : ''}`}>
@@ -276,16 +306,19 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
             {studio ? (
               <div
                 key={`${client}:${pageIndex}`}
-                className="level-stage"
-                data-enter={enter ?? undefined}
-                style={{ '--level-ratio': `${plan.view.width} / ${plan.view.height}` } as CSSProperties}
+                className={`level-stage${lightsOff ? ' is-lights-off' : ''}`}
+                data-enter={zoom ? 'zoom-in' : enter ?? undefined}
+                style={{
+                  '--level-ratio': `${plan.view.width} / ${plan.view.height}`,
+                  ...(zoomPlate && { '--zoom-x': `${zoomPlate.left}%`, '--zoom-y': `${zoomPlate.top + 5}%` }),
+                } as CSSProperties}
               >
-                <LevelScene plan={plan} rooms={page.rooms} />
+                <LevelScene plan={plan} rooms={page.rooms} focus={pointed ?? highlight} />
                 <div className="level-tables">{page.rooms.map(table)}</div>
                 {page.rooms.length === 0 && <p className="level-empty">No projects on this level.</p>}
               </div>
             ) : (
-              <div key={`${client}:${pageIndex}`} className="level-cards" data-enter={enter ?? undefined}>
+              <div key={`${client}:${pageIndex}`} className={`level-cards${lightsOff ? ' is-lights-off' : ''}`} data-enter={enter ?? undefined}>
                 {page.rooms.map(table)}
               </div>
             )}
@@ -316,6 +349,9 @@ export function FloorView({ floor, navbarTarget, focusClient, home, pages, selec
                 onClick={() => goPage(index)}
               />
             ))}
+          </span>
+          <span className="level-keys" aria-hidden="true">
+            <kbd>&uarr;</kbd><kbd>&darr;</kbd> level <kbd>&larr;</kbd><kbd>&rarr;</kbd> projects
           </span>
         </footer>
       </section>
@@ -359,13 +395,14 @@ function Elevator({ order, current, levels, signals, onLevel }: {
 }
 
 /** A project's table plate: its name, then a control for each agent at the table. */
-function Table({ room, plate, highlighted, selectedAgentId, onAgent, onRoom }: {
+function Table({ room, plate, highlighted, selectedAgentId, onAgent, onRoom, onPoint }: {
   room: FloorRoom;
   plate?: { left: number; top: number };
   highlighted: boolean;
   selectedAgentId: string | null;
   onAgent: (agent: FloorAgent) => void;
   onRoom: (room: FloorRoom) => void;
+  onPoint: (key: string | null) => void;
 }) {
   const busy = room.agents.some((agent) => !QUIET.has(agent.state));
   const waiting = room.agents.some((agent) => agent.state === 'waiting');
@@ -378,14 +415,34 @@ function Table({ room, plate, highlighted, selectedAgentId, onAgent, onRoom }: {
     warning ? 'is-warning' : '',
     room.idle ? 'is-idle' : '',
     highlighted ? 'is-highlighted' : '',
+    // A plate low on the stage opens its card upward, so the card stays on screen.
+    plate && plate.top > 58 ? 'is-low' : '',
   ].filter(Boolean).join(' ');
+  const cardId = `room-card-${room.key}`;
   const title = [room.description || room.key, `Last active: ${formatLastActive(room.lastActiveAt)}`].join(' · ');
   const position = plate && ({ '--plate-left': `${plate.left}%`, '--plate-top': `${plate.top}%` } as CSSProperties);
 
   return (
-    <article className={classes} aria-label={`Project ${room.key}`} data-project={room.key} style={position || undefined}>
+    <article
+      className={classes}
+      aria-label={`Project ${room.key}`}
+      data-project={room.key}
+      style={position || undefined}
+      onPointerEnter={() => onPoint(room.key)}
+      onPointerLeave={() => onPoint(null)}
+      onFocus={() => onPoint(room.key)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onPoint(null);
+      }}
+    >
       <header className="room-door">
-        <button type="button" className="room-name" onClick={() => onRoom(room)} title={title}>
+        <button
+          type="button"
+          className="room-name"
+          onClick={() => onRoom(room)}
+          title={plate ? undefined : title}
+          aria-describedby={plate ? cardId : undefined}
+        >
           {room.key}
         </button>
         {room.group !== '-' && <span className="room-tag">{room.group}</span>}
@@ -419,7 +476,31 @@ function Table({ room, plate, highlighted, selectedAgentId, onAgent, onRoom }: {
           <span className="vacant-desk" />
         </div>
       )}
+      {plate && <RoomCard id={cardId} room={room} />}
     </article>
+  );
+}
+
+/** What a plate tells on hover or focus: the project, when it was last active, and who is at it. */
+function RoomCard({ id, room }: { id: string; room: FloorRoom }) {
+  const needs = room.agents.filter((agent) => agent.state === 'waiting' || agent.state === 'warning').length;
+  const resting = room.agents.filter((agent) => QUIET.has(agent.state)).length;
+  const working = room.agents.length - needs - resting;
+  const crew = [
+    working > 0 ? `${working} working` : '',
+    needs > 0 ? `${needs} ${needs === 1 ? 'needs' : 'need'} you` : '',
+    resting > 0 ? `${resting} resting` : '',
+  ].filter(Boolean).join(', ');
+  return (
+    <div className="room-card" id={id} role="tooltip">
+      {room.description && <p className="room-card-about">{room.description}</p>}
+      <dl>
+        <div><dt>Last active</dt><dd>{formatLastActive(room.lastActiveAt)}</dd></div>
+        <div><dt>Agents</dt><dd>{crew || 'none at the table'}</dd></div>
+        {room.pendingApprovals > 0 && <div><dt>Approvals</dt><dd>{room.pendingApprovals} waiting</dd></div>}
+        {room.codingSession && <div><dt>Session</dt><dd>coding session open</dd></div>}
+      </dl>
+    </div>
   );
 }
 

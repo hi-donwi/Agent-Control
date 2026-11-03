@@ -166,6 +166,40 @@ test('seats up to four agents at their project table, posed by state, and the re
   }
 });
 
+test('a table glows by what it signals, tells more on hover, and the floor zooms into its room and back out', async ({ page, deskUrl }) => {
+  const root = workspaceRoot();
+  reportActivity(root, 'glow-waiting', 'gemini', 'waiting', 'Approve shell command');
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(deskUrl);
+    const room = page.getByRole('article', { name: `Project ${PROJECT}` });
+    await expect(room.locator('.seat').filter({ hasText: /^gemini/ })).toHaveCount(1);
+    // An agent at the table needs you: the floor under it glows orange.
+    await expect(page.locator('.level-scene .vx-glow.is-attention')).toHaveCount(1);
+
+    // Hover tells more - when it was last active, who is at the table - and lights the floor under it.
+    const name = room.getByRole('button', { name: PROJECT, exact: true });
+    await name.hover();
+    const card = page.getByRole('tooltip');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Last active');
+    await expect(card).toContainText(/\d+ needs? you/);
+    await expect(name).toHaveAttribute('aria-describedby', await card.getAttribute('id') ?? '');
+    await expect(page.locator('.level-scene .vx-glow.is-focus')).toHaveCount(1);
+    await expect(page.locator('.level-keys')).toBeVisible();
+
+    // Into the room the floor zooms toward its table; Back zooms out of it and rings the plate.
+    await name.click();
+    await expect(page.locator('.level-stage')).toHaveAttribute('data-enter', 'zoom-in');
+    await expect(page.getByLabel(`Project room ${PROJECT}`)).toBeVisible();
+    await page.goBack();
+    await expect(page.locator('.level-stage')).toHaveAttribute('data-enter', 'zoom-out');
+    await expect(room).toHaveClass(/\bis-highlighted\b/);
+  } finally {
+    rmSync(activityFile(root, 'glow-waiting'), { force: true });
+  }
+});
+
 test('walks the levels with up and down, and the pages of project tables with left and right', async ({ page, deskUrl }) => {
   const root = workspaceRoot();
   const tables = Array.from({ length: 8 }, (_, index) => `floor-table-${index + 1}`);
@@ -223,6 +257,8 @@ test('walks the levels with up and down, and the pages of project tables with le
     }
     expect(seen.sort()).toEqual([PROJECT, ...tables].sort());
     await expect(pager).toContainText('Inactive projects');
+    // A page of inactive projects has its lights off; the first page does not.
+    await expect(page.locator('.level-stage')).toHaveClass(/\bis-lights-off\b/);
     await expect(page.getByRole('button', { name: 'Next projects' })).toBeDisabled();
     await page.keyboard.press('ArrowRight');
     await expect(dots.last()).toHaveAttribute('aria-current', 'page');
@@ -231,6 +267,7 @@ test('walks the levels with up and down, and the pages of project tables with le
     await expect(dots.nth(pages - 2)).toHaveAttribute('aria-current', 'page');
     await dots.first().click();
     await expect(page.getByRole('article', { name: `Project ${PROJECT}` })).toBeVisible();
+    await expect(page.locator('.level-stage')).not.toHaveClass(/\bis-lights-off\b/);
 
     // Search reaches any level and page; arrow keys typed into it stay in the field.
     await page.getByText('Explore map', { exact: true }).click();

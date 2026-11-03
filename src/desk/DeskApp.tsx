@@ -280,6 +280,13 @@ export function DeskApp() {
     : { view: 'floor', level: focusClient, page: focusClient ? levelPages[focusClient] ?? 0 : 0 };
   const hash = routeHash(route);
 
+  // The room the floor was just left for, so the floor comes back out of its table.
+  const [seen, setSeen] = useState<{ hash: string; returnTo: string | null }>({ hash, returnTo: null });
+  if (seen.hash !== hash) {
+    const before = parseRoute(seen.hash);
+    setSeen({ hash, returnTo: route.view === 'floor' && before.view === 'project' ? before.key : null });
+  }
+
   // The address follows the desk: a new view adds a history entry, a move on the floor replaces it.
   useEffect(() => {
     const next = parseRoute(hash);
@@ -474,6 +481,7 @@ export function DeskApp() {
             pages={levelPages}
             selectedAgentId={agent?.id ?? null}
             onMove={moveFloor}
+            returnTo={seen.returnTo}
             onAgent={openAgent}
             onRoom={openRoom}
           />

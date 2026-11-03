@@ -91,7 +91,7 @@ test('shows each project as a room, with the host agent raising its hand', async
 
   const room = page.getByRole('article', { name: `Project ${PROJECT}` });
   await expect(room).toBeVisible();
-  await expect(room.getByText('session')).toBeVisible();
+  await expect(room.getByText('session', { exact: true })).toBeVisible();
   await expect(room.getByRole('button', { name: new RegExp(`^agent-control in ${PROJECT}: needs you, approval: `) })).toBeVisible();
 
   // The only chrome: two icons, and the menu carries the waiting count.

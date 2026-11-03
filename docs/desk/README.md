@@ -37,7 +37,7 @@ loopback server.
 
 | Surface | Opens from | Contents |
 |---|---|---|
-| Floor | Home | A building: one level per client, one table per project, its agents seated at it. Up and down (or the building strip beside the level) change the level; left and right the page of tables, active projects first. The command dock rests as one line under it and opens on focus. |
+| Floor | Home | A building: one level per client, one table per project, its agents seated at it. Up and down (or the building strip beside the level) change the level; left and right the page of tables, active projects first; a page of inactive ones has its lights off. The floor under a table glows teal while its agents work and orange while one needs you; a plate's card tells when it was last active and who is at it. Opening a room zooms into its table, and coming back zooms out of it. The command dock rests as one line under it and opens on focus. |
 | Project room | A room's name on the floor | One project: stage and focus, the mission board, crew, blockers, memory, and context (see Project room). Escape or the breadcrumb goes back to the floor. |
 | Menu drawer | Menu icon | Missions: Inbox, Today, Missions board, Backlog, Timeline, Clients. Workspace: Floor, Projects, Agents, Approvals. Project: Context, Memory, Runs, Tasks, Notes. System: Settings. |
 | Today | Menu > Missions > Today | Every client's day in one view (see Missions). Escape or the breadcrumb goes back to the floor. |
