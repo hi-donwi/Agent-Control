@@ -10,9 +10,15 @@ import { BackIcon, CloseIcon, DownIcon, ForwardIcon, SearchIcon, UpIcon } from '
 interface Props {
   floor: Floor;
   navbarTarget: HTMLElement | null;
+  /** The level in view, or null for the home level. */
   focusClient: string | null;
+  /** The level the floor opens on when none is in view. */
+  home: string | null;
+  /** The page of tables each level shows, by client. */
+  pages: Readonly<Record<string, number>>;
   selectedAgentId: string | null;
-  onFocusClient: (client: string | null) => void;
+  /** A move to a level, at a page of its tables. */
+  onMove: (client: string, page: number) => void;
   onAgent: (agent: FloorAgent) => void;
   onRoom: (room: FloorRoom) => void;
 }
@@ -55,14 +61,11 @@ function ownedElsewhere(event: KeyboardEvent): boolean {
  * the pages of a level's project tables, active projects first. Each project is a table its
  * agents sit at, posed by their recorded state.
  */
-export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, onFocusClient, onAgent, onRoom }: Props) {
+export function FloorView({ floor, navbarTarget, focusClient, home, pages, selectedAgentId, onMove, onAgent, onRoom }: Props) {
   const [studio, setStudio] = useState(true);
   const [search, setSearch] = useState('');
-  const [pages, setPages] = useState<Record<string, number>>({});
   const [enter, setEnter] = useState<Enter | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
-  // The busiest client when the desk opened; the floor stays there until you move.
-  const [home] = useState(() => floor.zones[0]?.client ?? null);
 
   const order = useMemo(() => levelOrder(floor.zones), [floor]);
   const levels = useMemo(() => storeyLevels(order), [order]);
@@ -86,18 +89,17 @@ export function FloorView({ floor, navbarTarget, focusClient, selectedAgentId, o
     const next = order[index];
     if (next === undefined || index === levelIndex) return;
     setEnter(index < levelIndex ? 'up' : 'down');
-    onFocusClient(next);
+    onMove(next, pages[next] ?? 0);
   };
   const goPage = (index: number) => {
     if (client === undefined || index < 0 || index >= levelPagesList.length || index === pageIndex) return;
     setEnter(index < pageIndex ? 'left' : 'right');
-    setPages((current) => ({ ...current, [client]: index }));
+    onMove(client, index);
   };
   const jumpTo = (target: string, key: string) => {
     const rooms = zones.get(target)?.rooms ?? [];
     setEnter(null);
-    setPages((current) => ({ ...current, [target]: pageOf(rooms, key, TABLES_PER_PAGE) }));
-    onFocusClient(target);
+    onMove(target, pageOf(rooms, key, TABLES_PER_PAGE));
     setHighlight(key);
   };
 

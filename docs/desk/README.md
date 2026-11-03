@@ -47,6 +47,22 @@ loopback server.
 | Assistant drawer | Assistant icon | Chat at workspace scope (local endpoints only, ADR-0021). |
 | Agent drawer | An avatar | The agent card (state, detail, approvals), the coding session (start, stop, its changes, hand back), and a chat bound to its project. |
 
+### Addresses and sign-in
+
+The hash carries where the desk is, so reload, Back, and Forward land in the same place:
+`#/level/<client>[/<page>]` for a level of the floor (no hash is the home level),
+`#/project/<key>` for a room, `#/today`, `#/missions`, `#/backlog`, `#/timeline`,
+`#/clients` for the project management views, and `#/client/<name>` for a dossier. Walking
+the floor's levels and pages replaces the current entry; opening any other view adds one.
+The hash, not the query, because the room's visual context writes its selection into the
+query and keeps only the hash.
+
+The token comes from the server's injected script, else the `?token=` of the link the host
+printed, else the tab's own copy. Once the server accepts it, the tab keeps it in
+`sessionStorage` (not `localStorage`: a dev origin is shared with other local apps) and
+drops it from the address. A refused token is forgotten, and the floor says to open the
+printed link again.
+
 ## Project room
 
 A project's own page, opened from its name on the floor. It reads one endpoint,
