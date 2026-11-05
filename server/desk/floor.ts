@@ -62,8 +62,7 @@ export interface PendingSummary {
 
 export interface FloorInput {
   registry: RegistryRow[];
-  /** Agents outside this host, already merged from clocks and activity records. */
-  external: FloorAgent[];
+  /** Sessions created by this host; no externally observed CLI/editor sessions. */
   host: HostActivity[];
   approvals: Record<string, PendingSummary>;
   codingSessions: ReadonlySet<string>;
@@ -99,10 +98,6 @@ export function buildFloor(input: FloorInput, now: Date): Floor {
 
   for (const row of input.registry) {
     Object.assign(room(row.key, row.client), { group: row.group, description: row.description });
-  }
-
-  for (const agent of input.external) {
-    room(agent.project).agents.push({ ...agent });
   }
 
   const hostAgents = new Map<string, FloorAgent>();

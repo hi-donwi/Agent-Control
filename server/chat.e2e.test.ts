@@ -2,7 +2,8 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
+import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +21,7 @@ const SERVER_ENTRY = fileURLToPath(new URL('./index.ts', import.meta.url));
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const probe = createServer();
+    const probe = createNetServer();
     probe.on('error', reject);
     probe.listen(0, '127.0.0.1', () => {
       const address = probe.address();
@@ -43,6 +44,19 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   let child: ChildProcess;
   let origin: string;
   let token: string;
+  let brainServer: HttpServer;
+  let brainPort: number;
+  let brainCalls = 0;
+  let brainAuthorization = '';
+  let brainChatCalls = 0;
+  const brainChatBodies: Array<Record<string, unknown>> = [];
+  // Model `hang` streams one chunk and then holds the request open until the caller closes it.
+  let hangClosed!: () => void;
+  const brainHangClosed = new Promise<void>((resolve) => { hangClosed = resolve; });
+  // Model `silent` accepts the request and never sends a chunk.
+  let silentClosed!: () => void;
+  const brainSilentClosed = new Promise<void>((resolve) => { silentClosed = resolve; });
+  let serverLog = '';
 
   const post = (body: unknown) =>
     fetch(`${origin}/api/agent/chat`, {
@@ -54,17 +68,89 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   before(async () => {
     root = mkdtempSync(join(tmpdir(), 'ac-e2e-'));
     home = mkdtempSync(join(tmpdir(), 'ac-home-'));
+    brainServer = createHttpServer((request, response) => {
+      if (request.method === 'POST' && request.url === '/v1/chat/completions') {
+        void (async () => {
+          const requestChunks: Buffer[] = [];
+          for await (const chunk of request) requestChunks.push(Buffer.from(chunk));
+          const requestBody = JSON.parse(Buffer.concat(requestChunks).toString('utf8')) as Record<string, unknown>;
+          if (requestBody.model === 'hang') {
+            response.on('close', () => hangClosed());
+            response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+            response.write('data: {"id":"chatcmpl-hang","object":"chat.completion.chunk","created":1,"model":"hang","choices":[{"index":0,"delta":{"role":"assistant","content":"partial answer"},"finish_reason":null}]}\n\n');
+            return;
+          }
+          if (requestBody.model === 'silent') {
+            response.on('close', () => silentClosed());
+            response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+            response.flushHeaders();
+            return;
+          }
+          if (requestBody.model === 'refuse') {
+            // What an upstream refusal can carry: an account name, a key fragment, an internal address.
+            response.writeHead(401, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify({ error: { message: 'account acct-brain-9 rejected key sk-upstream-secret at 10.1.2.3', type: 'auth' } }));
+            return;
+          }
+          brainChatCalls += 1;
+          brainChatBodies.push(requestBody);
+          brainAuthorization = request.headers.authorization ?? '';
+          response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          const chunks = brainChatCalls === 1
+            ? [
+              'data: {"id":"chatcmpl-mock","object":"chat.completion.chunk","created":1,"model":"chat","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-list-projects","type":"function","function":{"name":"list_projects","arguments":"{}"}}]},"finish_reason":null}]}',
+              '',
+              'data: {"id":"chatcmpl-mock","object":"chat.completion.chunk","created":1,"model":"chat","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+            ]
+            : [
+              'data: {"id":"chatcmpl-mock","object":"chat.completion.chunk","created":1,"model":"chat","choices":[{"index":0,"delta":{"role":"assistant","content":"brain-backed reply after host tool"},"finish_reason":null}]}',
+              '',
+              'data: {"id":"chatcmpl-mock","object":"chat.completion.chunk","created":1,"model":"chat","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+            ];
+          response.end([...chunks, '', 'data: [DONE]', '', ''].join('\n'));
+        })().catch(() => response.writeHead(500).end());
+        return;
+      }
+      if (request.method !== 'GET' || request.url !== '/v1/models') {
+        response.writeHead(404).end();
+        return;
+      }
+      brainCalls += 1;
+      brainAuthorization = request.headers.authorization ?? '';
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ data: [{ id: 'chat' }, { id: 'anthropic/claude-sonnet' }] }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      brainServer.once('error', reject);
+      brainServer.listen(0, '127.0.0.1', () => {
+        const address = brainServer.address() as AddressInfo;
+        brainPort = address.port;
+        resolve();
+      });
+    });
     mkdirSync(join(root, '.agents', 'standards'), { recursive: true });
     mkdirSync(join(root, '.agents', 'bin'), { recursive: true });
-    mkdirSync(join(root, '.local', 'agent'), { recursive: true });
+    mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
     mkdirSync(join(root, 'context'), { recursive: true });
     mkdirSync(join(root, 'projects', 'mock', 'mockproj'), { recursive: true });
+    mkdirSync(join(home, '.brain'), { recursive: true });
+    writeFileSync(join(home, '.brain', 'serve.token'), 'gateway-token\n', { mode: 0o600 });
     writeFileSync(join(root, 'AGENTS.md'), '# mock workspace\n');
     writeFileSync(join(root, 'context', 'registry.tsv'), 'key\tclient\tgroup\tfolder\nmockproj\tframework\t-\tprojects/mock/mockproj\n');
     writeFileSync(join(root, '.local', 'agent', 'endpoints.json'), JSON.stringify({
       endpoints: {
         mock: { protocol: 'mock', models: ['echo'] },
         remote: { protocol: 'openai-chat', baseUrl: 'https://example.invalid/v1', models: ['x'] },
+        brain: {
+          protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${brainPort}/v1`,
+          apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: ['fallback-model'],
+        },
+        // The same gateway with a short model-silence limit, so a timeout test runs in under a second.
+        'brain-slow': {
+          protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${brainPort}/v1`,
+          apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: [],
+          timeouts: { firstChunkMs: 300, chunkMs: 300 },
+        },
       },
     }));
     // The bridge shells out to `<root>/.agents/bin/ws`; stub the CLI boundary so the
@@ -79,7 +165,8 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
       env: { ...process.env, HOME: home, WS_WORKSPACE_ROOT: root, HOST: '127.0.0.1', PORT: String(port) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    child.stderr?.on('data', () => { /* server logs are not the point of the test */ });
+    // Kept so a test can prove what the server never logs (prompts, upstream error bodies).
+    child.stderr?.on('data', (chunk: Buffer) => { serverLog += chunk.toString('utf8'); });
 
     token = await new Promise<string>((resolve, reject) => {
       let buffer = '';
@@ -96,6 +183,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
 
   after(() => {
     child?.kill('SIGKILL');
+    brainServer?.close();
     rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   });
@@ -113,6 +201,10 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'mock', model: 'echo', project: 'mockproj' });
     assert.equal(response.status, 200);
     assert.equal(answerText(await protocolLines(response)), 'mock(echo): hello');
+    const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: unknown[] }> }> };
+    const room = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj');
+    assert.deepEqual(room?.agents, []);
   });
 
   it('keeps a conversation\'s turns, readable as the scope\'s latest, and refuses it for another project', async () => {
@@ -135,4 +227,142 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(response.status, 403);
     assert.match((await response.json() as { error: string }).error, /remote/);
   });
+
+  it('discovers Brain models only for a registered project whose policy allows the gateway', async () => {
+    const getProviders = (query = '') => fetch(`${origin}/api/agent/providers${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const unscoped = await getProviders();
+    assert.equal(unscoped.status, 200);
+    assert.equal(brainCalls, 0);
+
+    const denied = await getProviders('?project=mockproj');
+    assert.equal(denied.status, 200);
+    assert.equal(brainCalls, 0);
+
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
+    }));
+    const allowed = await getProviders('?project=mockproj');
+    assert.equal(allowed.status, 200);
+    const body = await allowed.json() as { providers: Array<{ id: string; models: string[] }> };
+    const brain = body.providers.find((provider) => provider.id === 'brain');
+    assert.deepEqual(brain?.models, ['fallback-model', 'chat', 'anthropic/claude-sonnet']);
+    assert.equal(brainCalls, 1);
+    assert.equal(brainAuthorization, 'Bearer gateway-token');
+    assert.doesNotMatch(JSON.stringify(body), /gateway-token/);
+
+    const unknown = await getProviders('?project=not-registered');
+    assert.equal(unknown.status, 400);
+    assert.equal(brainCalls, 1);
+  });
+
+  it('streams inference through Brain while keeping workspace tools on the Agent-Control host', async () => {
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
+    }));
+    const response = await post({
+      messages: [{ role: 'user', content: 'hello' }], provider: 'brain', model: 'chat', project: 'mockproj',
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(answerText(await protocolLines(response)), 'brain-backed reply after host tool');
+    assert.equal(brainChatCalls, 2);
+    assert.equal(brainAuthorization, 'Bearer gateway-token');
+    assert.equal(brainChatBodies[0].model, 'chat');
+    assert.ok(Array.isArray(brainChatBodies[0].tools) && brainChatBodies[0].tools.length > 0);
+    const followUpMessages = brainChatBodies[1].messages as Array<{ role: string }>;
+    assert.ok(followUpMessages.some((message) => message.role === 'tool'));
+    const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: Array<{ tool: string }> }> }> };
+    const room = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj');
+    assert.deepEqual(room?.agents.map((agent) => agent.tool), ['agent-control']);
+  });
+
+  it('cancels the Brain request when the browser stops the turn, and keeps the partial answer', async () => {
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
+    }));
+    const conversation = '55555555-5555-4555-8555-555555555555';
+    const browser = new AbortController();
+    const response = await fetch(`${origin}/api/agent/chat`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'stop me' }], provider: 'brain', model: 'hang', project: 'mockproj', conversation }),
+      signal: browser.signal,
+    });
+    assert.equal(response.status, 200);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('0:"partial answer"')) {
+      const { value, done } = await reader.read();
+      assert.equal(done, false, `stream ended before the partial answer: ${seen}`);
+      seen += decoder.decode(value);
+    }
+
+    browser.abort();
+    const timedOut = Symbol('timeout');
+    const closed = await Promise.race([brainHangClosed, delay(5_000).then(() => timedOut)]);
+    assert.notEqual(closed, timedOut, 'the Brain request stayed open after the browser stopped the turn');
+
+    const settled = await eventually(async () => {
+      const latest = await fetch(`${origin}/api/agent/conversations/latest?scope=mockproj`, { headers: { Authorization: `Bearer ${token}` } });
+      const history = await latest.json() as { id: string; messages: Array<{ role: string; content: string }> };
+      const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+      const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: Array<{ state: string; detail: string }> }> }> };
+      const agent = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj')?.agents[0];
+      const done = history.id === conversation && history.messages.at(-1)?.role === 'assistant' && agent?.state === 'idle';
+      return done ? { history, agent } : undefined;
+    });
+    assert.deepEqual(settled.history.messages.map((m) => [m.role, m.content]), [['user', 'stop me'], ['assistant', 'partial answer']]);
+    assert.equal(settled.agent?.detail, 'turn stopped');
+  });
+
+  it('shows a refused Brain call as a sanitized error, and logs neither the upstream body nor the prompt', async () => {
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
+    }));
+    const response = await post({ messages: [{ role: 'user', content: 'PROMPT-MARKER-71' }], provider: 'brain', model: 'refuse', project: 'mockproj' });
+    assert.equal(response.status, 200);
+    const lines = await protocolLines(response);
+    const errors = lines.filter((l) => l.startsWith('e:')).map((l) => JSON.parse(l.slice(2)) as string);
+    assert.deepEqual(errors, ['The model endpoint refused the credentials (HTTP 401). Check the endpoint\'s credential.']);
+    assert.doesNotMatch(lines.join('\n'), /acct-brain-9|sk-upstream-secret|10\.1\.2\.3|127\.0\.0\.1/);
+
+    await eventually(async () => (/Inference error: unauthorized/.test(serverLog) ? true : undefined));
+    assert.match(serverLog, /Inference error: unauthorized \(HTTP 401, AI_APICallError\)/);
+    assert.doesNotMatch(serverLog, /PROMPT-MARKER-71|acct-brain-9|sk-upstream-secret|gateway-token/);
+  });
+
+  it('ends a turn whose model stays silent with a timeout error, and closes the Brain request', async () => {
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+      schema_version: 1, default: 'read', llm: { endpoints: ['brain', 'brain-slow'] },
+    }));
+    const response = await post({ messages: [{ role: 'user', content: 'anyone there?' }], provider: 'brain-slow', model: 'silent', project: 'mockproj' });
+    assert.equal(response.status, 200);
+    const lines = await protocolLines(response);
+    assert.deepEqual(lines.filter((l) => l.startsWith('e:')).map((l) => JSON.parse(l.slice(2)) as string), ['The model request timed out.']);
+    assert.ok(!lines.some((l) => l.startsWith('d:')), lines.join('\n'));
+
+    const timedOut = Symbol('timeout');
+    const closed = await Promise.race([brainSilentClosed, delay(5_000).then(() => timedOut)]);
+    assert.notEqual(closed, timedOut, 'the Brain request stayed open after the timeout');
+    await eventually(async () => (/Inference error: timeout/.test(serverLog) ? true : undefined));
+    assert.doesNotMatch(serverLog, /anyone there\?/);
+  });
 });
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Polls `check` until it returns a value; the server finishes a stopped turn asynchronously. */
+async function eventually<T>(check: () => Promise<T | undefined>, timeoutMs = 5_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await check();
+    if (value !== undefined) return value;
+    if (Date.now() > deadline) throw new Error('condition not met in time');
+    await delay(50);
+  }
+}

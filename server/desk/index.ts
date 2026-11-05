@@ -3,12 +3,9 @@ import { join } from 'node:path';
 import { listPending } from '../approvals.js';
 import { readCodingSession } from '../coding-sessions.js';
 import type { ActivityRegistry } from './activity.js';
-import { readActivityRecords } from './activity-files.js';
-import { externalAgents } from './agents.js';
-import { readOpenClocks } from './clocks.js';
 import { buildFloor, type Floor, type PendingSummary } from './floor.js';
 import { readRegistry } from './registry.js';
-import { KEY_RE, contextDir, inside, maxAgentSessionHours } from './workspace-files.js';
+import { KEY_RE, contextDir, inside } from './workspace-files.js';
 
 export { ActivityRegistry } from './activity.js';
 export { COLLECTIONS, PROJECT_COLLECTIONS, isCollection, queryRows, readCollection } from './collections.js';
@@ -84,27 +81,15 @@ function approvalSummaries(root: string): Record<string, PendingSummary> {
 /** The floor as the workspace and this host know it right now. Read-only. */
 export function deskFloor(root: string, activity: ActivityRegistry, now = new Date()): Floor {
   const registry = readRegistry(root);
-  const maxHours = maxAgentSessionHours(root);
-  const external = externalAgents({
-    clocks: readOpenClocks(root),
-    records: readActivityRecords(root),
-    nowMs: now.getTime(),
-    maxHours,
-  });
   const codingSessions = new Set(registry.map((row) => row.key).filter((key) => readCodingSession(root, key) !== null));
   const lastActive: Record<string, string | null> = {};
   for (const row of registry) {
     lastActive[row.key] = readProjectLastActive(root, row.key);
-  }
-  for (const agent of external) {
-    if (!(agent.project in lastActive)) {
-      lastActive[agent.project] = readProjectLastActive(root, agent.project);
-    }
   }
   for (const act of activity.list()) {
     if (!(act.project in lastActive)) {
       lastActive[act.project] = readProjectLastActive(root, act.project);
     }
   }
-  return buildFloor({ registry, external, host: activity.list(), approvals: approvalSummaries(root), codingSessions, lastActive }, now);
+  return buildFloor({ registry, host: activity.list(), approvals: approvalSummaries(root), codingSessions, lastActive }, now);
 }

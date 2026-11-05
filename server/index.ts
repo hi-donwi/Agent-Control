@@ -11,7 +11,7 @@ import { createOpenAIAdapter } from './providers/openai.js';
 import { createAnthropicAdapter } from './providers/anthropic.js';
 import { createGeminiAdapter } from './providers/gemini.js';
 import type { ProviderAdapter } from './providers/types.js';
-import { loadEndpoints, localityOf, type Endpoint } from './endpoints.js';
+import { chatTimeouts, loadEndpoints, localityOf, resolveCredential, type Endpoint } from './endpoints.js';
 import { decide, listPending } from './approvals.js';
 import { listCodingSessions, readCodingSession, startCodingSession, stopCodingSession } from './coding-sessions.js';
 import { realHandBackDeps, realSessionRunner } from './ws-runner.js';
@@ -21,8 +21,10 @@ import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
 import { gitDiff } from './tools/worktree-files.js';
 import { parseProjectList } from './projects.js';
-import { loadLlmAllowlist } from './egress.js';
+import { egressDecision, loadLlmAllowlist } from './egress.js';
+import { discoverBrainModels } from './brain-models.js';
 import { toLineStream, type StreamFinish } from './stream-protocol.js';
+import { inferenceErrorLogLine } from './inference-errors.js';
 import { recordUsage } from './usage.js';
 import {
   generateToken,
@@ -159,15 +161,39 @@ const RATE_LIMIT = Math.max(1, parseInt(process.env.AC_RATE_LIMIT_PER_MINUTE ?? 
 app.use('/api/agent/*', rateLimit(RATE_LIMIT, 60_000));
 
 // ── API: Providers & models ────────────────────────────────────────────
-app.get(`${AGENT_API}/providers`, (c) => {
+app.get(`${AGENT_API}/providers`, async (c) => {
+  const project = c.req.query('project');
+  let allowlist: string[] | null = null;
+  if (project) {
+    const registered = parseProjectList(await bridge.listProjects().catch(() => '')).some((row) => row.key === project);
+    if (!registered) return c.json({ error: `Unknown project "${project}".` }, 400);
+    try {
+      allowlist = loadLlmAllowlist(WORKSPACE_ROOT, project);
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : 'Invalid project policy.' }, 400);
+    }
+  }
+
   const endpointIds = new Set(endpoints.map((e) => e.name));
   const available = availableProviders(config).filter((key) => !endpointIds.has(key));
   const providers = [
-    ...endpoints.map((e) => ({
-      id: e.name,
-      name: `${e.name} (${e.protocol}, ${e.locality})`,
-      models: e.models,
-      locality: e.locality,
+    ...await Promise.all(endpoints.map(async (e) => {
+      let models = e.models;
+      if (e.purpose === 'agent-brain' && project && egressDecision(e, project, allowlist).allowed) {
+        try {
+          const credential = resolveCredential(e.credential);
+          const discovered = await discoverBrainModels(e, credential);
+          models = [...new Set([...models, ...discovered])];
+        } catch (error) {
+          console.error(`Model discovery failed for ${e.name}: ${error instanceof Error ? error.message : 'request failed'}`);
+        }
+      }
+      return {
+        id: e.name,
+        name: `${e.name} (${e.protocol}, ${e.locality})`,
+        models,
+        locality: e.locality,
+      };
     })),
     ...available.map((key) => {
       const adapter = adapters.get(key);
@@ -301,6 +327,18 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         }),
       }),
       stopWhen: stepCountIs(5),
+      // The browser stopping the turn (Stop, closed tab) cancels the upstream request too,
+      // so Agent Brain or the provider stops generating and billing for it.
+      abortSignal: c.req.raw.signal,
+      // A model that says nothing for this long ends the turn (server/endpoints.ts). The
+      // SDK reports it as an abort, which toLineStream tells from the browser's Stop.
+      timeout: chatTimeouts(endpoints.find((endpoint) => endpoint.name === (body.provider ?? config.defaultProvider))),
+      // The default handler prints the whole error object: the request body (the prompt)
+      // and the upstream response body with it. Log the sanitized code only.
+      onError: ({ error }) => console.error(inferenceErrorLogLine(error)),
+      onAbort: ({ reason }) => {
+        if (!c.req.raw.signal.aborted) console.error(inferenceErrorLogLine(reason));
+      },
     });
 
     // Our own line protocol (server/stream-protocol.ts): the UI does not depend on the
@@ -322,7 +360,8 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         console.error('Usage record not written:', err instanceof Error ? err.message : String(err));
       }
     };
-    const tapped = scope ? activity.tap(scope.project, result.fullStream) : result.fullStream;
+    const brainBacked = endpoints.some((endpoint) => endpoint.name === (body.provider ?? config.defaultProvider) && endpoint.purpose === 'agent-brain');
+    const tapped = scope && brainBacked ? activity.tap(scope.project, result.fullStream) : result.fullStream;
     const parts = conversation
       ? captureAssistant(tapped, (message) => {
         try {
@@ -332,7 +371,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         }
       })
       : tapped;
-    return new Response(toLineStream(parts, usage), {
+    return new Response(toLineStream(parts, usage, { clientSignal: c.req.raw.signal }), {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',

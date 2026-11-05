@@ -98,6 +98,21 @@ tighten - a remote URL declared `local` is refused. List real model ids from
            "models": ["antigravity/claude-sonnet-4-6", "antigravity/gemini-3-flash", "codex/gpt-5.5"] }
 ```
 
+**A silent model ends the turn.** A chat turn gives up when a model call sends nothing for
+180 s before its first output (queueing and prompt processing included) or for 120 s between
+outputs; the browser then shows "The model request timed out." and the upstream request is
+closed. Pressing Stop closes it as well. A slow endpoint, such as a CPU-only model VM, can
+wait longer:
+
+```json
+"vm": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52141/v1",
+        "timeouts": { "firstChunkMs": 600000, "chunkMs": 300000 }, "models": ["<model>"] }
+```
+
+Model errors reach the browser and the server log as a fixed message with the HTTP status
+only (for example "The model endpoint is rate limited (HTTP 429)"); the upstream body, URL,
+and the prompt are never shown or logged.
+
 **Egress per project (Agent-Workspace ADR-0021).** Locality is derived from the URL:
 loopback is `local`, everything else `remote`. A local endpoint is always allowed. A
 remote endpoint is called only for a chat that names a `project` whose operator policy
