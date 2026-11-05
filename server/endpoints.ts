@@ -9,8 +9,12 @@ import { isAbsolute, join } from 'node:path';
  * A vendor, router, or local server that speaks one of these protocols is added in
  * `<workspace>/.local/agent/endpoints.json` - configuration, not code:
  *
- *   { "endpoints": { "xai": { "protocol": "openai-chat", "baseUrl": "https://api.x.ai/v1",
- *                             "apiKey": "env:XAI_API_KEY", "models": ["..."] } } }
+ *   { "endpoints": { "brain": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52140/v1",
+ *                               "apiKey": "file:~/.brain/serve.token", "locality": "remote",
+ *                               "purpose": "agent-brain" } } }
+ *
+ * Optional `"timeouts": { "firstChunkMs": 600000, "chunkMs": 300000 }` lets a slow endpoint
+ * wait longer than DEFAULT_CHAT_TIMEOUTS before a silent model ends the turn.
  *
  * `apiKey` is a reference (`env:NAME`, `keychain:NAME`, or `file:PATH` for a token file
  * readable only by its owner, such as Agent-Brain's `~/.lokal/serve.token`), never the
@@ -32,6 +36,48 @@ export interface Endpoint {
   credential?: string;
   locality: Locality;
   models: string[];
+  /** Identifies the routed inference gateway; its provider accounts remain behind Brain. */
+  purpose?: 'agent-brain';
+  /** Overrides of DEFAULT_CHAT_TIMEOUTS, for a slow endpoint such as a CPU-only model VM. */
+  timeouts?: ChatTimeouts;
+}
+
+/**
+ * How long a chat turn waits for the model to say something before it gives up:
+ * `firstChunkMs` from each model call to its first output (queueing and prompt processing
+ * included), `chunkMs` between outputs after that. The AI SDK's chunk timer keeps running
+ * while host tools execute, so `chunkMs` must stay above the longest chat tool (60 s). There
+ * is no total limit: the tool loop is bounded by its step count, and a model that keeps
+ * producing output is not stuck.
+ */
+export interface ChatTimeouts {
+  firstChunkMs?: number;
+  chunkMs?: number;
+}
+
+export const DEFAULT_CHAT_TIMEOUTS = { firstChunkMs: 180_000, chunkMs: 120_000 } as const;
+const MAX_TIMEOUT_MS = 60 * 60 * 1000;
+
+/** The timeouts a chat turn on `endpoint` uses; legacy providers have no endpoint. */
+export function chatTimeouts(endpoint: Endpoint | undefined): Required<ChatTimeouts> {
+  return {
+    firstChunkMs: endpoint?.timeouts?.firstChunkMs ?? DEFAULT_CHAT_TIMEOUTS.firstChunkMs,
+    chunkMs: endpoint?.timeouts?.chunkMs ?? DEFAULT_CHAT_TIMEOUTS.chunkMs,
+  };
+}
+
+function parseTimeouts(name: string, raw: unknown): ChatTimeouts | undefined {
+  if (raw === undefined) return undefined;
+  const invalid = () => new EndpointConfigError(
+    `endpoint '${name}': timeouts takes firstChunkMs and chunkMs, whole milliseconds from 1 to ${MAX_TIMEOUT_MS}`);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+  const timeouts: ChatTimeouts = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key !== 'firstChunkMs' && key !== 'chunkMs') throw invalid();
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > MAX_TIMEOUT_MS) throw invalid();
+    timeouts[key] = value;
+  }
+  return timeouts;
 }
 
 const PROTOCOLS: readonly Protocol[] = ['openai-chat', 'openai-responses', 'anthropic-messages', 'mock'];
@@ -76,8 +122,9 @@ export function parseEndpoints(raw: unknown): Endpoint[] {
         `endpoint '${name}': apiKey must be a reference (env:NAME, keychain:NAME, or file:/absolute/path), never a literal key`);
     }
     const models = Array.isArray(value.models) ? value.models.filter((m): m is string => typeof m === 'string') : [];
+    const timeouts = parseTimeouts(name, value.timeouts);
     if (protocol === 'mock') {
-      return { name, protocol, locality: 'local', models };
+      return { name, protocol, locality: 'local', models, ...(timeouts ? { timeouts } : {}) };
     }
     const baseUrl = value.baseUrl;
     if (typeof baseUrl !== 'string' || !/^https?:\/\//.test(baseUrl)) {
@@ -89,7 +136,15 @@ export function parseEndpoints(raw: unknown): Endpoint[] {
       throw new EndpointConfigError(`endpoint '${name}': locality can only be declared "remote"; a remote URL is never local`);
     }
     const locality: Locality = declared === 'remote' ? 'remote' : derived;
-    return { name, protocol, baseUrl, credential: apiKey as string | undefined, locality, models };
+    const purpose = value.purpose;
+    if (purpose !== undefined && (purpose !== 'agent-brain' || protocol !== 'openai-chat' || locality !== 'remote')) {
+      throw new EndpointConfigError(`endpoint '${name}': purpose "agent-brain" requires a remote openai-chat endpoint`);
+    }
+    return {
+      name, protocol, baseUrl, credential: apiKey as string | undefined, locality, models,
+      ...(purpose ? { purpose } : {}),
+      ...(timeouts ? { timeouts } : {}),
+    };
   });
 }
 

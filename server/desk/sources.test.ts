@@ -129,22 +129,22 @@ describe('deskFloor and readCollection on a disposable workspace', () => {
     assert.equal(readOpenClocks(root).length, 1);
   });
 
-  it('takes an outside agent\'s pose from its activity record', () => {
+  it('does not expose an outside agent\'s activity record on the floor', () => {
     const dir = join(root, '.local', 'agent', 'activity');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 's1.json'), JSON.stringify({
       version: 1, session: 's1', project: 'alpha', tool: 'codex', state: 'running', detail: 'Bash', at: '2026-10-16T09:59:30Z',
     }));
     const floor = deskFloor(root, new ActivityRegistry(), new Date('2026-10-16T10:00:00Z'));
-    assert.deepEqual(floor.zones[0].rooms[0].agents.map((a) => [a.tool, a.state, a.detail]), [['codex', 'running', 'Bash']]);
+    assert.deepEqual(floor.zones[0].rooms[0].agents, []);
   });
 
-  it('builds the floor from the registry, the clocks, and the host', () => {
+  it('builds the floor from Agent-Control host sessions, not external agent clocks', () => {
     const activity = new ActivityRegistry();
     activity.set('alpha', 'reading', 'read_file');
     const floor = deskFloor(root, activity, new Date('2026-10-16T10:00:00Z'));
     const agents = floor.zones[0].rooms[0].agents;
-    assert.deepEqual(agents.map((a) => [a.tool, a.state]), [['codex', 'working'], ['agent-control', 'reading']]);
+    assert.deepEqual(agents.map((a) => [a.tool, a.state]), [['agent-control', 'reading']]);
   });
 
   it('answers the project collections, and only open runs give tasks', () => {
@@ -158,7 +158,7 @@ describe('deskFloor and readCollection on a disposable workspace', () => {
     const stat = statSync(plan, { bigint: true });
     assert.deepEqual([read('tasks')[0].runId, read('tasks')[0].revision],
       ['2026-10-16-090000-dev-x-add-export', `mtime:${stat.mtimeNs}:size:${stat.size}`]);
-    assert.deepEqual(readCollection(root, 'projects', undefined, floor).map((r) => [r.key, r.agents]), [['alpha', 1]]);
+    assert.deepEqual(readCollection(root, 'projects', undefined, floor).map((r) => [r.key, r.agents]), [['alpha', 0]]);
   });
 
   it('refuses a project collection without a project, and a bad key', () => {

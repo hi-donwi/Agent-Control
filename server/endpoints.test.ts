@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadEndpoints, localityOf, parseEndpoints, resolveCredential } from './endpoints.js';
+import { DEFAULT_CHAT_TIMEOUTS, chatTimeouts, loadEndpoints, localityOf, parseEndpoints, resolveCredential } from './endpoints.js';
 
 describe('parseEndpoints', () => {
   it('reads one endpoint per protocol, models included', () => {
@@ -12,6 +12,7 @@ describe('parseEndpoints', () => {
         anthropic: { protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com/v1', apiKey: 'env:ANTHROPIC_API_KEY', models: ['m1'] },
         xai: { protocol: 'openai-chat', baseUrl: 'https://api.x.ai/v1', apiKey: 'keychain:xai' },
         openai: { protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1', apiKey: 'env:OPENAI_API_KEY' },
+        brain: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain' },
         mock: { protocol: 'mock', models: ['echo'] },
       },
     });
@@ -19,10 +20,12 @@ describe('parseEndpoints', () => {
       ['anthropic', 'anthropic-messages', 'remote'],
       ['xai', 'openai-chat', 'remote'],
       ['openai', 'openai-responses', 'remote'],
+      ['brain', 'openai-chat', 'remote'],
       ['mock', 'mock', 'local'],
     ]);
     assert.deepEqual(endpoints[0].models, ['m1']);
     assert.deepEqual(endpoints[1].models, []);
+    assert.equal(endpoints[3].purpose, 'agent-brain');
   });
 
   it('refuses a literal key and does not repeat it', () => {
@@ -39,6 +42,9 @@ describe('parseEndpoints', () => {
     assert.throws(() => parseEndpoints({ endpoints: { 'Bad Name': { protocol: 'mock' } } }), /name/);
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat' } } }), /baseUrl/);
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'file:///etc/passwd' } } }), /baseUrl/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-responses', baseUrl: 'https://a.example/v1', purpose: 'agent-brain' } } }), /purpose/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://a.example/v1', purpose: 'custom' } } }), /purpose/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1/v1', purpose: 'agent-brain' } } }), /purpose/);
   });
 });
 
@@ -70,6 +76,36 @@ describe('file credentials and declared locality', () => {
     chmodSync(token, 0o644);
     assert.throws(() => resolveCredential('file:~/.lokal/serve.token', { env: {}, home }), /readable only by its owner/);
     assert.throws(() => resolveCredential('file:~/.lokal/missing', { env: {}, home }), /does not exist/);
+  });
+});
+
+describe('model-silence timeouts', () => {
+  const brain = (timeouts: unknown) => ({
+    endpoints: { brain: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', locality: 'remote', purpose: 'agent-brain', timeouts } },
+  });
+
+  it('reads an endpoint override in whole milliseconds, either field alone', () => {
+    assert.deepEqual(parseEndpoints(brain({ firstChunkMs: 600_000, chunkMs: 300_000 }))[0].timeouts, { firstChunkMs: 600_000, chunkMs: 300_000 });
+    assert.deepEqual(parseEndpoints(brain({ chunkMs: 250 }))[0].timeouts, { chunkMs: 250 });
+    assert.equal(parseEndpoints(brain(undefined))[0].timeouts, undefined);
+  });
+
+  it('refuses a timeout that is not a whole number of milliseconds up to an hour, or a misspelt field', () => {
+    for (const timeouts of [{ firstChunkMs: 0 }, { chunkMs: -5 }, { chunkMs: 1.5 }, { chunkMs: '60000' }, { chunkMs: 3_600_001 }, { chunkMS: 1000 }, [1000], 'fast']) {
+      assert.throws(() => parseEndpoints(brain(timeouts)), /timeouts/, JSON.stringify(timeouts));
+    }
+  });
+
+  it('falls back to the defaults field by field', () => {
+    assert.deepEqual(chatTimeouts(undefined), { firstChunkMs: DEFAULT_CHAT_TIMEOUTS.firstChunkMs, chunkMs: DEFAULT_CHAT_TIMEOUTS.chunkMs });
+    const [endpoint] = parseEndpoints(brain({ chunkMs: 250 }));
+    assert.deepEqual(chatTimeouts(endpoint), { firstChunkMs: DEFAULT_CHAT_TIMEOUTS.firstChunkMs, chunkMs: 250 });
+  });
+
+  it('waits longer between chunks than the longest chat tool runs, since the timer runs through tool execution', () => {
+    // run_command and git tools stop at 30 s, diagnostics at 60 s (server/tools/*.ts).
+    assert.ok(DEFAULT_CHAT_TIMEOUTS.chunkMs > 60_000);
+    assert.ok(DEFAULT_CHAT_TIMEOUTS.firstChunkMs >= DEFAULT_CHAT_TIMEOUTS.chunkMs);
   });
 });
 

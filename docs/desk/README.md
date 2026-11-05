@@ -147,29 +147,20 @@ in the desk and the browser only; navigation from the menu, with views in the ma
 
 | State | Meaning | Source today | Pose |
 |---|---|---|---|
-| `idle` | Present, nothing happening | Open agent clock without a recent heartbeat; host agent between turns | Slow breathing |
-| `working` | Active, activity unknown | Open agent clock with a heartbeat in the last two minutes | Pulsing dots under the desk |
+| `idle` | Present, nothing happening | Host agent between turns | Slow breathing |
+| `working` | Active, activity unknown | Host chat activity without a more specific event | Pulsing dots under the desk |
 | `thinking` | Waiting for the model | Host chat turn started, no output yet | Thought bubble |
 | `reading` | Reading files or searching | Host tool calls `read_file`, `search_code`, `context_pack`, `list_projects`, `project_tree`, `git_diff` | Page in hand, eyes scan |
 | `typing` | Writing an answer or a file | Host text stream; `write_file`, `edit_file` | Keyboard, hands tap |
 | `running` | Running a command or a check | Host `run_command`, `diagnose_*`, `scan_security` | Terminal with a cursor |
 | `learning` | Loading skills or routing | Host `get_skill`, `route_skills` | Open book, sparks |
-| `waiting` | Needs a human | A pending approval for the project; an outside agent's permission prompt or idle-input notice | Raised hand, badge on the menu icon |
+| `waiting` | Needs a human | A pending approval for the project | Raised hand, badge on the menu icon |
 | `warning` | Something failed | Host stream error | Amber mark |
-| `offline` | Gone | Open clock older than the session cap | Grey, still |
+| `offline` | Gone | Not currently emitted by the host floor | Grey, still |
 
-Agents outside this host (Claude Code, opencode, Codex, Antigravity) appear through two
-Agent-Workspace records:
-
-- their open agent clock, `context/works/.open-agent-*.json`, whose modification time is a
-  heartbeat: presence only (`working`, `idle`, `offline`);
-- their activity record, `.local/agent/activity/<session>.json`, written by the Claude Code
-  hooks `ws hooks install` adds, or by `ws agent activity <state>` from any other agent:
-  the same states as the host, with a tool name as the detail.
-
-A record speaks for ten minutes; after that the clock speaks again (`server/desk/agents.ts`).
-A raised hand is the exception: it stays up until the agent reports again or its session
-passes the cap, because a person who stepped away must still find it.
+The floor lists only Agent-Control chat sessions routed through Agent Brain. It does not
+merge workspace agent clocks or `.local/agent/activity/` records, so external CLI/editor
+sessions cannot appear or receive commands from this desk.
 
 ## API
 
@@ -310,9 +301,14 @@ The wireframe was approved with three questions open; the answers:
 ## Desktop
 
 The desktop app is a Tauri v2 shell, chosen over Electron for its size and memory on small
-machines. It changes no UI code: the shell starts the host as a sidecar binary (the Node
-server compiled to a single executable), waits for its loopback port, and opens the desk in
-its webview with the token the host prints. The browser rules stay as they are - loopback
-only, `Host` and `Origin` checks, no cross-origin access - so the web and desktop builds
-share one security envelope. The cost is a Rust toolchain for whoever builds the desktop
-app; the web build does not need it.
+machines. The first implementation slice starts the TypeScript host through Node in
+development; release startup expects a bundled `agent-control-host` resource, whose
+single-binary build and signing remain a separate packaging task. The host binds to an
+ephemeral `127.0.0.1` port and sends one versioned readiness line, including its random
+token, over the native stdout pipe. Rust validates the line and offers the endpoint and
+token only to the trusted `main` webview through `desktop_bootstrap`. The desktop frontend
+keeps the token in memory and uses bearer headers; it is never placed in the URL, arguments,
+or logs. Desktop API requests require an exact app origin and narrow CORS rules, while the
+existing browser host keeps its current sign-in behavior. See
+[ADR-0002](../adr/0002-desktop-host-bootstrap-and-auth.md). macOS is the first development
+target; the minimum supported macOS version remains undecided before release.

@@ -1,15 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFloor, type FloorAgent, type FloorInput } from './floor.js';
+import { buildFloor, type FloorInput } from './floor.js';
 
 const NOW = new Date('2026-10-16T10:00:00Z');
-
-function ext(over: Partial<FloorAgent>): FloorAgent {
-  return {
-    id: 'clock:c1', tool: 'claude-code', project: 'alpha-api', state: 'working',
-    detail: 'fix login', since: '2026-10-16T09:00:00.000Z', source: 'clock', ...over,
-  };
-}
 
 function input(over: Partial<FloorInput> = {}): FloorInput {
   return {
@@ -18,7 +11,6 @@ function input(over: Partial<FloorInput> = {}): FloorInput {
       { key: 'alpha-web', client: 'acme', group: 'web', folder: 'projects/acme/web', description: '' },
       { key: 'own-tool', client: 'own', group: '-', folder: 'projects/own/tool', description: '' },
     ],
-    external: [],
     host: [],
     approvals: {},
     codingSessions: new Set(),
@@ -37,13 +29,12 @@ describe('buildFloor', () => {
     assert.deepEqual(floor.totals, { projects: 3, agents: 0, active: 0, waiting: 0, idleProjects: 3, activeProjects: 0 });
   });
 
-  it('seats an outside agent in its room as it was given', () => {
-    const floor = buildFloor(input({ external: [ext({})] }), NOW);
+  it('seats only host-created agent sessions', () => {
+    const floor = buildFloor(input({
+      host: [{ project: 'alpha-api', state: 'thinking', detail: 'coding', since: '2026-10-16T09:00:00Z', updatedMs: NOW.getTime() }],
+    }), NOW);
     const room = floor.zones[0].rooms.find((r) => r.key === 'alpha-api')!;
-    assert.deepEqual(room.agents, [{
-      id: 'clock:c1', tool: 'claude-code', project: 'alpha-api', state: 'working',
-      detail: 'fix login', since: '2026-10-16T09:00:00.000Z', source: 'clock',
-    }]);
+    assert.deepEqual(room.agents.map((agent) => [agent.tool, agent.state, agent.detail]), [['agent-control', 'thinking', 'coding']]);
     assert.equal(floor.totals.active, 1);
   });
 
@@ -69,16 +60,9 @@ describe('buildFloor', () => {
     assert.deepEqual(agents.map((a) => [a.id, a.state, a.detail]), [['host:alpha-api', 'waiting', 'approval: write_file']]);
   });
 
-  it('puts a clock on an unregistered key in a trailing unregistered zone', () => {
-    const floor = buildFloor(input({ external: [ext({ project: 'workspace', state: 'idle' })] }), NOW);
-    const last = floor.zones.at(-1)!;
-    assert.equal(last.client, '-');
-    assert.deepEqual(last.rooms.map((r) => r.key), ['workspace']);
-  });
-
-  it('orders busy zones and rooms first, and marks coding sessions', () => {
+  it('orders host-active zones and rooms first, and marks coding sessions', () => {
     const floor = buildFloor(input({
-      external: [ext({ project: 'own-tool' })],
+      host: [{ project: 'own-tool', state: 'thinking', detail: 'coding', since: '2026-10-16T09:00:00Z', updatedMs: NOW.getTime() }],
       codingSessions: new Set(['alpha-web', 'not-registered']),
     }), NOW);
     assert.deepEqual(floor.zones.map((z) => z.client), ['own', 'acme']);
