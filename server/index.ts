@@ -6,17 +6,13 @@ import { resolve, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import crypto from 'node:crypto';
 
-import { loadConfig, saveConfig, availableProviders, type AppConfig } from './config.js';
-import { createOpenAIAdapter } from './providers/openai.js';
-import { createAnthropicAdapter } from './providers/anthropic.js';
-import { createGeminiAdapter } from './providers/gemini.js';
-import type { ProviderAdapter } from './providers/types.js';
-import { chatTimeouts, loadEndpoints, localityOf, resolveCredential, type Endpoint } from './endpoints.js';
+import { CONFIG_PATH, loadConfig } from './config.js';
+import { chatTimeouts, loadEndpoints, resolveCredential, type Endpoint } from './endpoints.js';
 import { decide, listPending } from './approvals.js';
 import { listCodingSessions, readCodingSession, startCodingSession, stopCodingSession } from './coding-sessions.js';
 import { realHandBackDeps, realSessionRunner } from './ws-runner.js';
 import { HandBackConflict, discardSession, shipSession, startVerify } from './hand-back.js';
-import { resolveChatModel } from './chat-model.js';
+import { chatDefaults, isChatEndpoint, resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
 import { gitDiff } from './tools/worktree-files.js';
@@ -50,7 +46,7 @@ import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
-const config = loadConfig();
+const { config, ignoredKeys } = loadConfig();
 const TOKEN = generateToken();
 const DESKTOP_MODE = process.env.AC_DESKTOP_MODE === '1';
 if (DESKTOP_MODE && process.env.HOST && process.env.HOST !== '127.0.0.1') {
@@ -70,24 +66,7 @@ const DESK_DIST = process.env.WS_DESK_DIST ?? '';
 // `/api/*` the host proxies.
 const AGENT_API = '/api/agent';
 
-// ── Provider registry ──────────────────────────────────────────────────
-function getAdapters(cfg: AppConfig): Map<string, ProviderAdapter> {
-  const adapters = new Map<string, ProviderAdapter>();
-  if (cfg.providers.openai?.apiKey) {
-    adapters.set('openai', createOpenAIAdapter(cfg.providers.openai));
-  }
-  if (cfg.providers.anthropic?.apiKey) {
-    adapters.set('anthropic', createAnthropicAdapter(cfg.providers.anthropic));
-  }
-  if (cfg.providers.google?.apiKey) {
-    adapters.set('google', createGeminiAdapter(cfg.providers.google));
-  }
-  return adapters;
-}
-
 import { exportSessionTrace } from './lokal.js';
-
-let adapters = getAdapters(config);
 
 // ── Endpoints by wire protocol (ADR-0021): <workspace>/.local/agent/endpoints.json ──
 function safeLoadEndpoints(): Endpoint[] {
@@ -99,6 +78,14 @@ function safeLoadEndpoints(): Endpoint[] {
   }
 }
 const endpoints = safeLoadEndpoints();
+// Chat inference runs only through Agent Brain (server/chat-model.ts); `mock` is offline.
+const chatEndpoints = endpoints.filter(isChatEndpoint);
+const defaults = chatDefaults(config, endpoints);
+if (ignoredKeys.length) {
+  // Names only: the keys themselves are never printed.
+  console.warn(`${CONFIG_PATH} holds API keys for ${ignoredKeys.join(', ')}; Agent-Control no longer uses them `
+    + '(chat runs through Agent Brain). Remove its "providers" entry.');
+}
 
 // ── System prompt with workspace awareness ─────────────────────────────
 const SYSTEM_PROMPT = `You are Agent Control, an AI-powered workspace assistant.
@@ -186,72 +173,29 @@ app.get(`${AGENT_API}/providers`, async (c) => {
     }
   }
 
-  const endpointIds = new Set(endpoints.map((e) => e.name));
-  const available = availableProviders(config).filter((key) => !endpointIds.has(key));
-  const providers = [
-    ...await Promise.all(endpoints.map(async (e) => {
-      let models = e.models;
-      if (e.purpose === 'agent-brain' && project && egressDecision(e, project, allowlist).allowed) {
-        try {
-          const credential = resolveCredential(e.credential);
-          const discovered = await discoverBrainModels(e, credential);
-          models = [...new Set([...models, ...discovered])];
-        } catch (error) {
-          console.error(`Model discovery failed for ${e.name}: ${error instanceof Error ? error.message : 'request failed'}`);
-        }
-      }
-      return {
-        id: e.name,
-        name: `${e.name} (${e.protocol}, ${e.locality})`,
-        models,
-        locality: e.locality,
-      };
-    })),
-    ...available.map((key) => {
-      const adapter = adapters.get(key);
-      const baseUrl = config.providers[key as keyof AppConfig['providers']]?.baseUrl;
-      return {
-        id: key,
-        name: adapter?.name ?? key,
-        models: adapter?.models() ?? [],
-        locality: baseUrl ? localityOf(baseUrl) : 'remote',
-      };
-    }),
-  ];
-  return c.json({
-    providers,
-    defaultProvider: config.defaultProvider,
-    defaultModel: config.defaultModel,
-  });
-});
-
-// ── API: Config management ─────────────────────────────────────────────
-app.get(`${AGENT_API}/config`, (c) => {
-  // Return config without exposing full API keys
-  const masked = { ...config };
-  masked.providers = Object.fromEntries(
-    Object.entries(config.providers).map(([k, v]) => [
-      k,
-      v ? { apiKey: v.apiKey ? `${v.apiKey.slice(0, 8)}...` : '', baseUrl: v.baseUrl } : undefined,
-    ])
-  );
-  return c.json(masked);
-});
-
-app.post(`${AGENT_API}/config`, async (c) => {
-  const body = await c.req.json() as Partial<AppConfig>;
-  if (body.providers) {
-    for (const [key, val] of Object.entries(body.providers)) {
-      if (val?.apiKey && !val.apiKey.includes('...')) {
-        (config.providers as Record<string, typeof val>)[key] = val;
+  const providers = await Promise.all(chatEndpoints.map(async (e) => {
+    let models = e.models;
+    if (e.purpose === 'agent-brain' && project && egressDecision(e, project, allowlist).allowed) {
+      try {
+        const credential = resolveCredential(e.credential);
+        const discovered = await discoverBrainModels(e, credential);
+        models = [...new Set([...models, ...discovered])];
+      } catch (error) {
+        console.error(`Model discovery failed for ${e.name}: ${error instanceof Error ? error.message : 'request failed'}`);
       }
     }
-  }
-  if (body.defaultProvider) config.defaultProvider = body.defaultProvider;
-  if (body.defaultModel) config.defaultModel = body.defaultModel;
-  saveConfig(config);
-  adapters = getAdapters(config);
-  return c.json({ ok: true });
+    return {
+      id: e.name,
+      name: `${e.name} (${e.protocol}, ${e.locality})`,
+      models,
+      locality: e.locality,
+    };
+  }));
+  return c.json({
+    providers,
+    defaultProvider: defaults.provider,
+    defaultModel: defaults.model,
+  });
 });
 
 // ── API: Chat (streaming) ──────────────────────────────────────────────
@@ -266,16 +210,9 @@ app.post(`${AGENT_API}/chat`, async (c) => {
     conversation?: string;
   };
 
-  const resolved = resolveChatModel({
-    provider: body.provider ?? config.defaultProvider,
-    model: body.model ?? config.defaultModel,
-    project: body.project,
-  }, {
-    root: WORKSPACE_ROOT,
-    endpoints,
-    adapters,
-    legacyBaseUrls: Object.fromEntries(Object.entries(config.providers).map(([id, p]) => [id, p?.baseUrl])),
-  });
+  const provider = body.provider ?? defaults.provider;
+  const modelId = body.model ?? defaults.model;
+  const resolved = resolveChatModel({ provider, model: modelId, project: body.project }, { root: WORKSPACE_ROOT, endpoints });
   if ('error' in resolved) {
     return c.json({ error: resolved.error }, resolved.status);
   }
@@ -331,8 +268,8 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       tools: createChatTools(bridge, scope, {
         model, signal: c.req.raw.signal,
         onUsage: (child) => recordUsage(WORKSPACE_ROOT, {
-          tool: 'agent-control', endpoint: body.provider ?? config.defaultProvider,
-          model: body.model ?? config.defaultModel, locality: resolved.locality,
+          tool: 'agent-control', endpoint: provider,
+          model: modelId, locality: resolved.locality,
           ...(scope ? { project: scope.project, projectRoot: join(WORKSPACE_ROOT, scope.folder) } : {}),
           start: child.start, end: child.end, finishReason: child.finishReason,
           tokens: { input: child.inputTokens, output: child.outputTokens, cacheRead: 0, cacheWrite: 0 },
@@ -344,7 +281,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       abortSignal: c.req.raw.signal,
       // A model that says nothing for this long ends the turn (server/endpoints.ts). The
       // SDK reports it as an abort, which toLineStream tells from the browser's Stop.
-      timeout: chatTimeouts(endpoints.find((endpoint) => endpoint.name === (body.provider ?? config.defaultProvider))),
+      timeout: chatTimeouts(endpoints.find((endpoint) => endpoint.name === provider)),
       // The default handler prints the whole error object: the request body (the prompt)
       // and the upstream response body with it. Log the sanitized code only.
       onError: ({ error }) => console.error(inferenceErrorLogLine(error)),
@@ -355,13 +292,12 @@ app.post(`${AGENT_API}/chat`, async (c) => {
 
     // Our own line protocol (server/stream-protocol.ts): the UI does not depend on the
     // AI SDK's wire format, which changes with every major version.
-    const provider = body.provider ?? config.defaultProvider;
     const usage = (finish: StreamFinish) => {
       try {
         recordUsage(WORKSPACE_ROOT, {
           tool: 'agent-control',
           endpoint: provider,
-          model: body.model ?? config.defaultModel,
+          model: modelId,
           locality: resolved.locality,
           ...(scope ? { project: scope.project, projectRoot: join(WORKSPACE_ROOT, scope.folder) } : {}),
           start,
@@ -372,7 +308,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         console.error('Usage record not written:', err instanceof Error ? err.message : String(err));
       }
     };
-    const brainBacked = endpoints.some((endpoint) => endpoint.name === (body.provider ?? config.defaultProvider) && endpoint.purpose === 'agent-brain');
+    const brainBacked = endpoints.some((endpoint) => endpoint.name === provider && endpoint.purpose === 'agent-brain');
     const tapped = scope && brainBacked ? activity.tap(scope.project, result.fullStream, c.req.raw.signal) : result.fullStream;
     const parts = conversation
       ? captureAssistant(tapped, (message) => {
@@ -858,11 +794,7 @@ serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info) => {
   console.log('  │                                          │');
   console.log(`  │   Local:  http://${HOST}:${PORT}         │`);
   console.log('  │                                          │');
-  const bannerProviders = [
-    ...Object.keys(endpoints),
-    ...availableProviders(config).filter((p) => !(p in endpoints)),
-  ];
-  console.log(`  │   Providers: ${bannerProviders.join(', ') || 'none configured'}  │`);
+  console.log(`  │   Endpoints: ${chatEndpoints.map((e) => e.name).join(', ') || 'none configured'}  │`);
   console.log('  │                                          │');
   console.log('  ╰──────────────────────────────────────────╯');
   console.log('');

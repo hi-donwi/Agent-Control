@@ -58,7 +58,7 @@ export interface ChatTimeouts {
 export const DEFAULT_CHAT_TIMEOUTS = { firstChunkMs: 180_000, chunkMs: 120_000 } as const;
 const MAX_TIMEOUT_MS = 60 * 60 * 1000;
 
-/** The timeouts a chat turn on `endpoint` uses; legacy providers have no endpoint. */
+/** The timeouts a chat turn on `endpoint` uses. */
 export function chatTimeouts(endpoint: Endpoint | undefined): Required<ChatTimeouts> {
   return {
     firstChunkMs: endpoint?.timeouts?.firstChunkMs ?? DEFAULT_CHAT_TIMEOUTS.firstChunkMs,
