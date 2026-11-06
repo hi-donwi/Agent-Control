@@ -47,6 +47,19 @@ describe('ActivityRegistry.tap', () => {
     assert.equal(registry.get('beta')!.detail, 'turn stopped');
   });
 
+  it('leaves a warning when the model went silent, and idle when the browser stopped the turn', async () => {
+    const registry = new ActivityRegistry();
+    const browser = new AbortController();
+    await drain(registry.tap('alpha', parts([{ type: 'text-delta' }, { type: 'abort' }]), browser.signal));
+    assert.equal(registry.get('alpha')!.state, 'warning');
+    assert.equal(registry.get('alpha')!.detail, 'the model timed out');
+
+    browser.abort();
+    await drain(registry.tap('beta', parts([{ type: 'text-delta' }, { type: 'abort' }]), browser.signal));
+    assert.equal(registry.get('beta')!.state, 'idle');
+    assert.equal(registry.get('beta')!.detail, 'turn stopped');
+  });
+
   it('keeps `since` while the state holds, and drops long-idle hosts', () => {
     let now = 1_000;
     const registry = new ActivityRegistry(() => now);

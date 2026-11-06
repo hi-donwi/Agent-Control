@@ -373,7 +373,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       }
     };
     const brainBacked = endpoints.some((endpoint) => endpoint.name === (body.provider ?? config.defaultProvider) && endpoint.purpose === 'agent-brain');
-    const tapped = scope && brainBacked ? activity.tap(scope.project, result.fullStream) : result.fullStream;
+    const tapped = scope && brainBacked ? activity.tap(scope.project, result.fullStream, c.req.raw.signal) : result.fullStream;
     const parts = conversation
       ? captureAssistant(tapped, (message) => {
         try {

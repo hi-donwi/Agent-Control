@@ -78,8 +78,10 @@ export class ActivityRegistry {
   /**
    * Passes `parts` through unchanged while recording what each one says the turn is doing.
    * A turn that ends without a finish part (the browser stopped it) leaves the agent idle.
+   * An abort part the browser did not cause (`clientSignal` still live) is the model-silence
+   * timeout of server/endpoints.ts, and leaves a warning.
    */
-  async *tap<T extends StreamPart>(project: string, parts: AsyncIterable<T>): AsyncGenerator<T> {
+  async *tap<T extends StreamPart>(project: string, parts: AsyncIterable<T>, clientSignal?: AbortSignal): AsyncGenerator<T> {
     this.set(project, 'thinking', 'waiting for the model');
     let settled = false;
     try {
@@ -109,6 +111,11 @@ export class ActivityRegistry {
             break;
           case 'finish':
             this.set(project, 'idle', 'turn finished');
+            settled = true;
+            break;
+          case 'abort':
+            if (clientSignal?.aborted) break;
+            this.set(project, 'warning', 'the model timed out');
             settled = true;
             break;
         }
