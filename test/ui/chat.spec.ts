@@ -18,13 +18,15 @@ test('answers a chat from the mock endpoint and streams it into the transcript',
   await expect(page.locator('.message-role').first()).toHaveText('You');
 });
 
-test('disables a remote endpoint for a chat that is not bound to an allowing project', async ({ page, appUrl }) => {
+test('disables an Agent Brain endpoint for a chat that is not bound to an allowing project', async ({ page, appUrl }) => {
   await page.goto(appUrl);
 
   // `mock` is local and always allowed; `remote` needs a project whose policy lists it
   // (ADR-0021), and this fixture's policy allows nothing.
   await expect(page.locator('#provider-select option[value="mock"]')).toBeEnabled();
   await expect(page.locator('#provider-select option[value="remote"]')).toBeDisabled();
+  // An endpoint that is not Agent Brain is not offered at all.
+  await expect(page.locator('#provider-select option[value="direct"]')).toHaveCount(0);
 
   await page.locator('#project-select').selectOption(PROJECT);
 
