@@ -447,20 +447,6 @@ body {
   color: var(--text-accent);
 }
 
-.settings-btn {
-  padding: var(--sp-6) var(--sp-12);
-  border-radius: var(--r-8);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  transition: all var(--duration) var(--ease);
-}
-
-.settings-btn:hover { color: var(--text-primary); border-color: var(--border-accent); }
-
 /* ── Main chat area ────────────────────────────────────────────────── */
 .main-area {
   flex: 1;
@@ -936,104 +922,6 @@ body {
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
-}
-
-.dialog {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-16);
-  box-shadow: var(--shadow-lg);
-  width: 90%;
-  max-width: 520px;
-  max-height: 80vh;
-  overflow-y: auto;
-  animation: dialogIn var(--duration) var(--ease);
-}
-
-@keyframes dialogIn {
-  from { opacity: 0; transform: scale(0.95) translateY(8px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-20) var(--sp-24);
-  border-bottom: 1px solid var(--border);
-}
-
-.dialog-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-
-.dialog-close {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-8);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-lg);
-  transition: all var(--duration) var(--ease);
-}
-
-.dialog-close:hover { background: var(--bg-surface-2); color: var(--text-primary); }
-
-.dialog-body {
-  padding: var(--sp-24);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-20);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-6);
-}
-
-.field label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.field input {
-  padding: var(--sp-8) var(--sp-12);
-  border-radius: var(--r-8);
-  border: 1px solid var(--border);
-  background: var(--bg-surface-2);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  transition: border-color var(--duration) var(--ease);
-}
-
-.field input:focus {
-  outline: none;
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px var(--bg-accent-soft);
-}
-
-.field input::placeholder { color: var(--text-muted); }
-
-.field .hint {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--sp-8);
-  padding: var(--sp-16) var(--sp-24);
-  border-top: 1px solid var(--border);
 }
 
 .btn-primary {

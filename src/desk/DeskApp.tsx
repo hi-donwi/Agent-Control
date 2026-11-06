@@ -11,7 +11,6 @@ import { useScopedChat } from './useScopedChat';
 import { CommandDock } from './command/CommandDock';
 import { FanoutChatWorker, type FanoutChatState } from './command/FanoutChatWorker';
 import { buildCommandTargets, eligibleFanoutTargets, resolveChatChoice, type CommandTarget, type FanoutCandidate, type NoteDraft, type TaskDraft } from './command/command-state';
-import { SettingsDialog } from '../components/settings/SettingsDialog';
 import { TodayView } from './pm/TodayView';
 import { MissionsView } from './pm/MissionsView';
 import { TaskDrawer } from './pm/TaskDrawer';
@@ -83,7 +82,6 @@ export function DeskApp() {
   }, []);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [project, setProjectState] = useState(() => start.view === 'project' ? start.key : storedProject());
-  const [showEndpoints, setShowEndpoints] = useState(false);
   const [commandScope, setCommandScope] = useState(start.view === 'project' ? start.key : '');
   const [commandAgentId, setCommandAgentId] = useState<string | null>(null);
   const [fanoutScopes, setFanoutScopes] = useState<string[]>([]);
@@ -496,7 +494,7 @@ export function DeskApp() {
         targetAgentId={commandAgentId}
         chat={chat}
         providerReady={Boolean(commandChoice)}
-        popoverBehindDrawer={Boolean(drawer || task || showEndpoints)}
+        popoverBehindDrawer={Boolean(drawer || task)}
         fanoutCandidates={fanoutCandidates}
         fanoutScopes={fanoutScopes}
         fanoutChats={fanoutChatsForDock}
@@ -563,7 +561,6 @@ export function DeskApp() {
           onSection={(section) => setDrawer({ kind: 'menu', section })}
           onFloor={() => { setFocusClient(null); close(); }}
           onTheme={setTheme}
-          onEndpoints={() => setShowEndpoints(true)}
           onClose={close}
           alerts={pm.alerts}
           onSnooze={pm.snooze}
@@ -610,7 +607,6 @@ export function DeskApp() {
           onClose={close}
         />
       )}
-      <SettingsDialog open={showEndpoints} onClose={() => setShowEndpoints(false)} onSaved={() => undefined} />
     </div>
   );
 }

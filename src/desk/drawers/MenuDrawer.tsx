@@ -25,7 +25,6 @@ interface Props {
   onSection: (section: MenuSection | null) => void;
   onFloor: () => void;
   onTheme: (theme: ThemePref) => void;
-  onEndpoints: () => void;
   onClose: () => void;
   /** Computed alerts (ws alerts), for the Inbox. */
   alerts: PmAlert[];
@@ -221,7 +220,7 @@ function Nav({ floor, project, onSection, onFloor, alerts, onPage }: Props) {
   );
 }
 
-function Settings({ theme, onTheme, onEndpoints }: Props) {
+function Settings({ theme, onTheme }: Props) {
   const [workspacePending, setWorkspacePending] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
@@ -261,10 +260,12 @@ function Settings({ theme, onTheme, onEndpoints }: Props) {
       </fieldset>
       <div className="settings-row">
         <div>
-          <p className="settings-label">Endpoints and keys</p>
-          <p className="settings-hint">Legacy provider keys. Endpoints by protocol live in .local/agent/endpoints.json.</p>
+          <p className="settings-label">Model endpoints</p>
+          <p className="settings-hint">
+            Chat runs only through Agent Brain, which keeps provider accounts and keys. Brain endpoints
+            live in .local/agent/endpoints.json.
+          </p>
         </div>
-        <button type="button" className="btn" onClick={onEndpoints}>Open</button>
       </div>
       {workspaceRoot && (
         <div className="settings-row workspace-setting">

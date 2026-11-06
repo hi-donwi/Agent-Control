@@ -8,7 +8,6 @@ import { useCodingSession } from './hooks/useCodingSession';
 import { CodingSessionPanel } from './components/coding-session/CodingSessionPanel';
 import { MessageList } from './components/chat/MessageList';
 import { InputBar } from './components/chat/InputBar';
-import { SettingsDialog } from './components/settings/SettingsDialog';
 import type { Provider } from './lib/types';
 
 type ThemePref = 'light' | 'dark' | 'system';
@@ -22,7 +21,6 @@ export function App() {
 
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>(() => {
     try {
@@ -34,7 +32,7 @@ export function App() {
   // A remote provider receives a project's context only when that project's policy
   // lists it (ADR-0021); without a project, only local providers can be used.
   const project = projects.find((p) => p.key === selectedProject);
-  const { providers, defaultProvider, defaultModel, refresh: refreshProviders } = useProviders(project?.key);
+  const { providers, defaultProvider, defaultModel } = useProviders(project?.key);
 
   useEffect(() => {
     const resolved = theme === 'system'
@@ -160,7 +158,7 @@ export function App() {
                 {p.name}{isAllowed(p) ? '' : ' (not allowed)'}
               </option>
             ))}
-            {noProviders && <option value="">No providers configured</option>}
+            {noProviders && <option value="">No endpoints configured</option>}
           </select>
           {currentProvider && !isAllowed(currentProvider) && (
             <p className="selector-note" role="status">
@@ -236,13 +234,6 @@ export function App() {
               </button>
             ))}
           </div>
-          <button className="settings-btn" onClick={() => setShowSettings(true)} type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6 }}>
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            Settings
-          </button>
         </div>
       </aside>
 
@@ -268,7 +259,7 @@ export function App() {
           </div>
           <div className="chat-status">
             <span className={`status-dot${noProviders ? ' disconnected' : ''}`} />
-            {noProviders ? 'No API key configured' : 'Ready'}
+            {noProviders ? 'No Agent Brain endpoint' : 'Ready'}
           </div>
         </header>
 
@@ -286,7 +277,8 @@ export function App() {
 
             {noProviders && (
               <div className="error-notice" style={{ marginBottom: 24, maxWidth: 480 }}>
-                No API keys configured. Click <strong>Settings</strong> to add one.
+                No Agent Brain endpoint is configured. Chat runs only through Agent Brain: add an
+                endpoint with <code>"purpose": "agent-brain"</code> to <code>.local/agent/endpoints.json</code>.
               </div>
             )}
 
@@ -354,12 +346,6 @@ export function App() {
           onStop={chat.stopStreaming}
         />
       </div>
-
-      <SettingsDialog
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        onSaved={refreshProviders}
-      />
     </div>
   );
 }
