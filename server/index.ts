@@ -24,7 +24,7 @@ import { parseProjectList } from './projects.js';
 import { egressDecision, loadLlmAllowlist } from './egress.js';
 import { discoverBrainModels } from './brain-models.js';
 import { toLineStream, type StreamFinish } from './stream-protocol.js';
-import { inferenceErrorLogLine } from './inference-errors.js';
+import { chatSetupError, inferenceErrorLogLine } from './inference-errors.js';
 import { recordUsage } from './usage.js';
 import {
   generateToken,
@@ -390,8 +390,9 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('Chat error:', message);
+    // Setup failed before the stream started: a fixed message for the browser (server/inference-errors.ts).
+    const { message, logLine } = chatSetupError(err);
+    console.error(logLine);
     return c.json({ error: message }, 500);
   }
 });

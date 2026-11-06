@@ -1,4 +1,4 @@
-import { APICallError, EmptyResponseBodyError, InvalidResponseDataError, JSONParseError, RetryError, StreamProviderError, TypeValidationError } from 'ai';
+import { AISDKError, APICallError, EmptyResponseBodyError, InvalidResponseDataError, JSONParseError, RetryError, StreamProviderError, TypeValidationError } from 'ai';
 
 /**
  * The stable, public view of a failed model call. The browser and the server log see only
@@ -90,4 +90,20 @@ export function inferenceErrorLogLine(error: unknown): string {
   const name = error instanceof Error && /^[A-Za-z_][\w]{0,63}$/.test(error.name) ? error.name : undefined;
   const detail = [status === undefined ? undefined : `HTTP ${status}`, name].filter(Boolean).join(', ');
   return `Inference error: ${code}${detail ? ` (${detail})` : ''}`;
+}
+
+/**
+ * The chat route's answer to a turn that failed before its stream started (tool setup, model
+ * construction). The browser gets a fixed message. A model error is logged by its code only,
+ * like any failed model call; a host error is logged by its message, which names the
+ * host-side cause and carries no upstream body.
+ */
+export function chatSetupError(error: unknown): { message: string; logLine: string } {
+  if (AISDKError.isInstance(error)) {
+    return { message: publicInferenceError(error).message, logLine: inferenceErrorLogLine(error) };
+  }
+  return {
+    message: 'The chat turn could not start. The Agent-Control log has the cause.',
+    logLine: `Chat error: ${error instanceof Error ? error.message : String(error)}`,
+  };
 }
