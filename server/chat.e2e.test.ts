@@ -56,7 +56,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   // Model `silent` accepts the request and never sends a chunk.
   let silentClosed!: () => void;
   const brainSilentClosed = new Promise<void>((resolve) => { silentClosed = resolve; });
-  // A provider reached directly, not through Brain: a Brain failure must never land here.
+  // A provider reached directly, not through Brain: no chat, and no Brain failure, may land here.
   let directServer: HttpServer;
   let directCalls = 0;
   let serverLog = '';
@@ -157,6 +157,14 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     mkdirSync(join(root, 'projects', 'mock', 'mockproj'), { recursive: true });
     mkdirSync(join(home, '.brain'), { recursive: true });
     writeFileSync(join(home, '.brain', 'serve.token'), 'gateway-token\n', { mode: 0o600 });
+    // Keys from before chat went through Agent Brain: the server must ignore them, never list
+    // them as providers, and never print them.
+    mkdirSync(join(home, '.agent-control'), { recursive: true });
+    writeFileSync(join(home, '.agent-control', 'config.json'), JSON.stringify({
+      providers: { openai: { apiKey: 'sk-legacy-openai-key' }, anthropic: { apiKey: 'sk-ant-legacy-key' } },
+      defaultProvider: 'anthropic',
+      defaultModel: 'claude-sonnet-4-20250514',
+    }));
     writeFileSync(join(root, 'AGENTS.md'), '# mock workspace\n');
     writeFileSync(join(root, 'context', 'registry.tsv'), 'key\tclient\tgroup\tfolder\nmockproj\tframework\t-\tprojects/mock/mockproj\n');
     writeFileSync(join(root, '.local', 'agent', 'endpoints.json'), JSON.stringify({
@@ -250,10 +258,40 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(unbound.status, 400);
   });
 
-  it('refuses a remote endpoint without a project policy, before any request', async () => {
-    const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'remote', model: 'x' });
+  it('refuses an endpoint that is not Agent Brain, and a legacy provider, before any request', async () => {
+    for (const provider of ['remote', 'direct']) {
+      const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider, model: 'x', project: 'mockproj' });
+      assert.equal(response.status, 400);
+      assert.match((await response.json() as { error: string }).error, /not an Agent Brain endpoint/);
+    }
+    const legacy = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'openai', model: 'gpt-4o' });
+    assert.equal(legacy.status, 400);
+    assert.match((await legacy.json() as { error: string }).error, /"openai" is not configured/);
+    assert.equal(directCalls, 0);
+  });
+
+  it('refuses Agent Brain for a chat without a project policy that lists it', async () => {
+    const before = brainChatCalls;
+    const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'brain', model: 'chat' });
     assert.equal(response.status, 403);
     assert.match((await response.json() as { error: string }).error, /remote/);
+    assert.equal(brainChatCalls, before);
+  });
+
+  it('lists only Agent Brain and mock endpoints, and ignores legacy provider keys', async () => {
+    const response = await fetch(`${origin}/api/agent/providers`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { providers: Array<{ id: string }>; defaultProvider: string; defaultModel: string };
+    assert.deepEqual(body.providers.map((p) => p.id), ['mock', 'brain', 'brain-slow', 'brain-down']);
+    // The legacy default names a provider that cannot chat, so the first Brain endpoint wins.
+    assert.equal(body.defaultProvider, 'brain');
+    assert.equal(body.defaultModel, 'fallback-model');
+    assert.doesNotMatch(JSON.stringify(body), /sk-legacy|sk-ant-legacy/);
+
+    const config = await fetch(`${origin}/api/agent/config`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(config.status, 404);
+    assert.match(serverLog, /config\.json holds API keys for openai, anthropic/);
+    assert.doesNotMatch(serverLog, /sk-legacy-openai-key|sk-ant-legacy-key/);
   });
 
   it('discovers Brain models only for a registered project whose policy allows the gateway', async () => {
@@ -365,14 +403,11 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   });
 
   it('shows a Brain that is down as unreachable, and never falls back to a direct endpoint', async () => {
+    // The direct endpoint answers and the policy lists it, so a fallback would have somewhere to go.
     writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
       schema_version: 1, default: 'read', llm: { endpoints: ['brain-down', 'direct'] },
     }));
-    // The direct endpoint works and the policy allows it, so a fallback would have somewhere to go.
-    const direct = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'direct', model: 'direct', project: 'mockproj' });
-    assert.equal(answerText(await protocolLines(direct)), 'direct reply');
     const directBefore = directCalls;
-    assert.ok(directBefore > 0);
 
     const response = await post({ messages: [{ role: 'user', content: 'are you there?' }], provider: 'brain-down', model: 'chat', project: 'mockproj' });
     assert.equal(response.status, 200);

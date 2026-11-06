@@ -1,8 +1,8 @@
 import type { ChatModel } from './providers/types.js';
 import { egressDecision, loadLlmAllowlist } from './egress.js';
-import { localityOf, resolveCredential, type CredentialReaders, type Endpoint, type Locality } from './endpoints.js';
+import { resolveCredential, type CredentialReaders, type Endpoint, type Locality } from './endpoints.js';
 import { createEndpointModel } from './providers/endpoint-model.js';
-import type { ProviderAdapter } from './providers/types.js';
+import type { AppConfig } from './config.js';
 
 export interface ChatModelRequest {
   provider: string;
@@ -14,14 +14,31 @@ export interface ChatModelRequest {
 export interface ChatModelDeps {
   root: string;
   endpoints: Endpoint[];
-  adapters: Map<string, ProviderAdapter>;
   env?: CredentialReaders['env'];
   keychain?: CredentialReaders['keychain'];
-  /** Base URLs of legacy providers from ~/.agent-control/config.json, for their locality. */
-  legacyBaseUrls?: Record<string, string | undefined>;
 }
 
 export type ChatModelResult = { model: ChatModel; locality: Locality } | { status: 400 | 403; error: string };
+
+/**
+ * Chat inference runs only through Agent Brain (docs/specs/agent-brain-routed-sessions.md):
+ * Brain owns provider accounts, credentials, and routing, so Agent-Control never calls a
+ * provider directly, not even when Brain is down. `mock` answers offline and sends nothing.
+ */
+export function isChatEndpoint(endpoint: Endpoint): boolean {
+  return endpoint.purpose === 'agent-brain' || endpoint.protocol === 'mock';
+}
+
+/**
+ * The endpoint and model a chat starts with when the client names none: the configured
+ * default when it can chat, else the first Agent Brain endpoint, else `mock`.
+ */
+export function chatDefaults(config: AppConfig, endpoints: Endpoint[]): { provider: string; model: string } {
+  const configured = endpoints.find((e) => e.name === config.defaultProvider && isChatEndpoint(e));
+  if (configured) return { provider: configured.name, model: config.defaultModel || (configured.models[0] ?? '') };
+  const fallback = endpoints.find((e) => e.purpose === 'agent-brain') ?? endpoints.find((e) => e.protocol === 'mock');
+  return fallback ? { provider: fallback.name, model: fallback.models[0] ?? '' } : { provider: '', model: '' };
+}
 
 /** 400 for a bad project key, 403 when the project may not send context to `target`. */
 function egressRefusal(target: Endpoint, request: ChatModelRequest, root: string): { status: 400 | 403; error: string } | null {
@@ -36,29 +53,31 @@ function egressRefusal(target: Endpoint, request: ChatModelRequest, root: string
 }
 
 /**
- * The model for a chat request. A configured endpoint wins over a legacy provider of
- * the same id. Both are checked against the project's egress policy before any request:
- * a legacy provider is remote unless its base URL is loopback.
+ * The model for a chat request: an Agent Brain endpoint (or `mock`), checked against the
+ * project's egress policy before any request is made.
  */
 export function resolveChatModel(request: ChatModelRequest, deps: ChatModelDeps): ChatModelResult {
   const endpoint = deps.endpoints.find((e) => e.name === request.provider);
-  if (endpoint) {
-    const refusal = egressRefusal(endpoint, request, deps.root);
-    if (refusal) return refusal;
-    try {
-      const apiKey = resolveCredential(endpoint.credential, { env: deps.env ?? process.env, keychain: deps.keychain });
-      return { model: createEndpointModel(endpoint, request.model, apiKey), locality: endpoint.locality };
-    } catch (error) {
-      return { status: 400, error: `endpoint ${endpoint.name}: ${(error as Error).message}` };
-    }
+  if (!endpoint) {
+    return {
+      status: 400,
+      error: `Endpoint "${request.provider}" is not configured. Chat runs through an Agent Brain endpoint `
+        + '(purpose "agent-brain") in .local/agent/endpoints.json.',
+    };
   }
-  const adapter = deps.adapters.get(request.provider);
-  if (!adapter) {
-    return { status: 400, error: `Provider "${request.provider}" is not configured. Add an API key in Settings.` };
+  if (!isChatEndpoint(endpoint)) {
+    return {
+      status: 400,
+      error: `Endpoint "${endpoint.name}" is not an Agent Brain endpoint. Chat runs only through Agent Brain; `
+        + 'provider accounts and keys belong in Brain.',
+    };
   }
-  const baseUrl = deps.legacyBaseUrls?.[request.provider];
-  const locality = baseUrl ? localityOf(baseUrl) : 'remote';
-  const refusal = egressRefusal({ name: request.provider, protocol: 'openai-chat', locality, models: [] }, request, deps.root);
+  const refusal = egressRefusal(endpoint, request, deps.root);
   if (refusal) return refusal;
-  return { model: adapter.model(request.model), locality };
+  try {
+    const apiKey = resolveCredential(endpoint.credential, { env: deps.env ?? process.env, keychain: deps.keychain });
+    return { model: createEndpointModel(endpoint, request.model, apiKey), locality: endpoint.locality };
+  } catch (error) {
+    return { status: 400, error: `endpoint ${endpoint.name}: ${(error as Error).message}` };
+  }
 }
