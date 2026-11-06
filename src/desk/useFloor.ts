@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch, getAuthToken } from '../lib/api';
+import { apiFetch, apiUrl, getAuthToken, initializeApi } from '../lib/api';
 import { parseSse } from './sse';
 import type { Floor } from './types';
 
@@ -30,7 +30,8 @@ export function useFloor() {
 
     const connect = async () => {
       try {
-        const response = await fetch('/api/agent/desk/events', {
+        await initializeApi();
+        const response = await fetch(apiUrl('desk/events'), {
           headers: { Authorization: `Bearer ${getAuthToken()}`, Accept: 'text/event-stream' },
           cache: 'no-store',
           signal: controller.signal,

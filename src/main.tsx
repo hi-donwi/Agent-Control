@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { DeskApp } from './desk/DeskApp';
+import { WorkspaceSetup } from './components/workspace/WorkspaceSetup';
+import { initializeApi } from './lib/api';
 import 'uidl-runtime/style.css';
 import './styles.css';
 
@@ -10,9 +12,13 @@ const classic = new URLSearchParams(window.location.search).get('ui') === 'class
 
 const root = document.getElementById('root');
 if (root) {
-  createRoot(root).render(
-    <StrictMode>
-      {classic ? <App /> : <DeskApp />}
-    </StrictMode>,
-  );
+  void initializeApi().then((workspaceReady) => {
+    createRoot(root).render(
+      <StrictMode>
+        {!workspaceReady ? <WorkspaceSetup /> : classic ? <App /> : <DeskApp />}
+      </StrictMode>,
+    );
+  }).catch(() => {
+    root.textContent = 'Unable to start the Agent-Control desktop host. Restart the application.';
+  });
 }

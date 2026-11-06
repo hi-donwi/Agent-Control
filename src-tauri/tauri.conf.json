@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "dev.agentworkspace.control",
   "build": {
-    "beforeDevCommand": "pnpm run dev",
-    "devUrl": "http://127.0.0.1:3141",
-    "beforeBuildCommand": "pnpm run build",
+    "beforeDevCommand": "pnpm run dev:client:desktop",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "pnpm run build && pnpm run desktop:host:build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -27,6 +27,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "resources": {
+      "target/desktop-host/agent-control-host": "agent-control-host"
+    }
   }
 }

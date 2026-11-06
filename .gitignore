@@ -33,3 +33,7 @@ playwright-report/
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Tauri build output and generated capability schemas
+src-tauri/target/
+src-tauri/gen/

@@ -1264,3 +1264,85 @@ body {
   margin-top: var(--sp-8);
   font-size: var(--text-xs);
 }
+
+.workspace-setup {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  overflow: auto;
+  padding: clamp(var(--sp-16), 4vw, var(--sp-48));
+  background: var(--bg-root);
+}
+
+.workspace-setup__card {
+  width: min(100%, 36rem);
+  padding: clamp(var(--sp-24), 5vw, var(--sp-40));
+  border: 1px solid var(--border);
+  border-radius: var(--r-16);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.workspace-setup__eyebrow {
+  margin-bottom: var(--sp-8);
+  color: var(--text-accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.workspace-setup__card h1 {
+  margin: 0 0 var(--sp-12);
+  color: var(--text-primary);
+  font-size: clamp(var(--text-xl), 4vw, var(--text-2xl));
+  line-height: var(--lh-tight);
+}
+
+.workspace-setup__card > p:not(.workspace-setup__eyebrow) {
+  margin: 0 0 var(--sp-20);
+  color: var(--text-secondary);
+}
+
+.workspace-setup__card code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: .92em;
+  overflow-wrap: anywhere;
+}
+
+.workspace-setup__button {
+  min-height: 44px;
+  padding: var(--sp-8) var(--sp-20);
+  border: 1px solid var(--bg-accent);
+  border-radius: var(--r-8);
+  background: var(--bg-accent);
+  color: var(--text-inverse);
+  font: 600 var(--text-sm)/1.2 var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration) var(--ease), opacity var(--duration) var(--ease);
+}
+
+.workspace-setup__button:hover:not(:disabled) { background: var(--bg-accent-hover); }
+.workspace-setup__button:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 3px; }
+.workspace-setup__button:disabled { cursor: wait; opacity: .65; }
+
+.workspace-setup__status,
+.workspace-setup__error {
+  margin-top: var(--sp-16);
+  font-size: var(--text-sm);
+}
+
+.workspace-setup__status { color: var(--text-muted); }
+.workspace-setup__error,
+.workspace-setting__error { color: var(--text-danger); }
+
+.workspace-setting__copy { min-width: 0; }
+.workspace-setting__path {
+  display: block;
+  margin: var(--sp-4) 0 var(--sp-8);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}

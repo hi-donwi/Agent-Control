@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorkspaceBridge, findWorkspaceRoot } from './workspace.js';
@@ -74,5 +74,43 @@ describe('WorkspaceBridge Diagnostic Tools', () => {
       async () => bridge.readSkill('non-existent-skill-xyz'),
       /Available skills:/
     );
+  });
+});
+
+describe('findWorkspaceRoot desktop mode', () => {
+  it('uses only a selected workspace with the required markers', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-selected-workspace-'));
+    mkdirSync(join(root, '.agents', 'standards'), { recursive: true });
+    writeFileSync(join(root, 'AGENTS.md'), '# Workspace\n');
+    try {
+      assert.equal(
+        findWorkspaceRoot('/not-a-workspace', {
+          AC_DESKTOP_MODE: '1',
+          WS_WORKSPACE_ROOT: root,
+        } as NodeJS.ProcessEnv),
+        root,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the selected workspace is absent or invalid', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-invalid-workspace-'));
+    try {
+      assert.throws(
+        () => findWorkspaceRoot(root, { AC_DESKTOP_MODE: '1' } as NodeJS.ProcessEnv),
+        /explicitly selected workspace root/,
+      );
+      assert.throws(
+        () => findWorkspaceRoot(root, {
+          AC_DESKTOP_MODE: '1',
+          WS_WORKSPACE_ROOT: root,
+        } as NodeJS.ProcessEnv),
+        /does not contain the required workspace markers/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

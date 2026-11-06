@@ -20,20 +20,66 @@ export function loopbackOnly() {
 }
 
 /** Middleware: verify bearer token. */
-export function tokenAuth(token: string) {
+export function tokenAuth(token: string, options: { allowQueryToken?: boolean } = {}) {
   return async (c: Context, next: Next) => {
-    // Allow token as query param for initial page load
-    const queryToken = c.req.query('token');
+    const queryToken = options.allowQueryToken === false ? undefined : c.req.query('token');
     const authHeader = c.req.header('authorization');
     const bearerToken = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)
       : undefined;
 
-    if (queryToken === token || bearerToken === token) {
+    const matches = (candidate: string | undefined): boolean => {
+      if (!candidate || candidate.length !== token.length) return false;
+      const candidateBytes = Buffer.from(candidate);
+      const tokenBytes = Buffer.from(token);
+      if (candidateBytes.length !== tokenBytes.length) return false;
+      return crypto.timingSafeEqual(candidateBytes, tokenBytes);
+    };
+
+    if (matches(queryToken) || matches(bearerToken)) {
       await next();
     } else {
       return c.json({ error: 'Invalid or missing token.' }, 401);
     }
+  };
+}
+
+const DESKTOP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const;
+const DESKTOP_HEADERS = new Set(['authorization', 'content-type']);
+
+/** Require an exact trusted desktop-webview origin and answer a narrow CORS preflight. */
+export function desktopOriginOnly(allowedOrigins: readonly string[]) {
+  const origins = new Set(allowedOrigins);
+  if (origins.size === 0 || origins.has('*')) {
+    throw new Error('Desktop origins must be explicit and non-empty.');
+  }
+
+  return async (c: Context, next: Next) => {
+    const origin = c.req.header('origin');
+    if (!origin || !origins.has(origin)) {
+      return c.json({ error: 'Desktop origin is not allowed.' }, 403);
+    }
+
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Vary', 'Origin');
+
+    if (c.req.method === 'OPTIONS') {
+      const requestedMethod = c.req.header('access-control-request-method')?.toUpperCase();
+      const requestedHeaders = (c.req.header('access-control-request-headers') ?? '')
+        .split(',')
+        .map((header) => header.trim().toLowerCase())
+        .filter(Boolean);
+      if (!requestedMethod || !DESKTOP_METHODS.includes(requestedMethod as typeof DESKTOP_METHODS[number])
+        || requestedHeaders.some((header) => !DESKTOP_HEADERS.has(header))) {
+        return c.json({ error: 'Desktop preflight is not allowed.' }, 403);
+      }
+      c.header('Access-Control-Allow-Methods', DESKTOP_METHODS.join(', '));
+      c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      c.header('Access-Control-Max-Age', '300');
+      return c.body(null, 204);
+    }
+
+    await next();
   };
 }
 
