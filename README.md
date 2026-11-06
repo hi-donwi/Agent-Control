@@ -1,10 +1,11 @@
 # Agent-Control
 
-AI-powered workspace assistant with multi-provider LLM support.
+AI-powered workspace assistant whose model inference runs through Agent Brain.
 
 A standalone, loopback-only chat interface that understands your Agent-Workspace
-projects, context, memory, and runs. It connects to OpenAI, Anthropic, and
-Google Gemini — all from one unified interface.
+projects, context, memory, and runs. Every model call goes through the Agent Brain
+gateway, which owns the provider accounts, keys, and routing; Agent-Control never calls a
+provider directly.
 
 ## Desk
 
@@ -30,7 +31,7 @@ pnpm run dev
 
 ## Features
 
-- **Multi-provider LLM** — any OpenAI-compatible, OpenAI Responses, or Anthropic endpoint by configuration, plus legacy OpenAI/Anthropic/Gemini settings
+- **Inference through Agent Brain** — every chat turn goes to the Brain gateway; providers, accounts, and keys live in Brain, not here
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
 - **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
 - **Authoritative Skill Retrieval** — `get_skill` powered by `Agent-Skills` (48 standardized software engineering workflows)
@@ -42,61 +43,54 @@ pnpm run dev
 
 ## Configuration
 
-Create `~/.agent-control/config.json` (or use the in-app settings):
+### Agent Brain is the only chat path
 
-```json
-{
-  "providers": {
-    "openai": { "apiKey": "sk-..." },
-    "anthropic": { "apiKey": "sk-ant-..." },
-    "google": { "apiKey": "AIza..." }
-  },
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-20250514"
-}
-```
+Chat inference runs only through Agent Brain
+([docs/specs/agent-brain-routed-sessions.md](docs/specs/agent-brain-routed-sessions.md)).
+Brain owns provider accounts, credentials, local models, and routing; Agent-Control sends
+it the conversation and runs the tools itself. There is no direct provider path and no API
+key field: when Brain is down or refuses a request, the chat shows the error and never
+falls back to a provider SDK.
 
-API keys are never stored in this repository. The config file lives outside
-the project directory and is git-ignored.
-
-### Endpoints by wire protocol
-
-Any vendor, router, or local server that speaks one of three protocols is added by
-configuration, not code: `openai-chat` (Chat Completions and compatible APIs, e.g. xAI,
-OpenRouter, Ollama, vLLM), `openai-responses`, and `anthropic-messages`. A `mock`
-protocol answers deterministically and offline, for tests and demos.
-
-`<workspace>/.local/agent/endpoints.json` (outside every repository):
+An Agent Brain endpoint is declared in `<workspace>/.local/agent/endpoints.json` (outside
+every repository) with `"purpose": "agent-brain"`. A `mock` endpoint answers
+deterministically and offline, for tests and demos:
 
 ```json
 {
   "endpoints": {
-    "anthropic": { "protocol": "anthropic-messages", "baseUrl": "https://api.anthropic.com/v1",
-                   "apiKey": "env:ANTHROPIC_API_KEY", "models": ["claude-sonnet-5-5"] },
-    "xai":       { "protocol": "openai-chat", "baseUrl": "https://api.x.ai/v1",
-                   "apiKey": "env:XAI_API_KEY", "models": ["<model>"] },
-    "local":     { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:11434/v1",
-                   "models": ["<model>"] },
-    "mock":      { "protocol": "mock", "models": ["echo"] }
+    "brain": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52140/v1",
+               "apiKey": "file:~/.lokal/serve.token", "locality": "remote", "purpose": "agent-brain",
+               "models": ["antigravity/claude-sonnet-4-6", "antigravity/gemini-3-flash", "codex/gpt-5.5"] },
+    "mock":  { "protocol": "mock", "models": ["echo"] }
   }
 }
 ```
 
 `apiKey` is a reference: `env:NAME`, `keychain:NAME` (macOS Keychain), or `file:PATH` for
 a token file that only its owner can read (`chmod 600`; an absolute path or `~/...`). A
-literal key is rejected. An endpoint replaces a legacy provider with the same id.
+literal key is rejected. The file may also list endpoints of other protocols
+(`openai-chat`, `openai-responses`, `anthropic-messages`) for other workspace tools; the
+chat lists none of them and refuses a request that names one.
 
-**A gateway that forwards to the cloud is remote.** Agent-Brain's `brain serve` listens on
-loopback but sends requests to cloud accounts, so declare it remote; a project's context
-then reaches it only when that project's policy lists it (below). `locality` can only
-tighten - a remote URL declared `local` is refused. List real model ids from
-`GET /v1/models`; the `code`/`chat` aliases need a local backend.
+**Brain is remote.** `brain serve` listens on loopback but forwards requests to cloud
+accounts, so an Agent Brain endpoint must be declared `"locality": "remote"`; a project's
+context then reaches it only when that project's policy lists it (below). When
+`~/.lokal/serve.token` exists and no endpoint is named `lokal`, the host adds that gateway
+as `lokal`, remote and with the Agent Brain purpose. List real model ids from
+`GET /v1/models`; a project-bound chat also asks Brain for them once the project's policy
+allows it.
+
+`~/.agent-control/config.json` holds only the endpoint and model a new chat starts with;
+the app reads it and never writes it:
 
 ```json
-"brain": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52140/v1",
-           "apiKey": "file:~/.lokal/serve.token", "locality": "remote",
-           "models": ["antigravity/claude-sonnet-4-6", "antigravity/gemini-3-flash", "codex/gpt-5.5"] }
+{ "defaultProvider": "brain", "defaultModel": "antigravity/gemini-3-flash" }
 ```
+
+A default that is not an Agent Brain endpoint falls back to the first one. Provider keys
+left in that file from earlier versions are ignored; the server names the providers once
+at startup (never the keys) so the entry can be removed.
 
 **A silent model ends the turn.** A chat turn gives up when a model call sends nothing for
 180 s before its first output (queueing and prompt processing included) or for 120 s between
@@ -114,19 +108,18 @@ only (for example "The model endpoint is rate limited (HTTP 429)"); the upstream
 and the prompt are never shown or logged.
 
 **Egress per project (Agent-Workspace ADR-0021).** Locality is derived from the URL:
-loopback is `local`, everything else `remote`. A local endpoint is always allowed. A
-remote endpoint is called only for a chat that names a `project` whose operator policy
-lists it, in `<workspace>/.local/agent/policies/<project>.json`:
+loopback is `local`, everything else `remote`, and a loopback gateway that forwards to the
+cloud is declared remote. A local endpoint is always allowed. A remote endpoint is called
+only for a chat that names a `project` whose operator policy lists it, in
+`<workspace>/.local/agent/policies/<project>.json`:
 
 ```json
-{ "schema_version": 1, "default": "read", "llm": { "endpoints": ["xai"] } }
+{ "schema_version": 1, "default": "read", "llm": { "endpoints": ["brain"] } }
 ```
 
 Without that entry the request is refused with 403. `POST /api/agent/chat` accepts
 `"project": "<key>"` next to `provider` and `model`; the sidebar's **Project** selector
-sends it, and disables providers the project may not use. Legacy providers from
-`~/.agent-control/config.json` are checked the same way: remote unless their base URL is
-loopback.
+sends it, and disables endpoints the project may not use.
 
 **A chat bound to a project sees only that project** (Agent-Workspace ADR-0011). Its
 tools cannot list other projects, load another project's context pack, or read outside
@@ -224,8 +217,8 @@ pnpm test:ui
 `test:ui` builds the UI, starts the same real entry point against a disposable workspace
 (`test/ui/workspace.ts` - endpoint config, policy, seeded approvals and coding session, a
 stub `ws`), and drives it in Chromium: the chat transcript, the approval inbox, the
-coding-session control, the settings dialog (masked keys, and a save that keeps the stored
-ones), the in-chat UIDL preview, and the token the server injects into a page whose URL has
+coding-session control, the settings (no key field, and legacy keys that never reach the
+page), the in-chat UIDL preview, and the token the server injects into a page whose URL has
 none. No network call and no real provider, exactly like the server test.
 It needs `git` on `PATH`, because a started session's branch is read from the fixture
 worktree. CI runs `pnpm test`, not this, so the browser download stays off the runner; it is
@@ -238,7 +231,7 @@ typechecked all the same, since `tsc -b` covers `test/ui`.
 - File reads sandboxed to workspace root
 - CSP headers prevent script injection; the one injected token script runs behind a fresh
   per-response nonce, and the HTML that carries it is not cacheable
-- API keys stored outside project in user home directory
+- No provider keys at all: Agent Brain holds them; endpoint credentials are references, never literals
 
 ## License
 

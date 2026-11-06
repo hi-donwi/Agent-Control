@@ -1,6 +1,7 @@
 # Spec: Agent Brain-Routed Sessions
 
-**Status:** Proposed; owner decisions confirmed, Brain API extensions still required.
+**Status:** In progress; owner decisions confirmed. Chat is Brain-only (see Progress); the Brain
+API extensions are still required.
 
 ## Objective
 
@@ -27,8 +28,9 @@ unavailable.
 
 ## Existing contract and gaps (verified 2026-11-04)
 
-Agent-Control currently calls Vercel AI SDK provider adapters directly for chat; read-only
-specialists reuse the parent's model. Protocol-based endpoints and project egress allowlists
+When this spec was written, Agent-Control called Vercel AI SDK provider adapters directly for
+chat; read-only specialists reuse the parent's model. Those adapters are now removed (see
+Progress). Protocol-based endpoints and project egress allowlists
 live in `<workspace>/.local/agent/endpoints.json` and project policy. The existing Brain CLI
 integration supplies policy checks, instructions, and specialist definitions.
 
@@ -216,10 +218,25 @@ These are proposed contracts, not existing routes:
    provider secrets out of Agent-Control frontend/server) versus a direct browser call to Brain's
    authenticated management API. In either case, secrets are never proxied through Agent-Control
    backend or returned to its UI state.
-3. The current Brain checkout has uncommitted changes in gateway/backend/config files that
-   overlap the needed local tool contract. Confirm their owner/intent before editing those files;
-   the account management API, weighted routing, and routing-profile contract are new work either
-   way.
+3. Resolved 2026-11-06: the uncommitted Brain gateway/backend/config changes were verified and
+   landed on Brain's main. The account management API and routing-profile contract are still new
+   work.
 4. The Brain gateway's auth currently supports master/account-scoped tokens, not profile/revision
    scoped client credentials. Add a least-privilege Agent-Control credential before enabling
    cross-provider profiles.
+
+## Progress
+
+- **2026-11-06, Brain-only chat.** The direct OpenAI, Anthropic, and Gemini adapters, the
+  `/api/agent/config` key API, and the settings key dialog are removed. Chat accepts only an
+  endpoint with `purpose: "agent-brain"` or the offline `mock` (`isChatEndpoint()` in
+  `server/chat-model.ts`); `/api/agent/providers` lists only those. Provider keys left in
+  `~/.agent-control/config.json` are ignored and named, never printed, at startup. The
+  auto-discovered `lokal` gateway is a remote Agent Brain endpoint, so it needs the project's
+  policy like any other Brain endpoint. `server/chat.e2e.test.ts` proves that a non-Brain
+  endpoint and a legacy provider are refused before any request, and that a Brain that is down
+  never reaches a direct endpoint. Behavior 7 and the first half of success criterion 1 hold;
+  specialists already reuse the parent's Brain model.
+- **Still open:** Brain-backed account/profile settings (behavior 3, success criterion 2),
+  profile-scoped egress (behavior 5), the least-privilege inference credential (blocker 4), and
+  local tool-call parity in Brain.
