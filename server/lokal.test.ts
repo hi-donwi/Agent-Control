@@ -12,7 +12,7 @@ describe('detectLokalEndpoint', () => {
     assert.equal(detectLokalEndpoint(home), null);
   });
 
-  it('detects lokal endpoint when serve.token exists', () => {
+  it('detects the Agent Brain gateway as a remote Brain endpoint when serve.token exists', () => {
     const home = mkdtempSync(join(tmpdir(), 'lokal-home-'));
     mkdirSync(join(home, '.lokal'), { recursive: true });
     writeFileSync(join(home, '.lokal', 'serve.token'), 'test-token\n');
@@ -23,7 +23,10 @@ describe('detectLokalEndpoint', () => {
     assert.equal(ep.protocol, 'openai-chat');
     assert.equal(ep.baseUrl, 'http://127.0.0.1:52140/v1');
     assert.equal(ep.credential, 'file:~/.lokal/serve.token');
-    assert.equal(ep.locality, 'local');
+    // The gateway forwards to cloud accounts: a project's context reaches it only when that
+    // project's policy lists it, the same as a configured Agent Brain endpoint.
+    assert.equal(ep.locality, 'remote');
+    assert.equal(ep.purpose, 'agent-brain');
     assert.deepEqual(ep.models, ['lokal/auto', 'lokal/qwen', 'lokal/llama']);
   });
 });
