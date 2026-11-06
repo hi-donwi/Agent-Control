@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { APICallError, EmptyResponseBodyError, InvalidResponseDataError, JSONParseError, RetryError, StreamProviderError } from 'ai';
-import { inferenceErrorLogLine, publicInferenceError } from './inference-errors.js';
+import { chatSetupError, inferenceErrorLogLine, publicInferenceError } from './inference-errors.js';
 
 const SECRET = 'sk-live-should-never-leak';
 const PROMPT = 'my private prompt about the client';
@@ -108,5 +108,22 @@ describe('inferenceErrorLogLine', () => {
     odd.name = `Bad ${SECRET} name`;
     const line = inferenceErrorLogLine(odd);
     assert.equal(line, 'Inference error: failed');
+  });
+});
+
+describe('chatSetupError', () => {
+  it('answers a model error with its sanitized message and logs only its code', () => {
+    const { message, logLine } = chatSetupError(apiError(401));
+    assert.equal(message, 'The model endpoint refused the credentials (HTTP 401). Check the endpoint\'s credential.');
+    assert.equal(logLine, 'Inference error: unauthorized (HTTP 401, AI_APICallError)');
+    assertNoLeak(message);
+    assertNoLeak(logLine);
+  });
+
+  it('answers a host error with a fixed message and keeps its cause for the log', () => {
+    const { message, logLine } = chatSetupError(new Error('ENOENT: no such file, open \'/srv/workspace/.local/agent/x.json\''));
+    assert.equal(message, 'The chat turn could not start. The Agent-Control log has the cause.');
+    assert.equal(logLine, 'Chat error: ENOENT: no such file, open \'/srv/workspace/.local/agent/x.json\'');
+    assert.equal(chatSetupError('plain').message, 'The chat turn could not start. The Agent-Control log has the cause.');
   });
 });
