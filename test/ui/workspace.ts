@@ -42,11 +42,11 @@ export interface Workspace {
 
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
-function approvalRequest(id: string, action: string, now: number, ttlMs: number) {
+function approvalRequest(id: string, action: string, now: number, ttlMs: number, project = PROJECT) {
   return {
     type: 'requested' as const,
     id,
-    project: PROJECT,
+    project,
     headSha: HEAD_SHA,
     action,
     inputHash: 'f'.repeat(64),
@@ -319,6 +319,28 @@ export function removeFanoutProject(root: string): void {
   rmSync(join(root, '.local', 'stub', 'extra-projects.tsv'), { force: true });
   rmSync(join(root, '.local', 'agent', 'policies', `${FANOUT_PROJECT}.json`), { force: true });
   rmSync(join(root, '.local', 'agent', 'approvals', FANOUT_PROJECT), { recursive: true, force: true });
+}
+
+const approvalLog = (root: string, project: string, now: number) => {
+  const dir = join(root, '.local', 'agent', 'approvals', project);
+  mkdirSync(dir, { recursive: true });
+  return join(dir, `${new Date(now).toISOString().slice(0, 7)}.jsonl`);
+};
+
+/**
+ * Asks for an approval in `project`. Besides a Brain-backed chat, a raised hand is the only
+ * thing that seats this host's agent at a table: the floor shows no outside agents and no
+ * mock chats (docs/specs/agent-brain-routed-sessions.md). Pair it with `lowerHand`.
+ */
+export function raiseHand(root: string, id: string, project = PROJECT, action = 'write_file'): void {
+  const now = Date.now();
+  appendFileSync(approvalLog(root, project, now), JSON.stringify(approvalRequest(id, action, now, APPROVAL_TTL_MS, project)) + '\n');
+}
+
+/** Decides a request `raiseHand` made, so the specs after it see the floor as it was. */
+export function lowerHand(root: string, id: string, project = PROJECT): void {
+  const now = Date.now();
+  appendFileSync(approvalLog(root, project, now), JSON.stringify({ type: 'approved', id, project, decidedAt: new Date(now).toISOString() }) + '\n');
 }
 
 /** Registers projects only the floor sees (no dispatch target answers for them): more tables and levels. */

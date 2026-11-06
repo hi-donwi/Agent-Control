@@ -1,23 +1,62 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
-import { addFloorProjects, PROJECT, removeFloorProjects } from './workspace.js';
+import { addFloorProjects, lowerHand, PROJECT, raiseHand, removeFloorProjects } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
+import type { Floor, FloorAgent } from '../../src/desk/types.js';
 
-const workspaceRoot = () => (JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root;
-const activityFile = (root: string, session: string) => join(root, '.local', 'agent', 'activity', `${session}.json`);
+const serverState = () => JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState;
+const workspaceRoot = () => serverState().root;
 const TABLES_PER_PAGE = 6;
 const SEATS = 4;
+/** One request per spec that raises a hand, so no spec decides another's. */
+const HANDS = {
+  home: '66666666-6666-4666-8666-666666666601',
+  mobile: '66666666-6666-4666-8666-666666666602',
+  glow: '66666666-6666-4666-8666-666666666603',
+};
 
-/** What `ws agent activity` writes for an outside agent session. */
-function reportActivity(root: string, session: string, tool: string, state: string, detail: string): void {
-  mkdirSync(join(root, '.local', 'agent', 'activity'), { recursive: true });
-  writeFileSync(activityFile(root, session), JSON.stringify({
-    version: 1, session, project: PROJECT, tool, state, detail, at: new Date().toISOString(),
+/** Runs `body` while this host waits for an approval in the project, so its agent sits at the table. */
+async function withRaisedHand(id: string, body: () => Promise<void>): Promise<void> {
+  const root = workspaceRoot();
+  raiseHand(root, id);
+  try {
+    await body();
+  } finally {
+    lowerHand(root, id);
+  }
+}
+
+/**
+ * Serves the page the real floor with `crew` at the project's table instead of its own agents.
+ * The server seats at most one agent per project (this host's), but the table renders any
+ * number, so this is how a spec reaches the seat limit. Both the snapshot and the event
+ * stream answer with it; the stream ends after one floor and the page reconnects to the same.
+ */
+async function routeFloorWithCrew(page: Page, crew: FloorAgent[]): Promise<void> {
+  const { origin, token } = serverState();
+  const response = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+  expect(response.ok).toBe(true);
+  const floor = await response.json() as Floor;
+  const room = floor.zones.flatMap((zone) => zone.rooms).find((row) => row.key === PROJECT);
+  expect(room).toBeDefined();
+  room!.agents = crew;
+  room!.idle = false;
+  const agents = floor.zones.flatMap((zone) => zone.rooms.flatMap((row) => row.agents));
+  floor.totals = {
+    ...floor.totals,
+    agents: agents.length,
+    active: agents.filter((agent) => agent.state !== 'idle' && agent.state !== 'offline').length,
+    waiting: agents.filter((agent) => agent.state === 'waiting').length,
+  };
+  const body = JSON.stringify(floor);
+  await page.route('**/api/agent/desk/floor', (route) => route.fulfill({ status: 200, contentType: 'application/json', body }));
+  await page.route('**/api/agent/desk/events', (route) => route.fulfill({
+    status: 200, contentType: 'text/event-stream', body: `event: floor\ndata: ${body}\n\n`,
   }));
 }
 
-test('keeps the project map as the home focus and tucks exploration tools away', async ({ page, deskUrl }) => {
+test('keeps the project map as the home focus and tucks exploration tools away', async ({ page, deskUrl }) => withRaisedHand(HANDS.home, async () => {
   await page.goto(deskUrl);
 
   const navbar = page.locator('.desk-bar');
@@ -40,7 +79,7 @@ test('keeps the project map as the home focus and tucks exploration tools away',
   await expect(page.getByRole('searchbox', { name: 'Search projects' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Switch to compact view' })).toBeVisible();
   await expect(page.getByRole('article', { name: `Project ${PROJECT}` })).toBeVisible();
-});
+}));
 
 test('keeps the floor HUD out of the navbar on other desk pages', async ({ page, deskUrl }) => {
   await page.goto(deskUrl);
@@ -54,7 +93,7 @@ test('keeps the floor HUD out of the navbar on other desk pages', async ({ page,
   await expect(page.getByRole('navigation', { name: 'Floor position' })).toContainText('Today');
 });
 
-test('a level fits the screen without scrolling, in studio and compact view, and keeps project and agent access on mobile', async ({ page, deskUrl }) => {
+test('a level fits the screen without scrolling, in studio and compact view, and keeps project and agent access on mobile', async ({ page, deskUrl }) => withRaisedHand(HANDS.mobile, async () => {
   await page.goto(deskUrl);
   await expect(page.locator('.desk-bar').getByRole('heading', { name: 'Workspace map' })).toBeVisible();
   const room = page.getByRole('article', { name: `Project ${PROJECT}` });
@@ -103,102 +142,94 @@ test('a level fits the screen without scrolling, in studio and compact view, and
   await page.screenshot({ path: '/tmp/agent-control-studio-dark.png' });
   await room.getByRole('button', { name: PROJECT, exact: true }).click();
   await expect(page.getByRole('heading', { name: PROJECT, exact: true })).toBeVisible();
-});
+}));
 
 test('seats up to four agents at their project table, posed by state, and the rest stand by it', async ({ page, deskUrl }) => {
-  const root = workspaceRoot();
-  const visitors = [
-    { session: 'voxel-typing', tool: 'codex', state: 'typing', detail: 'Edit' },
-    { session: 'voxel-thinking', tool: 'cursor', state: 'thinking', detail: 'Planning' },
-    { session: 'voxel-reading', tool: 'opencode', state: 'reading', detail: 'Read' },
-    { session: 'voxel-waiting', tool: 'gemini', state: 'waiting', detail: 'Approve shell command' },
-  ];
-  try {
-    for (const visitor of visitors) reportActivity(root, visitor.session, visitor.tool, visitor.state, visitor.detail);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(deskUrl);
-    const room = page.getByRole('article', { name: `Project ${PROJECT}` });
-    for (const visitor of visitors) {
-      await expect(room.locator('.seat').filter({ hasText: new RegExp(`^${visitor.tool}`) })).toHaveCount(1);
-    }
+  const since = new Date().toISOString();
+  const crew: FloorAgent[] = ([
+    ['typing', 'Edit'],
+    ['thinking', 'Planning'],
+    ['reading', 'Read'],
+    ['waiting', 'approval: run_command'],
+    ['running', 'run_command'],
+    ['idle', 'turn finished'],
+  ] as const).map(([state, detail], index) => ({
+    id: `host:${PROJECT}:${index + 1}`, tool: 'agent-control', project: PROJECT, state, detail, since, source: 'host',
+  }));
+  await routeFloorWithCrew(page, crew);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(deskUrl);
+  const room = page.getByRole('article', { name: `Project ${PROJECT}` });
+  const seats = room.locator('.seat');
+  await expect(seats).toHaveCount(crew.length);
+  for (const agent of crew) await expect(room.locator(`.seat[data-agent-id="${agent.id}"]`)).toHaveCount(1);
 
-    // Four chairs: four characters at the table; the agents past them fold into one +N chip.
-    const seats = room.locator('.seat');
-    const total = await seats.count();
-    expect(total).toBeGreaterThan(SEATS);
-    await expect(page.locator('.level-stage .vx-agent')).toHaveCount(SEATS);
-    const seated = room.locator('.seat.is-seated');
-    await expect(seated).toHaveCount(SEATS);
-    for (const standing of await room.locator('.seat:not(.is-seated)').all()) await expect(standing).toBeHidden();
-    const more = total - SEATS;
-    await expect(room.getByRole('button', { name: `${more} more ${more === 1 ? 'agent' : 'agents'} in ${PROJECT}`, exact: true })).toHaveText(`+${more}`);
+  // Four chairs: four characters at the table; the agents past them fold into one +N chip.
+  expect(crew.length).toBeGreaterThan(SEATS);
+  await expect(page.locator('.level-stage .vx-agent')).toHaveCount(SEATS);
+  const seated = room.locator('.seat.is-seated');
+  await expect(seated).toHaveCount(SEATS);
+  for (const standing of await room.locator('.seat:not(.is-seated)').all()) await expect(standing).toBeHidden();
+  const more = crew.length - SEATS;
+  await expect(room.getByRole('button', { name: `${more} more ${more === 1 ? 'agent' : 'agents'} in ${PROJECT}`, exact: true })).toHaveText(`+${more}`);
 
-    // A pose never lies: as many characters hold each state as seated chips name it.
-    // Only an agent that needs you spells out its state on the chip.
-    const states = new Map<string, number>();
-    for (const seat of await seated.all()) {
-      const state = (await seat.getAttribute('class'))!.match(/\bseat-([a-z]+)\b/)![1]!;
-      states.set(state, (states.get(state) ?? 0) + 1);
-      const spelled = state === 'waiting' || state === 'warning';
-      await (spelled ? expect(seat.locator('.seat-state')).toBeVisible() : expect(seat.locator('.seat-state')).toBeHidden());
-    }
-    for (const [state, count] of states) await expect(page.locator(`.level-stage .vx-agent-${state}`)).toHaveCount(count);
-
-    await page.locator('.level-stage').screenshot({ path: '/tmp/agent-control-voxel-level.png' });
-    // A small stage keeps each chip to its status dot, so plates stay clear of their neighbours.
-    await page.setViewportSize({ width: 1024, height: 700 });
-    for (const seat of await seated.all()) {
-      await expect(seat).toBeVisible();
-      await expect(seat.locator('.seat-name')).toBeHidden();
-      await expect(seat.locator('.seat-state')).toBeHidden();
-    }
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.getByRole('button', { name: 'Switch to dark mode' }).click();
-    await page.locator('.level-stage').screenshot({ path: '/tmp/agent-control-voxel-level-dark.png' });
-    await page.getByRole('button', { name: 'Switch to light mode' }).click();
-
-    // A chip is the agent's control: it opens that agent's drawer.
-    const visitorChip = seated.filter({ hasText: /^(codex|cursor|opencode|gemini)/ }).first();
-    await visitorChip.click();
-    await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
-  } finally {
-    for (const visitor of visitors) rmSync(activityFile(root, visitor.session), { force: true });
+  // A pose never lies: as many characters hold each state as seated chips name it.
+  // Only an agent that needs you spells out its state on the chip.
+  const states = new Map<string, number>();
+  for (const seat of await seated.all()) {
+    const state = (await seat.getAttribute('class'))!.match(/\bseat-([a-z]+)\b/)![1]!;
+    states.set(state, (states.get(state) ?? 0) + 1);
+    const spelled = state === 'waiting' || state === 'warning';
+    await (spelled ? expect(seat.locator('.seat-state')).toBeVisible() : expect(seat.locator('.seat-state')).toBeHidden());
   }
+  expect(states.get('waiting')).toBe(1);
+  for (const [state, count] of states) await expect(page.locator(`.level-stage .vx-agent-${state}`)).toHaveCount(count);
+
+  await page.locator('.level-stage').screenshot({ path: '/tmp/agent-control-voxel-level.png' });
+  // A small stage keeps each chip to its status dot, so plates stay clear of their neighbours.
+  await page.setViewportSize({ width: 1024, height: 700 });
+  for (const seat of await seated.all()) {
+    await expect(seat).toBeVisible();
+    await expect(seat.locator('.seat-name')).toBeHidden();
+    await expect(seat.locator('.seat-state')).toBeHidden();
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await page.locator('.level-stage').screenshot({ path: '/tmp/agent-control-voxel-level-dark.png' });
+  await page.getByRole('button', { name: 'Switch to light mode' }).click();
+
+  // A chip is the agent's control: it opens that agent's drawer.
+  await seated.first().click();
+  await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
 });
 
-test('a table glows by what it signals, tells more on hover, and the floor zooms into its room and back out', async ({ page, deskUrl }) => {
-  const root = workspaceRoot();
-  reportActivity(root, 'glow-waiting', 'gemini', 'waiting', 'Approve shell command');
-  try {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(deskUrl);
-    const room = page.getByRole('article', { name: `Project ${PROJECT}` });
-    await expect(room.locator('.seat').filter({ hasText: /^gemini/ })).toHaveCount(1);
-    // An agent at the table needs you: the floor under it glows orange.
-    await expect(page.locator('.level-scene .vx-glow.is-attention')).toHaveCount(1);
+test('a table glows by what it signals, tells more on hover, and the floor zooms into its room and back out', async ({ page, deskUrl }) => withRaisedHand(HANDS.glow, async () => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(deskUrl);
+  const room = page.getByRole('article', { name: `Project ${PROJECT}` });
+  await expect(room.getByRole('button', { name: new RegExp(`^agent-control in ${PROJECT}: needs you`) })).toHaveCount(1);
+  // An agent at the table needs you: the floor under it glows orange.
+  await expect(page.locator('.level-scene .vx-glow.is-attention')).toHaveCount(1);
 
-    // Hover tells more - when it was last active, who is at the table - and lights the floor under it.
-    const name = room.getByRole('button', { name: PROJECT, exact: true });
-    await name.hover();
-    const card = page.getByRole('tooltip');
-    await expect(card).toBeVisible();
-    await expect(card).toContainText('Last active');
-    await expect(card).toContainText(/\d+ needs? you/);
-    await expect(name).toHaveAttribute('aria-describedby', await card.getAttribute('id') ?? '');
-    await expect(page.locator('.level-scene .vx-glow.is-focus')).toHaveCount(1);
-    await expect(page.locator('.level-keys')).toBeVisible();
+  // Hover tells more - when it was last active, who is at the table - and lights the floor under it.
+  const name = room.getByRole('button', { name: PROJECT, exact: true });
+  await name.hover();
+  const card = page.getByRole('tooltip');
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('Last active');
+  await expect(card).toContainText(/\d+ needs? you/);
+  await expect(name).toHaveAttribute('aria-describedby', await card.getAttribute('id') ?? '');
+  await expect(page.locator('.level-scene .vx-glow.is-focus')).toHaveCount(1);
+  await expect(page.locator('.level-keys')).toBeVisible();
 
-    // Into the room the floor zooms toward its table; Back zooms out of it and rings the plate.
-    await name.click();
-    await expect(page.locator('.level-stage')).toHaveAttribute('data-enter', 'zoom-in');
-    await expect(page.getByLabel(`Project room ${PROJECT}`)).toBeVisible();
-    await page.goBack();
-    await expect(page.locator('.level-stage')).toHaveAttribute('data-enter', 'zoom-out');
-    await expect(room).toHaveClass(/\bis-highlighted\b/);
-  } finally {
-    rmSync(activityFile(root, 'glow-waiting'), { force: true });
-  }
-});
+  // Into the room the floor zooms toward its table; Back zooms out of it and rings the plate.
+  await name.click();
+  await expect(page.locator('.level-stage')).toHaveAttribute('data-enter', 'zoom-in');
+  await expect(page.getByLabel(`Project room ${PROJECT}`)).toBeVisible();
+  await page.goBack();
+  await expect(page.locator('.level-stage')).toHaveAttribute('data-enter', 'zoom-out');
+  await expect(room).toHaveClass(/\bis-highlighted\b/);
+}));
 
 test('walks the levels with up and down, and the pages of project tables with left and right', async ({ page, deskUrl }) => {
   const root = workspaceRoot();

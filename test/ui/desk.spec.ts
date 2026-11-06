@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from '
 import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
-import { addFanoutProject, FANOUT_PROJECT, HEAD_SHA, PROJECT, removeFanoutProject, SESSION_BRANCH, worktreeOf } from './workspace.js';
+import { addFanoutProject, FANOUT_PROJECT, HEAD_SHA, lowerHand, PROJECT, raiseHand, removeFanoutProject, SESSION_BRANCH, worktreeOf } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
@@ -12,6 +12,7 @@ import { STATE_FILE, type ServerState } from './state.js';
  */
 
 const REQUEST_ID = '55555555-5555-4555-8555-555555555555';
+const LIVE_REQUEST_ID = '55555555-5555-4555-8555-555555555556';
 
 function seedApproval(root: string): void {
   const now = Date.now();
@@ -76,11 +77,12 @@ async function sendCommandAndInspectEvidence(page: Page): Promise<void> {
 }
 
 /** What `ws agent activity` or the Claude Code hooks write for an outside agent session. */
-function reportActivity(root: string, session: string, state: string, detail: string): void {
+/** What `ws agent activity` writes for an outside Claude Code session; the floor ignores it. */
+function reportActivity(root: string, session: string, project: string, state: string, detail: string): void {
   const dir = join(root, '.local', 'agent', 'activity');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${session}.json`), JSON.stringify({
-    version: 1, session, project: PROJECT, tool: 'claude', state, detail, at: new Date().toISOString(),
+    version: 1, session, project, tool: 'claude', state, detail, at: new Date().toISOString(),
   }));
 }
 
@@ -137,7 +139,7 @@ test('renders a menu section as a UIDL document read through the desk adapter', 
   await expect(page.getByRole('dialog', { name: 'Runs' }).getByText('No runs yet. Start one with ws run.')).toBeVisible();
 });
 
-test('opens the agent drawer bound to its project: approval, chat, and a live pose', async ({ page, deskUrl }) => {
+test('opens the agent drawer bound to its project: approval, chat, and the seat leaving once the hand is down', async ({ page, deskUrl }) => {
   await page.goto(deskUrl);
   await page.getByRole('button', { name: new RegExp(`^agent-control in ${PROJECT}`) }).click();
 
@@ -151,7 +153,7 @@ test('opens the agent drawer bound to its project: approval, chat, and a live po
   await drawer.getByRole('button', { name: 'Send message' }).click();
   await expect(drawer.getByText('mock(echo): hello')).toBeVisible();
 
-  // Approving every request once clears the hand; the next poll shows the host idle after its turn.
+  // Approving every request once clears the hand.
   const waiting = drawer.getByRole('region', { name: 'Waiting for you' });
   await expect(waiting.getByText('write_file')).toBeVisible();
   const approve = waiting.getByRole('button', { name: 'Approve once' });
@@ -162,8 +164,10 @@ test('opens the agent drawer bound to its project: approval, chat, and a live po
   await expect(waiting).toHaveCount(0);
   // The decision goes back into the conversation, so the agent continues without a retype.
   await expect(drawer.getByText(/^Approved request /).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: `agent-control in ${PROJECT}: idle, turn finished` }))
-    .toBeVisible({ timeout: 10_000 });
+  // Only a Brain-backed chat keeps the host at its table (docs/specs/agent-brain-routed-sessions.md);
+  // this one ran on the mock, so with the hand down the host leaves the floor, with no reload.
+  await expect(page.getByRole('button', { name: new RegExp(`^agent-control in ${PROJECT}`) }))
+    .toHaveCount(0, { timeout: 10_000 });
 });
 
 test('opens a completed task reference from read-only command evidence', async ({ page, deskUrl }) => {
@@ -536,24 +540,28 @@ test('drafts a scoped Markdown note from the response without saving it', async 
   expect(readFileSync(file, 'utf-8')).toContain('Evidence is ready.');
 });
 
-test('moves an outside agent live as its activity record changes, with no reload', async ({ page, deskUrl }) => {
+test('seats only this host: an outside agent stays off the floor, and a raised hand comes and goes live', async ({ page, deskUrl }) => {
   const root = workspaceRoot();
-  await page.goto(deskUrl);
-  await expect(page.getByRole('status').filter({ hasText: 'Live.' })).toBeAttached();
+  // A project of its own, so no hand another spec left up is already on the table.
+  addFanoutProject(root);
+  try {
+    await page.goto(deskUrl);
+    await expect(page.getByRole('status').filter({ hasText: 'Live.' })).toBeAttached();
+    const host = page.getByRole('button', { name: new RegExp(`^agent-control in ${FANOUT_PROJECT}: `) });
+    await expect(host).toHaveCount(0);
 
-  reportActivity(root, 'live-session', 'reading', 'Read');
-  const seat = page.getByRole('button', { name: new RegExp(`^claude in ${PROJECT}: `) });
-  await expect(seat).toHaveAccessibleName(`claude in ${PROJECT}: reading, Read`);
+    // An outside session reports first, then this host asks for an approval: the floor that
+    // shows the hand was read after both, and it seats the host alone.
+    reportActivity(root, 'live-session', FANOUT_PROJECT, 'waiting', 'Claude needs your permission to use Bash');
+    raiseHand(root, LIVE_REQUEST_ID, FANOUT_PROJECT, 'run_command');
+    await expect(host).toHaveAccessibleName(`agent-control in ${FANOUT_PROJECT}: needs you, approval: run_command`);
+    await expect(page.getByRole('button', { name: new RegExp(`^claude in ${FANOUT_PROJECT}`) })).toHaveCount(0);
 
-  reportActivity(root, 'live-session', 'waiting', 'Claude needs your permission to use Bash');
-  await expect(seat).toHaveAccessibleName(`claude in ${PROJECT}: needs you, Claude needs your permission to use Bash`);
-
-  // Its drawer says the chat there is this host's, not a line into that session.
-  await seat.click();
-  await expect(page.getByRole('dialog', { name: 'Assistant' }).getByText('Works in its own claude session')).toBeVisible();
-
-  rmSync(join(root, '.local', 'agent', 'activity', 'live-session.json'));
-  await expect(seat).toHaveCount(0);
+    lowerHand(root, LIVE_REQUEST_ID, FANOUT_PROJECT);
+    await expect(host).toHaveCount(0);
+  } finally {
+    rmSync(join(root, '.local', 'agent', 'activity', 'live-session.json'), { force: true });
+  }
 });
 
 test('keeps a project conversation across a reload', async ({ page, deskUrl }) => {
