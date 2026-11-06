@@ -56,6 +56,9 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   // Model `silent` accepts the request and never sends a chunk.
   let silentClosed!: () => void;
   const brainSilentClosed = new Promise<void>((resolve) => { silentClosed = resolve; });
+  // A provider reached directly, not through Brain: a Brain failure must never land here.
+  let directServer: HttpServer;
+  let directCalls = 0;
   let serverLog = '';
 
   const post = (body: unknown) =>
@@ -128,6 +131,25 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
         resolve();
       });
     });
+    directServer = createHttpServer((request, response) => {
+      directCalls += 1;
+      request.resume();
+      request.on('end', () => {
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        response.end([
+          'data: {"id":"chatcmpl-direct","object":"chat.completion.chunk","created":1,"model":"direct","choices":[{"index":0,"delta":{"role":"assistant","content":"direct reply"},"finish_reason":null}]}',
+          '',
+          'data: {"id":"chatcmpl-direct","object":"chat.completion.chunk","created":1,"model":"direct","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+          '', 'data: [DONE]', '', '',
+        ].join('\n'));
+      });
+    });
+    const directPort = await new Promise<number>((resolve, reject) => {
+      directServer.once('error', reject);
+      directServer.listen(0, '127.0.0.1', () => resolve((directServer.address() as AddressInfo).port));
+    });
+    // Nothing listens here: a Brain that is down.
+    const brainDownPort = await freePort();
     mkdirSync(join(root, '.agents', 'standards'), { recursive: true });
     mkdirSync(join(root, '.agents', 'bin'), { recursive: true });
     mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
@@ -151,6 +173,11 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
           apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: [],
           timeouts: { firstChunkMs: 300, chunkMs: 300 },
         },
+        'brain-down': {
+          protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${brainDownPort}/v1`,
+          apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: [],
+        },
+        direct: { protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${directPort}/v1`, models: ['direct'] },
       },
     }));
     // The bridge shells out to `<root>/.agents/bin/ws`; stub the CLI boundary so the
@@ -184,6 +211,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   after(() => {
     child?.kill('SIGKILL');
     brainServer?.close();
+    directServer?.close();
     rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   });
@@ -334,6 +362,25 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     await eventually(async () => (/Inference error: unauthorized/.test(serverLog) ? true : undefined));
     assert.match(serverLog, /Inference error: unauthorized \(HTTP 401, AI_APICallError\)/);
     assert.doesNotMatch(serverLog, /PROMPT-MARKER-71|acct-brain-9|sk-upstream-secret|gateway-token/);
+  });
+
+  it('shows a Brain that is down as unreachable, and never falls back to a direct endpoint', async () => {
+    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+      schema_version: 1, default: 'read', llm: { endpoints: ['brain-down', 'direct'] },
+    }));
+    // The direct endpoint works and the policy allows it, so a fallback would have somewhere to go.
+    const direct = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'direct', model: 'direct', project: 'mockproj' });
+    assert.equal(answerText(await protocolLines(direct)), 'direct reply');
+    const directBefore = directCalls;
+    assert.ok(directBefore > 0);
+
+    const response = await post({ messages: [{ role: 'user', content: 'are you there?' }], provider: 'brain-down', model: 'chat', project: 'mockproj' });
+    assert.equal(response.status, 200);
+    const lines = await protocolLines(response);
+    assert.deepEqual(lines.filter((l) => l.startsWith('e:')).map((l) => JSON.parse(l.slice(2)) as string), ['The model endpoint is unreachable. Check that it is running.']);
+    assert.equal(answerText(lines), '');
+    assert.equal(directCalls, directBefore, 'a direct endpoint was called while Brain was down');
+    await eventually(async () => (/Inference error: unreachable/.test(serverLog) ? true : undefined));
   });
 
   it('ends a turn whose model stays silent with a timeout error, and closes the Brain request', async () => {
