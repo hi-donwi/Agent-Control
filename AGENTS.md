@@ -6,8 +6,8 @@ not modify the Agent-Workspace framework.
 ## Stack
 
 React 19 + Vite + TypeScript frontend, Hono + Vercel AI SDK backend.
-Multi-provider: OpenAI, Anthropic, Google Gemini. Streaming SSE chat with
-markdown rendering and syntax highlighting.
+Model inference runs only through Agent Brain (`purpose: "agent-brain"` endpoints, plus the
+offline `mock`). Streaming chat with markdown rendering and syntax highlighting.
 
 ## Rules
 
@@ -15,9 +15,12 @@ markdown rendering and syntax highlighting.
 - The host's own API lives under `/api/agent/*`. `/api/*` is reserved: in agent mode
   (`WS_AGENT_MODE=1`) the host serves the desk and proxies `/api/*` to the control plane,
   so a new own endpoint never goes under bare `/api/`.
-- API keys MUST live outside every repository: as `env:`/`keychain:` references in
-  `<workspace>/.local/agent/endpoints.json`, or in `~/.agent-control/config.json`
-  (legacy). Never in source, and never as a literal in endpoints.json.
+- Chat inference goes only to an Agent Brain endpoint or `mock` (`isChatEndpoint()` in
+  `server/chat-model.ts`). Never add a direct provider path, a fallback to one, or an API
+  key field: provider accounts and keys belong in Agent Brain.
+- Endpoint credentials MUST live outside every repository, as `env:`/`keychain:`/`file:`
+  references in `<workspace>/.local/agent/endpoints.json`. Never in source, and never as a
+  literal in endpoints.json.
 - A remote endpoint is called only for a project whose policy lists it (ADR-0021).
   Tests use the `mock` protocol; they never call a real endpoint.
 - A chat with a project gets tools bound to that project (ADR-0011). Any new tool that
