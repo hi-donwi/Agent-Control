@@ -138,7 +138,8 @@ describe('loadEndpoints', () => {
     const endpoints = loadEndpoints(root, { autoDiscoverLokal: true, home });
     assert.equal(endpoints.length, 1);
     assert.equal(endpoints[0].name, 'lokal');
-    assert.equal(endpoints[0].locality, 'local');
+    assert.equal(endpoints[0].locality, 'remote');
+    assert.equal(endpoints[0].purpose, 'agent-brain');
   });
 });
 

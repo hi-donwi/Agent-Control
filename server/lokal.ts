@@ -8,8 +8,10 @@ export const LOKAL_DEFAULT_PORT = 52140;
 export const LOKAL_BASE_URL = `http://127.0.0.1:${LOKAL_DEFAULT_PORT}/v1`;
 
 /**
- * Auto-detects the Agent-Local (lokal) endpoint on loopback when ~/.lokal/serve.token exists.
- * Follows Agent-Workspace ADR-0021 (loopback locality) and lokal design.
+ * Auto-detects the Agent Brain gateway (formerly Agent-Local, `lokal`) on loopback when
+ * ~/.lokal/serve.token exists. The gateway is on loopback but forwards to cloud provider
+ * accounts, so it is declared remote (Agent-Workspace ADR-0021): a project's context reaches
+ * it only when that project's policy lists `lokal`.
  */
 export function detectLokalEndpoint(home = homedir()): Endpoint | null {
   const tokenPath = join(home, '.lokal', 'serve.token');
@@ -20,7 +22,8 @@ export function detectLokalEndpoint(home = homedir()): Endpoint | null {
     protocol: 'openai-chat',
     baseUrl: LOKAL_BASE_URL,
     credential: 'file:~/.lokal/serve.token',
-    locality: 'local',
+    locality: 'remote',
+    purpose: 'agent-brain',
     models: ['lokal/auto', 'lokal/qwen', 'lokal/llama'],
   };
 }
