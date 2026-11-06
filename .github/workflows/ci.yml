@@ -22,6 +22,15 @@ jobs:
       gitleaks_sha256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
       osv_scanner_version: 2.5.1
       osv_scanner_sha256: f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be
+      # Tauri 2 pulls the GTK3 stack (glib 0.18, proc-macro-error) for Linux only; the
+      # desktop app ships for macOS, which never compiles it, and Tauri has no gtk4 release
+      # yet. Revisit when Tauri moves to gtk4 or on the expiry date, whichever comes first.
+      allow_json: |
+        [
+          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0429", "file": "src-tauri/Cargo.lock", "reason": "glib 0.18.5 VariantStrIter unsoundness; transitive Linux-only GTK3 dependency of Tauri 2, not compiled for macOS", "expires": "2027-02-06"},
+          {"scanner": "osv-scanner", "id": "GHSA-wrw7-89jp-8q8g", "file": "src-tauri/Cargo.lock", "reason": "same glib 0.18.5 advisory under its GHSA alias; Linux-only, not compiled for macOS", "expires": "2027-02-06"},
+          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0370", "file": "src-tauri/Cargo.lock", "reason": "proc-macro-error unmaintained (build-time macro); transitive Linux-only GTK3 dependency of Tauri 2", "expires": "2027-02-06"}
+        ]
 
   test:
     name: test
