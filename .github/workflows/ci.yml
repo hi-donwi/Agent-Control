@@ -27,9 +27,9 @@ jobs:
       # yet. Revisit when Tauri moves to gtk4 or on the expiry date, whichever comes first.
       allow_json: |
         [
-          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0429", "file": "src-tauri/Cargo.lock", "reason": "glib 0.18.5 VariantStrIter unsoundness; transitive Linux-only GTK3 dependency of Tauri 2, not compiled for macOS", "expires": "2027-02-06"},
-          {"scanner": "osv-scanner", "id": "GHSA-wrw7-89jp-8q8g", "file": "src-tauri/Cargo.lock", "reason": "same glib 0.18.5 advisory under its GHSA alias; Linux-only, not compiled for macOS", "expires": "2027-02-06"},
-          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0370", "file": "src-tauri/Cargo.lock", "reason": "proc-macro-error unmaintained (build-time macro); transitive Linux-only GTK3 dependency of Tauri 2", "expires": "2027-02-06"}
+          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0429", "reason": "glib 0.18.5 VariantStrIter unsoundness (src-tauri/Cargo.lock); transitive Linux-only GTK3 dependency of Tauri 2, not compiled for macOS", "expires": "2027-02-06"},
+          {"scanner": "osv-scanner", "id": "GHSA-wrw7-89jp-8q8g", "reason": "same glib 0.18.5 advisory under its GHSA alias; Linux-only, not compiled for macOS", "expires": "2027-02-06"},
+          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0370", "reason": "proc-macro-error unmaintained (build-time macro); transitive Linux-only GTK3 dependency of Tauri 2", "expires": "2027-02-06"}
         ]
 
   test:
