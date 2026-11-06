@@ -351,6 +351,15 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.notEqual(closed, timedOut, 'the Brain request stayed open after the timeout');
     await eventually(async () => (/Inference error: timeout/.test(serverLog) ? true : undefined));
     assert.doesNotMatch(serverLog, /anyone there\?/);
+
+    // A model that went silent is a warning on the floor, not a turn the operator stopped.
+    const agent = await eventually(async () => {
+      const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+      const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: Array<{ state: string; detail: string }> }> }> };
+      const found = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj')?.agents[0];
+      return found?.state === 'warning' ? found : undefined;
+    });
+    assert.equal(agent.detail, 'the model timed out');
   });
 });
 
