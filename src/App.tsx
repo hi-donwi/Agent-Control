@@ -15,7 +15,6 @@ type ThemePref = 'light' | 'dark' | 'system';
 
 export function App() {
   const chat = useChat();
-  const { providers, defaultProvider, defaultModel, refresh: refreshProviders } = useProviders();
   const { projects } = useProjects();
   const [selectedProject, setSelectedProject] = useState(() => {
     try { return localStorage.getItem('ac-project') ?? ''; } catch { return ''; }
@@ -32,6 +31,10 @@ export function App() {
       return 'dark';
     }
   });
+  // A remote provider receives a project's context only when that project's policy
+  // lists it (ADR-0021); without a project, only local providers can be used.
+  const project = projects.find((p) => p.key === selectedProject);
+  const { providers, defaultProvider, defaultModel, refresh: refreshProviders } = useProviders(project?.key);
 
   useEffect(() => {
     const resolved = theme === 'system'
@@ -57,9 +60,6 @@ export function App() {
     if (provider?.models.length) setSelectedModel(provider.models[0]);
   }, [providers]);
 
-  // A remote provider receives a project's context only when that project's policy
-  // lists it (ADR-0021); without a project, only local providers can be used.
-  const project = projects.find((p) => p.key === selectedProject);
   const isAllowed = useCallback((p: Provider) =>
     p.locality === 'local' || Boolean(project?.allowedEndpoints?.includes(p.id)), [project]);
 

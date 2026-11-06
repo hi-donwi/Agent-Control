@@ -44,7 +44,7 @@ const SEP = '::';
  * approvals with explicit approve-once and deny buttons (ADR-0020).
  */
 export function AssistantDrawer({ scope, agent, projectKeys, chat, dark, onTheme, onScope, onClose, initialTab = 'chat', focusApprovalId, readOnly = false }: Props) {
-  const { providers, defaultProvider, defaultModel } = useProviders();
+  const { providers, defaultProvider, defaultModel } = useProviders(scope || undefined);
   const { projects } = useProjects();
   const approvals = useApprovals(scope || undefined);
   const coding = useCodingSession(scope || undefined);
