@@ -91,7 +91,7 @@ export function DeskApp() {
 
   const assistantScope = drawer?.kind === 'assistant' ? drawer.scope : commandScope;
   const chat = useScopedChat(assistantScope);
-  const { providers, defaultProvider, defaultModel } = useProviders();
+  const { providers, defaultProvider, defaultModel } = useProviders(assistantScope || undefined);
   const { projects } = useProjects();
   const commandChoice = useMemo(
     () => resolveChatChoice(providers, projects, assistantScope, defaultProvider, defaultModel),

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { getAuthToken } from '../lib/api';
+import { apiUrl, getAuthToken, initializeApi } from '../lib/api';
 import { buildEvidenceMetadata, findPendingToolCall } from '../lib/evidence';
 import type { ChatMessage, ToolCallResult } from '../lib/types';
 
@@ -49,13 +49,14 @@ export function useChat() {
       abortRef.current = controller;
 
       try {
+        await initializeApi();
         // Build messages for the API (only role + content)
         const apiMessages = updatedMessages.map((m) => ({
           role: m.role,
           content: m.content,
         }));
 
-        const response = await fetch('/api/agent/chat', {
+        const response = await fetch(apiUrl('chat'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

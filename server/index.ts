@@ -28,12 +28,14 @@ import { inferenceErrorLogLine } from './inference-errors.js';
 import { recordUsage } from './usage.js';
 import {
   generateToken,
+  desktopOriginOnly,
   loopbackOnly,
   tokenAuth,
   securityHeaders,
   rateLimit,
   setScriptNonce,
 } from './middleware/security.js';
+import { createDesktopReadyLine } from './desktop-protocol.js';
 import { forwardToControl } from './proxy.js';
 import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation, listConversations, openConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
@@ -50,6 +52,10 @@ import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 const WORKSPACE_ROOT = findWorkspaceRoot();
 const config = loadConfig();
 const TOKEN = generateToken();
+const DESKTOP_MODE = process.env.AC_DESKTOP_MODE === '1';
+if (DESKTOP_MODE && process.env.HOST && process.env.HOST !== '127.0.0.1') {
+  throw new Error('Desktop host must bind to 127.0.0.1.');
+}
 const bridge = new WorkspaceBridge(WORKSPACE_ROOT);
 // What each project-bound chat is doing right now; the desk floor shows it as a pose.
 const activity = new ActivityRegistry();
@@ -154,7 +160,13 @@ app.use('*', loopbackOnly());
 app.use('*', securityHeaders());
 
 // API routes require token
-app.use('/api/agent/*', tokenAuth(TOKEN));
+if (DESKTOP_MODE) {
+  app.use('/api/agent/*', desktopOriginOnly([
+    'tauri://localhost',
+    'http://127.0.0.1:5173',
+  ]));
+}
+app.use('/api/agent/*', tokenAuth(TOKEN, { allowQueryToken: !DESKTOP_MODE }));
 // A ceiling against a runaway page, not a quota: one operator's desk stays far below it. The
 // browser suite loads the desk dozens of times a minute, so it raises the ceiling.
 const RATE_LIMIT = Math.max(1, parseInt(process.env.AC_RATE_LIMIT_PER_MINUTE ?? '', 10) || 120);
@@ -786,7 +798,7 @@ if (AGENT_MODE && CONTROL_URL) {
 }
 
 // ── Serve static files in production ───────────────────────────────────
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' && !DESKTOP_MODE) {
   const ownDist = resolve(import.meta.dirname ?? '.', '..', 'dist');
   // In agent mode the browser loads the workspace desk (WS_DESK_DIST); otherwise the host
   // serves its own UI. Falls back to its own dist if the desk build is missing.
@@ -829,10 +841,14 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ── Start server ───────────────────────────────────────────────────────
-const PORT = parseInt(process.env.PORT ?? '3141', 10);
-const HOST = process.env.HOST ?? '127.0.0.1';
+const PORT = DESKTOP_MODE ? 0 : parseInt(process.env.PORT ?? '3141', 10);
+const HOST = DESKTOP_MODE ? '127.0.0.1' : process.env.HOST ?? '127.0.0.1';
 
-serve({ fetch: app.fetch, hostname: HOST, port: PORT }, () => {
+serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info) => {
+  if (DESKTOP_MODE) {
+    process.stdout.write(createDesktopReadyLine({ port: info.port, token: TOKEN }));
+    return;
+  }
   const url = `http://${HOST}:${PORT}?token=${TOKEN}`;
   console.log('');
   console.log('  ╭──────────────────────────────────────────╮');

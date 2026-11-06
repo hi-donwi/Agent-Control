@@ -1,12 +1,31 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve, sep, join } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import { isAbsolute, resolve, sep, join } from 'node:path';
 import { readFile, stat, readdir } from 'node:fs/promises';
 
 /** Resolve the workspace root containing AGENTS.md and .agents/standards. */
-export function findWorkspaceRoot(startDir?: string): string {
-  if (process.env.WS_WORKSPACE_ROOT && existsSync(process.env.WS_WORKSPACE_ROOT)) {
-    return resolve(process.env.WS_WORKSPACE_ROOT);
+export function findWorkspaceRoot(startDir?: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (env.AC_DESKTOP_MODE === '1') {
+    const selectedRoot = env.WS_WORKSPACE_ROOT;
+    if (!selectedRoot) {
+      throw new Error('Desktop mode requires an explicitly selected workspace root.');
+    }
+    const root = resolve(selectedRoot);
+    let validMarkers = false;
+    try {
+      validMarkers = isAbsolute(selectedRoot)
+        && statSync(join(root, 'AGENTS.md')).isFile()
+        && statSync(join(root, '.agents', 'standards')).isDirectory();
+    } catch {
+      validMarkers = false;
+    }
+    if (!validMarkers) {
+      throw new Error('Desktop workspace root does not contain the required workspace markers.');
+    }
+    return root;
+  }
+  if (env.WS_WORKSPACE_ROOT && existsSync(env.WS_WORKSPACE_ROOT)) {
+    return resolve(env.WS_WORKSPACE_ROOT);
   }
   let dir = resolve(startDir ?? import.meta.dirname ?? process.cwd());
   for (let i = 0; i < 12; i++) {

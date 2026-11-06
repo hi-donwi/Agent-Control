@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, chooseDesktopWorkspace, getDesktopWorkspaceRoot } from '../../lib/api';
 import { BackIcon, ChevronIcon, CloseIcon } from '../icons';
 import { SectionView, type SectionCommands } from '../uidl/SectionView';
 import { SECTIONS, sectionDocument, type SectionId } from '../uidl/documents';
@@ -222,8 +222,33 @@ function Nav({ floor, project, onSection, onFloor, alerts, onPage }: Props) {
 }
 
 function Settings({ theme, onTheme, onEndpoints }: Props) {
+  const [workspacePending, setWorkspacePending] = useState(false);
+  const [workspaceStatus, setWorkspaceStatus] = useState('');
+  const [workspaceError, setWorkspaceError] = useState('');
+  const workspaceRoot = getDesktopWorkspaceRoot();
   const classic = new URL(window.location.href);
   classic.searchParams.set('ui', 'classic');
+
+  async function changeWorkspace() {
+    setWorkspacePending(true);
+    setWorkspaceError('');
+    setWorkspaceStatus('Opening the folder picker.');
+    try {
+      const selected = await chooseDesktopWorkspace();
+      if (selected) {
+        setWorkspaceStatus('Workspace selected. Restarting the desktop host.');
+        window.location.reload();
+        return;
+      }
+      setWorkspaceStatus('Workspace was not changed.');
+    } catch (cause) {
+      setWorkspaceError(cause instanceof Error ? cause.message : 'We could not change the workspace. Try again.');
+      setWorkspaceStatus('Workspace selection needs attention.');
+    } finally {
+      setWorkspacePending(false);
+    }
+  }
+
   return (
     <div className="settings">
       <fieldset className="segmented">
@@ -241,6 +266,26 @@ function Settings({ theme, onTheme, onEndpoints }: Props) {
         </div>
         <button type="button" className="btn" onClick={onEndpoints}>Open</button>
       </div>
+      {workspaceRoot && (
+        <div className="settings-row workspace-setting">
+          <div className="workspace-setting__copy">
+            <p className="settings-label">Active workspace</p>
+            <code className="workspace-setting__path">{workspaceRoot}</code>
+            <p className="settings-hint">Changing it restarts the local host after the new workspace is validated.</p>
+            {workspaceStatus && <p className="settings-hint" role="status" aria-live="polite">{workspaceStatus}</p>}
+            {workspaceError && <p className="workspace-setting__error" role="alert">{workspaceError}</p>}
+          </div>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void changeWorkspace()}
+            disabled={workspacePending}
+            aria-busy={workspacePending}
+          >
+            {workspacePending ? 'Selecting…' : 'Change'}
+          </button>
+        </div>
+      )}
       <div className="settings-row">
         <div>
           <p className="settings-label">Classic view</p>
