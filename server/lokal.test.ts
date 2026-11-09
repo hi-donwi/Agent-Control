@@ -7,27 +7,37 @@ import { detectLokalEndpoint, exportSessionTrace } from './lokal.js';
 import { appendMessage } from './conversations.js';
 
 describe('detectLokalEndpoint', () => {
-  it('returns null when serve.token is absent', () => {
+  it('returns null when a scoped inference credential is absent', () => {
     const home = mkdtempSync(join(tmpdir(), 'lokal-home-'));
     assert.equal(detectLokalEndpoint(home), null);
   });
 
-  it('detects the Agent Brain gateway as a remote Brain endpoint when serve.token exists', () => {
+  it('detects the Agent Brain gateway only from a scoped credential and profile manifest', () => {
     const home = mkdtempSync(join(tmpdir(), 'lokal-home-'));
     mkdirSync(join(home, '.lokal'), { recursive: true });
-    writeFileSync(join(home, '.lokal', 'serve.token'), 'test-token\n');
+    writeFileSync(join(home, '.lokal', 'agent-control.token'), 'scoped-token\n');
+    const profile = { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` };
+    writeFileSync(join(home, '.lokal', 'agent-control.token.json'), JSON.stringify(profile));
 
     const ep = detectLokalEndpoint(home);
     assert.ok(ep);
     assert.equal(ep.name, 'lokal');
     assert.equal(ep.protocol, 'openai-chat');
     assert.equal(ep.baseUrl, 'http://127.0.0.1:52140/v1');
-    assert.equal(ep.credential, 'file:~/.lokal/serve.token');
+    assert.equal(ep.credential, 'file:~/.lokal/agent-control.token');
+    assert.deepEqual(ep.routingProfile, profile);
     // The gateway forwards to cloud accounts: a project's context reaches it only when that
     // project's policy lists it, the same as a configured Agent Brain endpoint.
     assert.equal(ep.locality, 'remote');
     assert.equal(ep.purpose, 'agent-brain');
-    assert.deepEqual(ep.models, ['lokal/auto', 'lokal/qwen', 'lokal/llama']);
+    assert.deepEqual(ep.models, []);
+  });
+
+  it('never auto-detects from the gateway master token', () => {
+    const home = mkdtempSync(join(tmpdir(), 'lokal-home-'));
+    mkdirSync(join(home, '.lokal'), { recursive: true });
+    writeFileSync(join(home, '.lokal', 'serve.token'), 'master-token\n');
+    assert.equal(detectLokalEndpoint(home), null);
   });
 });
 

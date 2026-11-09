@@ -13,12 +13,12 @@ import type { ChatModel } from './types.js';
  * points at. They always get an explicit value. The compatible client reads no
  * environment, so a keyless local server gets no Authorization header at all.
  */
-export function createEndpointModel(endpoint: Endpoint, modelId: string, apiKey?: string): ChatModel {
+export function createEndpointModel(endpoint: Endpoint, modelId: string, apiKey?: string, headers?: Record<string, string>): ChatModel {
   switch (endpoint.protocol) {
     case 'mock':
       return createMockModel(modelId);
     case 'openai-chat':
-      return createOpenAICompatible({ name: endpoint.name, baseURL: endpoint.baseUrl!, apiKey }).chatModel(modelId);
+      return createOpenAICompatible({ name: endpoint.name, baseURL: endpoint.baseUrl!, apiKey, headers }).chatModel(modelId);
     case 'openai-responses':
       return createOpenAI({ baseURL: endpoint.baseUrl, apiKey: apiKey ?? 'none' }).responses(modelId);
     case 'anthropic-messages':

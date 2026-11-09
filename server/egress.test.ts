@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { egressDecision, loadLlmAllowlist } from './egress.js';
+import { egressDecision, loadBrainProfileAllowlist, loadLlmAllowlist } from './egress.js';
 import type { Endpoint } from './endpoints.js';
 
 const remote: Endpoint = { name: 'xai', protocol: 'openai-chat', baseUrl: 'https://api.x.ai/v1', locality: 'remote', models: [] };
 const local: Endpoint = { name: 'ollama', protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:11434/v1', locality: 'local', models: [] };
+const profile = { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` };
+const brain: Endpoint = { name: 'brain', protocol: 'openai-chat', baseUrl: 'https://brain.example/v1', locality: 'remote', purpose: 'agent-brain', routingProfile: profile, models: [] };
 
 function workspaceWithPolicy(project: string, policy: unknown): string {
   const root = mkdtempSync(join(tmpdir(), 'ac-egress-'));
@@ -31,12 +33,27 @@ describe('egressDecision (ADR-0021)', () => {
     assert.equal(egressDecision(remote, 'demo', ['xai']).allowed, true);
     assert.equal(egressDecision(remote, 'demo', ['anthropic']).allowed, false);
   });
+
+  it('requires an exact project grant for the Brain profile revision', () => {
+    const grant = { endpoint: 'brain', profile_id: profile.id, revision: profile.revision };
+    assert.equal(egressDecision(brain, 'demo', ['brain']).allowed, false);
+    assert.equal(egressDecision(brain, 'demo', ['brain'], []).allowed, false);
+    assert.equal(egressDecision(brain, 'demo', ['brain'], [{ ...grant, revision: `sha256:${'b'.repeat(64)}` }]).allowed, false);
+    assert.equal(egressDecision(brain, 'demo', ['brain'], [grant]).allowed, true);
+    assert.equal(egressDecision({ ...brain, routingProfile: undefined }, 'demo', ['brain'], [grant]).allowed, false);
+  });
 });
 
 describe('loadLlmAllowlist', () => {
   it('reads llm.endpoints from the operator policy', () => {
     const root = workspaceWithPolicy('demo', { schema_version: 1, default: 'read', llm: { endpoints: ['xai'] } });
     assert.deepEqual(loadLlmAllowlist(root, 'demo'), ['xai']);
+  });
+
+  it('reads profile revision grants from the operator policy', () => {
+    const grant = { endpoint: 'brain', profile_id: profile.id, revision: profile.revision };
+    const root = workspaceWithPolicy('demo', { schema_version: 1, llm: { endpoints: ['brain'], brain_profiles: [grant] } });
+    assert.deepEqual(loadBrainProfileAllowlist(root, 'demo'), [grant]);
   });
 
   it('is null without a policy, without an llm key, or with an invalid policy', () => {

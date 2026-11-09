@@ -61,8 +61,21 @@ describe('classifyAction (ADR-0014, mirrors `ws policy check`)', () => {
 
 describe('loadPolicy', () => {
   it('carries the llm allowlist through unchanged, for egress.ts to read', () => {
-    const root = workspaceWithPolicy('demo', { ...BASIC, llm: { endpoints: ['xai'] } });
-    assert.deepEqual(loadPolicy(root, 'demo')?.llm, { endpoints: ['xai'] });
+    const brainProfiles = [{ endpoint: 'brain', profile_id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` }];
+    const root = workspaceWithPolicy('demo', { ...BASIC, llm: { endpoints: ['xai', 'brain'], brain_profiles: brainProfiles } });
+    assert.deepEqual(loadPolicy(root, 'demo')?.llm, { endpoints: ['xai', 'brain'], brain_profiles: brainProfiles });
+  });
+
+  it('fails closed for malformed Brain profile grants', () => {
+    for (const brainProfiles of [
+      'brain',
+      [{ endpoint: 'brain', profile_id: '../x', revision: `sha256:${'a'.repeat(64)}` }],
+      [{ endpoint: 'brain', profile_id: 'agent-control', revision: 'latest' }],
+      [{ endpoint: 'brain', profile_id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` }, { endpoint: 'brain', profile_id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` }],
+    ]) {
+      const root = workspaceWithPolicy('demo', { ...BASIC, llm: { endpoints: ['brain'], brain_profiles: brainProfiles } });
+      assert.equal(loadPolicy(root, 'demo'), null);
+    }
   });
 });
 

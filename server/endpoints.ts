@@ -10,14 +10,15 @@ import { isAbsolute, join } from 'node:path';
  * `<workspace>/.local/agent/endpoints.json` - configuration, not code:
  *
  *   { "endpoints": { "brain": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52140/v1",
- *                               "apiKey": "file:~/.brain/serve.token", "locality": "remote",
- *                               "purpose": "agent-brain" } } }
+ *                               "apiKey": "file:~/.brain/agent-control.token", "locality": "remote",
+ *                               "purpose": "agent-brain",
+ *                               "routingProfile": { "id": "agent-control", "revision": "sha256:..." } } } }
  *
  * Optional `"timeouts": { "firstChunkMs": 600000, "chunkMs": 300000 }` lets a slow endpoint
  * wait longer than DEFAULT_CHAT_TIMEOUTS before a silent model ends the turn.
  *
  * `apiKey` is a reference (`env:NAME`, `keychain:NAME`, or `file:PATH` for a token file
- * readable only by its owner, such as Agent-Brain's `~/.lokal/serve.token`), never the
+ * readable only by its owner, such as Agent-Brain's `~/.lokal/agent-control.token`), never the
  * key itself. `mock` is a deterministic, offline model for tests and demos.
  *
  * `"locality": "remote"` marks a loopback endpoint that forwards elsewhere - a gateway or
@@ -38,8 +39,19 @@ export interface Endpoint {
   models: string[];
   /** Identifies the routed inference gateway; its provider accounts remain behind Brain. */
   purpose?: 'agent-brain';
+  routingProfile?: RoutingProfileRef;
   /** Overrides of DEFAULT_CHAT_TIMEOUTS, for a slow endpoint such as a CPU-only model VM. */
   timeouts?: ChatTimeouts;
+}
+
+export interface RoutingProfileRef {
+  id: string;
+  revision: string;
+}
+
+/** Brain inference endpoints accept only the profile-scoped token format, never `serve.token`. */
+export function isBrainProfileCredential(value: string | undefined): value is string {
+  return typeof value === 'string' && value.length <= 4096 && /^bpi1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
 }
 
 /**
@@ -82,6 +94,7 @@ function parseTimeouts(name: string, raw: unknown): ChatTimeouts | undefined {
 
 const PROTOCOLS: readonly Protocol[] = ['openai-chat', 'openai-responses', 'anthropic-messages', 'mock'];
 const NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
+const PROFILE_REVISION_RE = /^sha256:[a-f0-9]{64}$/;
 const CREDENTIAL_RE = /^(?:(?:env|keychain):[A-Za-z0-9_.-]+|file:(?:~\/|\/)[A-Za-z0-9_.~/-]+)$/;
 
 export class EndpointConfigError extends Error {}
@@ -140,9 +153,27 @@ export function parseEndpoints(raw: unknown): Endpoint[] {
     if (purpose !== undefined && (purpose !== 'agent-brain' || protocol !== 'openai-chat' || locality !== 'remote')) {
       throw new EndpointConfigError(`endpoint '${name}': purpose "agent-brain" requires a remote openai-chat endpoint`);
     }
+    let routingProfile: RoutingProfileRef | undefined;
+    if (purpose === 'agent-brain') {
+      const rawProfile = value.routingProfile;
+      if (!apiKey) throw new EndpointConfigError(`endpoint '${name}': purpose "agent-brain" requires a scoped apiKey reference`);
+      if (!rawProfile || typeof rawProfile !== 'object' || Array.isArray(rawProfile)) {
+        throw new EndpointConfigError(`endpoint '${name}': purpose "agent-brain" requires routingProfile { id, revision }`);
+      }
+      const profile = rawProfile as Record<string, unknown>;
+      if (Object.keys(profile).some((key) => key !== 'id' && key !== 'revision')
+        || typeof profile.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(profile.id)
+        || typeof profile.revision !== 'string' || !PROFILE_REVISION_RE.test(profile.revision)) {
+        throw new EndpointConfigError(`endpoint '${name}': routingProfile requires a stable id and sha256 revision`);
+      }
+      routingProfile = { id: profile.id, revision: profile.revision };
+    } else if (value.routingProfile !== undefined) {
+      throw new EndpointConfigError(`endpoint '${name}': routingProfile is only valid for purpose "agent-brain"`);
+    }
     return {
       name, protocol, baseUrl, credential: apiKey as string | undefined, locality, models,
       ...(purpose ? { purpose } : {}),
+      ...(routingProfile ? { routingProfile } : {}),
       ...(timeouts ? { timeouts } : {}),
     };
   });

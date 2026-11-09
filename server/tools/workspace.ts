@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
-import { isAbsolute, resolve, sep, join } from 'node:path';
-import { readFile, stat, readdir } from 'node:fs/promises';
+import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { lstat, readFile, realpath, stat } from 'node:fs/promises';
+import { parseProjectList } from '../projects.js';
 
 /** Resolve the workspace root containing AGENTS.md and .agents/standards. */
 export function findWorkspaceRoot(startDir?: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -147,59 +148,132 @@ export class WorkspaceBridge {
       throw new Error('Task description too long');
     }
     const args = ['route'];
-    if (projectKey && /^[a-zA-Z0-9_-]+$/.test(projectKey)) {
+    if (projectKey !== undefined) {
+      if (!/^[a-z0-9][a-z0-9_-]*$/.test(projectKey)) throw new Error('Invalid project scope for skill routing.');
       args.push('--project', projectKey);
     }
     args.push(taskDescription);
     return this.ws(args);
   }
 
-  /**
-   * Read the authoritative instructions and guidelines for a skill (SKILL.md).
-   * Searches across .agents/skills, projects/donwi/public/Agent-Skills/skills, and context/skills.
-   */
-  async readSkill(skillName: string): Promise<string> {
+  /** Read a public skill, or a skill routed inside the explicitly bound local project. */
+  async readSkill(skillName: string, projectKey?: string): Promise<string> {
     const cleanName = skillName.trim();
     if (!cleanName || !/^[a-zA-Z0-9_-]+$/.test(cleanName)) {
-      throw new Error(`Invalid skill name: '${skillName}'. Must only contain letters, numbers, hyphens, and underscores.`);
+      throw new Error('Invalid skill name.');
     }
 
-    const candidates = [
-      resolve(this.workspaceRoot, '.agents', 'skills', cleanName, 'SKILL.md'),
-      resolve(this.workspaceRoot, 'projects', 'donwi', 'public', 'Agent-Skills', 'skills', cleanName, 'SKILL.md'),
-      resolve(this.workspaceRoot, 'context', 'skills', cleanName, 'SKILL.md'),
+    const publicSkill = await this.readSafeSkillFile(join('.agents', 'skills', cleanName, 'SKILL.md'), join('.agents', 'skills'));
+    if (publicSkill) return publicSkill;
+    if (!projectKey) throw new Error('Skill not found in the public workspace catalog.');
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(projectKey)) throw new Error('Invalid project scope for skill lookup.');
+
+    let routedPath: string | undefined;
+    try {
+      const task = `load skill ${cleanName.replace(/[-_]+/g, ' ')}`;
+      routedPath = this.routedSkillPath(await this.route(task, projectKey), cleanName);
+    } catch {
+      throw new Error('No matching skill is available in the bound project context.');
+    }
+    if (!routedPath) throw new Error('No matching skill is available in the bound project context.');
+
+    const entries = parseProjectList(await this.listProjects().catch(() => ''));
+    const project = entries.find((entry) => entry.key === projectKey);
+    if (!project) throw new Error('Skill project is not registered.');
+    const contextDirectory = await this.contextDirectory();
+    const allowed = [
+      { file: join('.agents', 'skills', cleanName, 'SKILL.md'), directory: join('.agents', 'skills') },
+      { file: join(contextDirectory, 'skills', cleanName, 'SKILL.md'), directory: join(contextDirectory, 'skills') },
+      ...(project.client && project.client !== '-'
+        ? [{
+            file: join(contextDirectory, 'clients', project.client, 'skills', cleanName, 'SKILL.md'),
+            directory: join(contextDirectory, 'clients', project.client, 'skills'),
+          }]
+        : []),
     ];
-
-    for (const candidate of candidates) {
-      try {
-        const content = await readFile(candidate, 'utf-8');
-        return content;
-      } catch {
-        // try next candidate
-      }
+    const normalized = normalize(routedPath);
+    const routed = allowed.find((candidate) => candidate.file === normalized);
+    if (isAbsolute(normalized) || normalized.startsWith('..') || !routed) {
+      throw new Error('Routed skill is outside the bound project catalog.');
     }
+    const content = await this.readSafeSkillFile(routed.file, routed.directory);
+    if (!content) throw new Error('Routed skill file is unavailable.');
+    return content;
+  }
 
-    // If not found, list available skills to guide the agent or user
-    const available = new Set<string>();
-    const skillDirs = [
-      resolve(this.workspaceRoot, '.agents', 'skills'),
-      resolve(this.workspaceRoot, 'projects', 'donwi', 'public', 'Agent-Skills', 'skills'),
-    ];
-    for (const dir of skillDirs) {
-      try {
-        const entries = await readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory() && !entry.name.startsWith('.')) {
-            available.add(entry.name);
-          }
-        }
-      } catch {
-        // ignore missing directory
-      }
+  private routedSkillPath(output: string, skillName: string): string | undefined {
+    for (const line of output.split('\n')) {
+      const match = line.match(/^\s*\d+\s+([a-zA-Z0-9_-]+)\s+(\S+)\s*$/);
+      if (match?.[1] === skillName) return match[2];
     }
+    return undefined;
+  }
 
-    const suggestions = Array.from(available).sort().join(', ');
-    throw new Error(`Skill '${cleanName}' not found. Available skills:\n${suggestions}`);
+  private async contextDirectory(): Promise<string> {
+    let configured = 'context';
+    try {
+      const conf = await readFile(join(this.workspaceRoot, 'workspace.conf'), 'utf8');
+      const line = conf.split(/\r?\n/).find((value) => /^\s*context_dir\s*=/.test(value));
+      if (line) configured = line.slice(line.indexOf('=') + 1).split('#', 1)[0]!.trim() || 'context';
+    } catch {
+      return 'context';
+    }
+    const root = resolve(this.workspaceRoot);
+    const resolved = resolve(root, configured);
+    const relativePath = relative(root, resolved);
+    if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+      throw new Error('Workspace context directory is outside the selected root.');
+    }
+    return relativePath;
+  }
+
+  private async readSafeSkillFile(relativePath: string, relativeDirectory: string): Promise<string | undefined> {
+    const root = await realpath(resolve(this.workspaceRoot));
+    const directory = resolve(root, relativeDirectory);
+    const directoryRelative = relative(root, directory);
+    if (!directoryRelative || directoryRelative === '..' || directoryRelative.startsWith(`..${sep}`) || isAbsolute(directoryRelative)) {
+      throw new Error('Skill path is outside the selected workspace.');
+    }
+    const candidate = resolve(root, relativePath);
+    const withinDirectory = relative(directory, candidate);
+    if (isAbsolute(withinDirectory) || withinDirectory.startsWith('..') || !/^[-A-Za-z0-9_]+[\\/]SKILL\.md$/.test(withinDirectory)) {
+      throw new Error('Skill path is outside its catalog directory.');
+    }
+    let info;
+    try {
+      const directoryInfo = await lstat(directory);
+      if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || await realpath(directory) !== directory) {
+        throw new Error('Skill catalog directory is not a real workspace directory.');
+      }
+      const skillDirectory = resolve(directory, withinDirectory.split(/[\\/]/)[0]!);
+      const skillDirectoryInfo = await lstat(skillDirectory);
+      if (!skillDirectoryInfo.isDirectory() || skillDirectoryInfo.isSymbolicLink() || await realpath(skillDirectory) !== skillDirectory) {
+        throw new Error('Skill directory is not a real catalog directory.');
+      }
+      info = await lstat(candidate);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw new Error('Skill file could not be accessed.');
+    }
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 256 * 1024) {
+      throw new Error('Skill file must be a regular file under the size limit.');
+    }
+    let realCandidate: string;
+    let rootReal: string;
+    try {
+      [realCandidate, rootReal] = await Promise.all([realpath(candidate), realpath(root)]);
+    } catch {
+      throw new Error('Skill file could not be resolved safely.');
+    }
+    const realRelative = relative(rootReal, realCandidate);
+    if (!realRelative || realRelative === '..' || realRelative.startsWith(`..${sep}`) || isAbsolute(realRelative)) {
+      throw new Error('Skill file resolves outside the selected workspace.');
+    }
+    try {
+      return await readFile(realCandidate, 'utf8');
+    } catch {
+      throw new Error('Skill file could not be read.');
+    }
   }
 
   /**
@@ -251,8 +325,6 @@ export class WorkspaceBridge {
 
     const sanitizedArgs = extraArgs.filter(arg => /^[a-zA-Z0-9_=-]+$/.test(arg));
     const bin = await this.resolveBinary('dbakit', [
-      'projects/donwi/public/DBA-Toolkit/dbakit',
-      'projects/donwi/public/DBA-Toolkit/bin/dbakit',
       '.agents/bin/dbakit',
     ]);
 
@@ -286,8 +358,6 @@ export class WorkspaceBridge {
     }
 
     const bin = await this.resolveBinary('opskit', [
-      'projects/donwi/public/OPS-Toolkit/bin/opskit',
-      'projects/donwi/public/OPS-Toolkit/opskit',
       '.agents/bin/opskit',
     ]);
 
@@ -329,8 +399,6 @@ export class WorkspaceBridge {
     if (!secureBin) {
       try {
         secureBin = await this.resolveBinary('agent-secure', [
-          'projects/donwi/public/Agent-Secure/Agent-Secure',
-          'projects/donwi/public/Agent-Secure/bin/agent-secure',
           '.agents/bin/agent-secure',
         ]);
       } catch {

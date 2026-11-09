@@ -247,7 +247,7 @@ export function createWorkspace(): Workspace {
   writeFileSync(join(root, '.local', 'agent', 'endpoints.json'), JSON.stringify({
     endpoints: {
       mock: { protocol: 'mock', models: ['echo'] },
-      remote: { protocol: 'openai-chat', baseUrl: 'https://example.invalid/v1', purpose: 'agent-brain', models: ['x'] },
+      remote: { protocol: 'openai-chat', baseUrl: 'https://example.invalid/v1', apiKey: 'env:TEST_BRAIN_TOKEN', locality: 'remote', purpose: 'agent-brain', routingProfile: { id: 'test-profile', revision: `sha256:${'a'.repeat(64)}` }, models: ['x'] },
       direct: { protocol: 'openai-chat', baseUrl: 'https://direct.example.invalid/v1', models: ['y'] },
     },
   }, null, 2));

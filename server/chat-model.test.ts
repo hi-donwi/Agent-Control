@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import { generateText, streamText } from 'ai';
 import { chatDefaults, isChatEndpoint, resolveChatModel } from './chat-model.js';
 import { createEndpointModel } from './providers/endpoint-model.js';
@@ -12,7 +13,7 @@ const xai: Endpoint = { name: 'xai', protocol: 'openai-chat', baseUrl: 'https://
 const mock: Endpoint = { name: 'mock', protocol: 'mock', locality: 'local', models: ['echo'] };
 const brain: Endpoint = {
   name: 'brain', protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', credential: 'env:BRAIN_TOKEN',
-  locality: 'remote', purpose: 'agent-brain', models: [],
+  locality: 'remote', purpose: 'agent-brain', models: [], routingProfile: { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` },
 };
 /** A model server on loopback reached directly, not through Brain. */
 const ollama: Endpoint = { name: 'ollama', protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:11434/v1', locality: 'local', models: [] };
@@ -51,8 +52,8 @@ describe('resolveChatModel', () => {
   const root = mkdtempSync(join(tmpdir(), 'ac-chat-'));
   mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
   writeFileSync(join(root, '.local', 'agent', 'policies', 'demo.json'),
-    JSON.stringify({ schema_version: 1, default: 'read', llm: { endpoints: ['brain', 'xai'] } }));
-  const deps = { root, endpoints: [brain, xai, ollama, mock], env: { BRAIN_TOKEN: 'k', XAI_API_KEY: 'k' } };
+    JSON.stringify({ schema_version: 1, default: 'read', llm: { endpoints: ['brain', 'xai'], brain_profiles: [{ endpoint: 'brain', profile_id: 'agent-control', revision: brain.routingProfile!.revision }] } }));
+  const deps = { root, endpoints: [brain, xai, ollama, mock], env: { BRAIN_TOKEN: 'bpi1.payload.signature', XAI_API_KEY: 'k' } };
 
   it('uses the offline mock without a project', () => {
     const result = resolveChatModel({ provider: 'mock', model: 'echo' }, deps);
@@ -78,6 +79,39 @@ describe('resolveChatModel', () => {
   it('reports a missing credential by name', () => {
     const result = resolveChatModel({ provider: 'brain', model: 'm', project: 'demo' }, { ...deps, env: {} });
     assert.ok('status' in result && result.status === 400 && /BRAIN_TOKEN is not set/.test(result.error));
+  });
+
+  it('rejects the gateway master token before creating a Brain model', () => {
+    const result = resolveChatModel({ provider: 'brain', model: 'm', project: 'demo' }, { ...deps, env: { BRAIN_TOKEN: 'master-token' } });
+    assert.ok('status' in result && result.status === 400 && /profile-scoped credential/.test(result.error));
+  });
+
+  it('sends the configured profile ID and revision on every inference request', async () => {
+    const headers = new Map<string, string>();
+    const server = createServer((request, response) => {
+      for (const [name, value] of Object.entries(request.headers)) {
+        if (typeof value === 'string') headers.set(name.toLowerCase(), value);
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        id: 'chatcmpl-test', object: 'chat.completion', created: 1, model: 'm',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('test server did not bind');
+    try {
+      const endpoint = { ...brain, baseUrl: `http://127.0.0.1:${address.port}/v1` };
+      const resolved = resolveChatModel({ provider: 'brain', model: 'm', project: 'demo' }, { ...deps, endpoints: [endpoint, xai, ollama, mock] });
+      assert.ok('model' in resolved);
+      const result = await generateText({ model: resolved.model, prompt: 'test' });
+      assert.equal(result.text, 'ok');
+      assert.equal(headers.get('x-brain-profile'), brain.routingProfile?.id);
+      assert.equal(headers.get('x-brain-revision'), brain.routingProfile?.revision);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 
   it('rejects a project key that is a path', () => {

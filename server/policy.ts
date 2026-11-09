@@ -10,6 +10,7 @@ import { join } from 'node:path';
  */
 const KEY_RE = /^[a-z0-9][a-z0-9_-]*$/;
 const ACTION_RE = /^[a-z0-9][a-z0-9._:-]*$/;
+const PROFILE_REVISION_RE = /^sha256:[a-f0-9]{64}$/;
 const LEVELS = ['read', 'change', 'approval-required'] as const;
 export type Level = typeof LEVELS[number];
 
@@ -22,7 +23,13 @@ export interface OperatorPolicy {
   default: Level;
   actions: Record<string, Level>;
   /** ADR-0021: which LLM endpoints this project's context may reach. Read by egress.ts. */
-  llm?: { endpoints?: unknown };
+  llm?: { endpoints?: string[]; brain_profiles?: BrainProfileGrant[]; [key: string]: unknown };
+}
+
+export interface BrainProfileGrant {
+  endpoint: string;
+  profile_id: string;
+  revision: string;
 }
 
 export function policyPath(workspaceRoot: string, project: string): string {
@@ -52,7 +59,44 @@ export function loadPolicy(workspaceRoot: string, project: string): OperatorPoli
   if (!isLevel(def)) return null;
   if (typeof actions !== 'object' || actions === null || Array.isArray(actions)) return null;
   if (!Object.values(actions).every(isLevel)) return null;
-  return { schema_version: 1, default: def, actions: actions as Record<string, Level>, llm: policy.llm as OperatorPolicy['llm'] };
+  const llm = parseLlmPolicy(policy.llm);
+  if (policy.llm !== undefined && !llm) return null;
+  return { schema_version: 1, default: def, actions: actions as Record<string, Level>, ...(llm ? { llm } : {}) };
+}
+
+function parseLlmPolicy(raw: unknown): OperatorPolicy['llm'] | null | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const llm = raw as Record<string, unknown>;
+  let endpoints: string[] | undefined;
+  if (llm.endpoints !== undefined) {
+    if (!Array.isArray(llm.endpoints) || !llm.endpoints.every((name) => typeof name === 'string' && KEY_RE.test(name))) return null;
+    if (new Set(llm.endpoints).size !== llm.endpoints.length) return null;
+    endpoints = llm.endpoints as string[];
+  }
+  let brainProfiles: BrainProfileGrant[] | undefined;
+  if (llm.brain_profiles !== undefined) {
+    if (!Array.isArray(llm.brain_profiles)) return null;
+    const seen = new Set<string>();
+    brainProfiles = [];
+    for (const value of llm.brain_profiles) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const grant = value as Record<string, unknown>;
+      if (Object.keys(grant).some((key) => !['endpoint', 'profile_id', 'revision'].includes(key))
+        || typeof grant.endpoint !== 'string' || !KEY_RE.test(grant.endpoint)
+        || typeof grant.profile_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(grant.profile_id)
+        || typeof grant.revision !== 'string' || !PROFILE_REVISION_RE.test(grant.revision)) return null;
+      const key = `${grant.endpoint}\0${grant.profile_id}\0${grant.revision}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      brainProfiles.push({ endpoint: grant.endpoint, profile_id: grant.profile_id, revision: grant.revision });
+    }
+  }
+  return {
+    ...llm,
+    ...(endpoints ? { endpoints } : {}),
+    ...(brainProfiles ? { brain_profiles: brainProfiles } : {}),
+  } as OperatorPolicy['llm'];
 }
 
 /**

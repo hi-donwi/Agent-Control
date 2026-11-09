@@ -43,12 +43,13 @@ model IDs, and `X-Brain-Account` selection. Account-scoped tokens cannot change 
 Brain retries eligible unpinned accounts once each within the selected provider and honors
 cooldowns; pinned requests do not switch accounts. Provider or local fallback is not implicit.
 
-Agent-Control can identify a configured remote OpenAI-compatible gateway with
-`purpose: "agent-brain"` and a credential reference (for example,
-`file:~/.brain/serve.token`) in the private endpoint configuration. Project-scoped provider
-discovery calls `GET /v1/models` only after verifying that the project is registered and its
-egress policy allows the Brain endpoint. Inference continues through the existing OpenAI
-compatible streaming path, so tool execution remains host-side.
+Agent-Control identifies a configured remote OpenAI-compatible gateway with
+`purpose: "agent-brain"`, a scoped credential reference, and a `routingProfile` ID/revision
+in private endpoint configuration. Project-scoped provider discovery calls `GET /v1/models`
+only after verifying that the project is registered and both the Brain endpoint and exact
+profile revision are allowed by egress policy. Agent-Control sends the configured profile
+headers for discovery and inference; the browser cannot override them. Inference continues
+through the existing OpenAI-compatible streaming path, so tool execution remains host-side.
 
 The account guide documents `brain accounts` CLI management and private credential storage
 (`secrets/`, mode 0600 where supported); it explicitly says the gateway must restart after
@@ -59,8 +60,11 @@ failover profile contract. The stable local-chat contract is text-only; structur
 use compatible endpoint accounts. A Brain-side local tool-call path is therefore a prerequisite
 for local models to participate in Agent-Control's tool loop.
 
-The inspected Brain checkout has substantial uncommitted gateway/backend/config changes. They
-are not treated as a stable API and must not be overwritten or assumed shipped.
+The profile credential contract is defined by Agent-Brain ADR-0014 and Agent-Control ADR-0005.
+Issue a credential on the Brain host with `brain router credential <profile-id> --protocol chat`;
+it writes an owner-only token file and a non-secret profile manifest. Never use `serve.token`
+as Agent-Control's inference credential. The token is scoped to one current profile revision
+and selected protocol set; changing the profile or rotating the master token invalidates it.
 
 **Recommendation:** Use Brain's OpenAI-compatible gateway for inference rather than inventing a
 new stateful chat API. Keep conversation history and tool execution in Agent-Control; forward
@@ -129,6 +133,29 @@ These are proposed contracts, not existing routes:
   IDs/revisions and protocols, not the Brain master token or raw provider credentials. Admin
   actions use a separate short-lived capability. Never put either token in a chat transcript,
   model tool schema, browser persistent storage, or usage record.
+- **Profile identity (2026-11-08 implementation contract):** Brain stores `routing_profiles`
+  in its private router configuration. A profile maps exact caller-visible model IDs to a
+  provider, upstream model, protocol set, and explicit candidate account IDs; a local target
+  maps to one exact local backend model and has no account IDs. Its revision is
+  `sha256:<hex>` over canonical profile data plus resolved remote provider/account/base-URL
+  identities and, for local targets, the selected backend name and loopback endpoint.
+  Credentials and dynamic health are excluded. A changed target or provider
+  endpoint therefore creates a new revision. A scoped token authorizes one profile ID,
+  revision, and protocol set. Requests carry `X-Brain-Profile` and `X-Brain-Revision`; Brain
+  filters `/v1/models` to that profile and routes only through its declared target/account
+  set. Profile tokens cannot access account metadata. Master-token use remains for local
+  administration; rotating it revokes derived profile tokens.
+- **Scoped credential files:** run `brain router credential <profile-id> --protocol chat` on
+  the Brain host. It writes `~/.lokal/agent-control.token` (mode `0600`) and a non-secret
+  `~/.lokal/agent-control.token.json` manifest with the current profile ID/revision. The token
+  is HMAC-derived from Brain's master token but has only the selected profile/revision/protocol
+  authority. The CLI refuses to overwrite either file. Rotating the master token invalidates
+  all derived tokens.
+- **Agent-Control contract:** each `purpose: "agent-brain"` endpoint declares
+  `routingProfile: { "id": "...", "revision": "sha256:<hex>" }`. A project policy must
+  include the same endpoint, profile ID, and revision in `llm.brain_profiles`. Agent-Control
+  sends those values as headers on model discovery and inference; the browser cannot override
+  them. Missing or mismatched profile authorization denies the request before network egress.
 - **Settings UI:** Agent-Control can show profile/account metadata and status; credential entry and
   OAuth consent are Brain-owned. The UI must label that local file permissions are not encrypted
   credential storage and preserve Brain's existing `env:`/`file:` secret-reference options.

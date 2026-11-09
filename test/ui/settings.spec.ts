@@ -17,6 +17,21 @@ test('the desk settings point at Agent Brain and hold no key field', async ({ pa
 
   await expect(page.getByText('Chat runs only through Agent Brain', { exact: false })).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  const suite = page.getByRole('region', { name: 'Agent Workspace Suite' });
+  await expect(suite).toBeVisible();
+  for (const component of ['Agent-Control', 'Agent-Brain', 'Agent-Workspace', 'Agent-Skills', 'Agent-Secure']) {
+    await expect(suite.getByText(component, { exact: true })).toBeVisible();
+  }
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(suite).toBeVisible();
+  const noHorizontalOverflow = await page.evaluate(() => {
+    const browser = globalThis as unknown as {
+      document: { documentElement: { scrollWidth: number } };
+      window: { innerWidth: number };
+    };
+    return browser.document.documentElement.scrollWidth <= browser.window.innerWidth;
+  });
+  expect(noHorizontalOverflow).toBe(true);
 });
 
 test('the classic layout has no Settings button and lists no legacy provider', async ({ page, appUrl }) => {

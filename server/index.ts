@@ -17,9 +17,10 @@ import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
 import { gitDiff } from './tools/worktree-files.js';
 import { parseProjectList } from './projects.js';
-import { egressDecision, loadLlmAllowlist } from './egress.js';
+import { egressDecision, loadBrainProfileAllowlist, loadLlmAllowlist } from './egress.js';
 import { discoverBrainModels } from './brain-models.js';
 import { toLineStream, type StreamFinish } from './stream-protocol.js';
+import { getSuiteManifest } from './suite.js';
 import { chatSetupError, inferenceErrorLogLine } from './inference-errors.js';
 import { recordUsage } from './usage.js';
 import {
@@ -163,11 +164,13 @@ app.use('/api/agent/*', rateLimit(RATE_LIMIT, 60_000));
 app.get(`${AGENT_API}/providers`, async (c) => {
   const project = c.req.query('project');
   let allowlist: string[] | null = null;
+  let brainProfiles: ReturnType<typeof loadBrainProfileAllowlist> = null;
   if (project) {
     const registered = parseProjectList(await bridge.listProjects().catch(() => '')).some((row) => row.key === project);
     if (!registered) return c.json({ error: `Unknown project "${project}".` }, 400);
     try {
       allowlist = loadLlmAllowlist(WORKSPACE_ROOT, project);
+      brainProfiles = loadBrainProfileAllowlist(WORKSPACE_ROOT, project);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'Invalid project policy.' }, 400);
     }
@@ -175,7 +178,7 @@ app.get(`${AGENT_API}/providers`, async (c) => {
 
   const providers = await Promise.all(chatEndpoints.map(async (e) => {
     let models = e.models;
-    if (e.purpose === 'agent-brain' && project && egressDecision(e, project, allowlist).allowed) {
+    if (e.purpose === 'agent-brain' && project && egressDecision(e, project, allowlist, brainProfiles).allowed) {
       try {
         const credential = resolveCredential(e.credential);
         const discovered = await discoverBrainModels(e, credential);
@@ -196,6 +199,18 @@ app.get(`${AGENT_API}/providers`, async (c) => {
     defaultProvider: defaults.provider,
     defaultModel: defaults.model,
   });
+});
+
+// ── API: local suite component readiness (no remote probes or scans) ──
+app.get(`${AGENT_API}/suite`, async (c) => {
+  return c.json(await getSuiteManifest({
+    workspaceRoot: WORKSPACE_ROOT,
+    brainConfigured: endpoints.some((endpoint) => endpoint.purpose === 'agent-brain'),
+    resolveAgentSecure: async () => {
+      if (process.env.WS_SECURE_BIN) return process.env.WS_SECURE_BIN;
+      return bridge.resolveBinary('agent-secure', ['.agents/bin/agent-secure']);
+    },
+  }));
 });
 
 // ── API: Chat (streaming) ──────────────────────────────────────────────

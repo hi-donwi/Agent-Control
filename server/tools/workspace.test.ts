@@ -69,10 +69,41 @@ describe('WorkspaceBridge Diagnostic Tools', () => {
     assert.ok(content.includes('codebase-onboarding'));
   });
 
+  it('does not expose private context skills to an unbound chat', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-private-skills-'));
+    mkdirSync(join(root, 'context', 'skills', 'private-domain'), { recursive: true });
+    writeFileSync(join(root, 'context', 'skills', 'private-domain', 'SKILL.md'), 'private domain instructions');
+    await assert.rejects(new WorkspaceBridge(root).readSkill('private-domain'), /public workspace catalog/);
+  });
+
+  it('reads a domain skill only when ws route returns it for the bound project', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-bound-skills-'));
+    const skillPath = join(root, 'context', 'clients', 'client-a', 'skills', 'domain-workflow', 'SKILL.md');
+    mkdirSync(join(root, 'context', 'clients', 'client-a', 'skills', 'domain-workflow'), { recursive: true });
+    writeFileSync(skillPath, 'bound domain instructions');
+    const bridge = new WorkspaceBridge(root);
+    bridge.listProjects = async () => 'KEY CLIENT GROUP FOLDER STATUS REMOTE\ndemo client-a - projects/client-a/demo missing -';
+    bridge.route = async (_description, projectKey) => {
+      assert.equal(projectKey, 'demo');
+      return 'SCORE SKILL PATH\n 11 domain-workflow context/clients/client-a/skills/domain-workflow/SKILL.md';
+    };
+    assert.equal(await bridge.readSkill('domain-workflow', 'demo'), 'bound domain instructions');
+  });
+
+  it('refuses a routed skill path belonging to another project client', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-cross-client-skill-'));
+    mkdirSync(join(root, 'context', 'clients', 'client-b', 'skills', 'domain-workflow'), { recursive: true });
+    writeFileSync(join(root, 'context', 'clients', 'client-b', 'skills', 'domain-workflow', 'SKILL.md'), 'other client');
+    const bridge = new WorkspaceBridge(root);
+    bridge.listProjects = async () => 'KEY CLIENT GROUP FOLDER STATUS REMOTE\ndemo client-a - projects/client-a/demo missing -';
+    bridge.route = async () => 'SCORE SKILL PATH\n 11 domain-workflow context/clients/client-b/skills/domain-workflow/SKILL.md';
+    await assert.rejects(bridge.readSkill('domain-workflow', 'demo'), /outside the bound project catalog/);
+  });
+
   it('throws informative error with available suggestions for nonexistent skill', async () => {
     await assert.rejects(
       async () => bridge.readSkill('non-existent-skill-xyz'),
-      /Available skills:/
+      /public workspace catalog/
     );
   });
 });

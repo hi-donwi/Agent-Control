@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Workspace Suite release lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "suite_version", "platform", "privacy_gate", "license_gate", "components", "signature"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "suite_version": { "$ref": "#/$defs/semver" },
+    "platform": {
+      "enum": ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "windows-arm64", "windows-x64"]
+    },
+    "privacy_gate": { "$ref": "#/$defs/privacy_gate" },
+    "license_gate": { "$ref": "#/$defs/license_gate" },
+    "components": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-control" } } }] },
+        { "$ref": "#/$defs/brain-service" },
+        { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-workspace" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-skills" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-secure" } } }] }
+      ],
+      "items": false
+    },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "delivery", "version", "artifact_name", "sha256"],
+      "properties": {
+        "id": { "enum": ["agent-control", "agent-workspace", "agent-skills", "agent-secure"] },
+        "delivery": { "const": "artifact" },
+        "version": { "$ref": "#/$defs/semver" },
+        "artifact_name": { "type": "string", "pattern": "^(agent-control|agent-workspace|agent-skills|agent-secure)-(darwin-arm64|darwin-x64|linux-arm64|linux-x64|windows-arm64|windows-x64)(\\.tar\\.gz|\\.zip)$" },
+        "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "brain-service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "delivery", "version", "service_contract"],
+      "properties": {
+        "id": { "const": "agent-brain" },
+        "delivery": { "const": "service" },
+        "version": { "$ref": "#/$defs/semver" },
+        "service_contract": { "const": "agent-brain-profile-v1" }
+      }
+    },
+    "privacy_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scanner", "scanner_version", "policy_sha256", "attestation_sha256", "coverage", "checks", "verdict"],
+      "properties": {
+        "scanner": { "const": "agent-secure" },
+        "scanner_version": { "$ref": "#/$defs/semver" },
+        "policy_sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "attestation_sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "coverage": { "const": "git-visible-working-files-only" },
+        "checks": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            { "type": "object", "additionalProperties": false, "required": ["scanner", "tool_sha256"], "properties": { "scanner": { "const": "gitleaks" }, "tool_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
+            { "type": "object", "additionalProperties": false, "required": ["scanner", "tool_sha256"], "properties": { "scanner": { "const": "osv-scanner" }, "tool_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } }
+          ],
+          "items": false
+        },
+        "verdict": { "const": "pass" }
+      }
+    },
+    "license_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distribution_scope", "notices_included", "attribution_approved"],
+      "properties": {
+        "distribution_scope": { "enum": ["private-internal", "external"] },
+        "notices_included": { "const": true },
+        "attribution_approved": { "const": true }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "value"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "key_id": { "type": "string", "pattern": "^agent-suite-release-[0-9]{4}(-[1-9][0-9]*)?$" },
+        "value": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$" }
+      }
+    }
+  }
+}

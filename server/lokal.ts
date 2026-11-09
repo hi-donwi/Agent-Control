@@ -8,23 +8,33 @@ export const LOKAL_DEFAULT_PORT = 52140;
 export const LOKAL_BASE_URL = `http://127.0.0.1:${LOKAL_DEFAULT_PORT}/v1`;
 
 /**
- * Auto-detects the Agent Brain gateway (formerly Agent-Local, `lokal`) on loopback when
- * ~/.lokal/serve.token exists. The gateway is on loopback but forwards to cloud provider
- * accounts, so it is declared remote (Agent-Workspace ADR-0021): a project's context reaches
- * it only when that project's policy lists `lokal`.
+ * Auto-detects the Agent Brain gateway only after a profile-scoped credential manifest has
+ * been written. The master serve token is never used for Agent-Control inference.
  */
 export function detectLokalEndpoint(home = homedir()): Endpoint | null {
-  const tokenPath = join(home, '.lokal', 'serve.token');
-  if (!existsSync(tokenPath)) return null;
+  const tokenPath = join(home, '.lokal', 'agent-control.token');
+  const profilePath = `${tokenPath}.json`;
+  if (!existsSync(tokenPath) || !existsSync(profilePath)) return null;
+  let profile: unknown;
+  try {
+    profile = JSON.parse(readFileSync(profilePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return null;
+  const { id, revision } = profile as { id?: unknown; revision?: unknown };
+  if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)
+    || typeof revision !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(revision)) return null;
 
   return {
     name: 'lokal',
     protocol: 'openai-chat',
     baseUrl: LOKAL_BASE_URL,
-    credential: 'file:~/.lokal/serve.token',
+    credential: 'file:~/.lokal/agent-control.token',
     locality: 'remote',
     purpose: 'agent-brain',
-    models: ['lokal/auto', 'lokal/qwen', 'lokal/llama'],
+    models: [],
+    routingProfile: { id, revision },
   };
 }
 

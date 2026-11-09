@@ -1,7 +1,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,21 @@ import { fileURLToPath } from 'node:url';
  */
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SERVER_ENTRY = fileURLToPath(new URL('./index.ts', import.meta.url));
+const BRAIN_PROFILE = { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` };
+const brainProfileRef = () => ({ id: BRAIN_PROFILE.id, revision: BRAIN_PROFILE.revision });
+
+function writeBrainPolicy(root: string, ...names: string[]): void {
+  writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
+    schema_version: 1,
+    default: 'read',
+    llm: {
+      endpoints: names,
+      brain_profiles: names.filter((name) => name.startsWith('brain')).map((endpoint) => ({
+        endpoint, profile_id: BRAIN_PROFILE.id, revision: BRAIN_PROFILE.revision,
+      })),
+    },
+  }));
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -48,6 +63,8 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   let brainPort: number;
   let brainCalls = 0;
   let brainAuthorization = '';
+  let brainProfileHeader = '';
+  let brainRevision = '';
   let brainChatCalls = 0;
   const brainChatBodies: Array<Record<string, unknown>> = [];
   // Model `hang` streams one chunk and then holds the request open until the caller closes it.
@@ -98,6 +115,8 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
           brainChatCalls += 1;
           brainChatBodies.push(requestBody);
           brainAuthorization = request.headers.authorization ?? '';
+          brainProfileHeader = request.headers['x-brain-profile'] as string ?? '';
+          brainRevision = request.headers['x-brain-revision'] as string ?? '';
           response.writeHead(200, { 'Content-Type': 'text/event-stream' });
           const chunks = brainChatCalls === 1
             ? [
@@ -120,6 +139,8 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
       }
       brainCalls += 1;
       brainAuthorization = request.headers.authorization ?? '';
+      brainProfileHeader = request.headers['x-brain-profile'] as string ?? '';
+      brainRevision = request.headers['x-brain-revision'] as string ?? '';
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify({ data: [{ id: 'chat' }, { id: 'anthropic/claude-sonnet' }] }));
     });
@@ -156,7 +177,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     mkdirSync(join(root, 'context'), { recursive: true });
     mkdirSync(join(root, 'projects', 'mock', 'mockproj'), { recursive: true });
     mkdirSync(join(home, '.brain'), { recursive: true });
-    writeFileSync(join(home, '.brain', 'serve.token'), 'gateway-token\n', { mode: 0o600 });
+    writeFileSync(join(home, '.brain', 'agent-control.token'), 'bpi1.payload.signature\n', { mode: 0o600 });
     // Keys from before chat went through Agent Brain: the server must ignore them, never list
     // them as providers, and never print them.
     mkdirSync(join(home, '.agent-control'), { recursive: true });
@@ -173,21 +194,23 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
         remote: { protocol: 'openai-chat', baseUrl: 'https://example.invalid/v1', models: ['x'] },
         brain: {
           protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${brainPort}/v1`,
-          apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: ['fallback-model'],
+          apiKey: 'file:~/.brain/agent-control.token', locality: 'remote', purpose: 'agent-brain', routingProfile: brainProfileRef(), models: ['fallback-model'],
         },
         // The same gateway with a short model-silence limit, so a timeout test runs in under a second.
         'brain-slow': {
           protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${brainPort}/v1`,
-          apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: [],
+          apiKey: 'file:~/.brain/agent-control.token', locality: 'remote', purpose: 'agent-brain', routingProfile: brainProfileRef(), models: [],
           timeouts: { firstChunkMs: 300, chunkMs: 300 },
         },
         'brain-down': {
           protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${brainDownPort}/v1`,
-          apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain', models: [],
+          apiKey: 'file:~/.brain/agent-control.token', locality: 'remote', purpose: 'agent-brain', routingProfile: brainProfileRef(), models: [],
         },
         direct: { protocol: 'openai-chat', baseUrl: `http://127.0.0.1:${directPort}/v1`, models: ['direct'] },
       },
     }));
+    const configuredEndpoints = JSON.parse(readFileSync(join(root, '.local', 'agent', 'endpoints.json'), 'utf8')) as { endpoints: Record<string, { routingProfile?: { id: string; revision: string } }> };
+    assert.deepEqual(configuredEndpoints.endpoints.brain?.routingProfile, BRAIN_PROFILE);
     // The bridge shells out to `<root>/.agents/bin/ws`; stub the CLI boundary so the
     // project-bound path runs without a real workspace or the network.
     const ws = join(root, '.agents', 'bin', 'ws');
@@ -226,16 +249,36 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
 
   it('streams the mock answer over the line protocol, with no network call', async () => {
     const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'mock', model: 'echo' });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, `${await response.clone().text()}\n${serverLog}`);
     assert.match(response.headers.get('content-type') ?? '', /text\/plain/);
     const lines = await protocolLines(response);
     assert.equal(answerText(lines), 'mock(echo): hello');
     assert.equal(JSON.parse(lines.at(-1)!.slice(2)).finishReason, 'stop');
   });
 
+  it('reports suite component status without probing Brain or returning workspace paths', async () => {
+    const beforeBrainCalls = brainCalls;
+    const beforeBrainChatCalls = brainChatCalls;
+    const response = await fetch(`${origin}/api/agent/suite`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      name: string;
+      components: Array<{ id: string; state: string }>;
+    };
+    assert.equal(body.name, 'Agent Workspace Suite');
+    assert.deepEqual(body.components.map((component) => component.id), [
+      'agent-control', 'agent-brain', 'agent-workspace', 'agent-skills', 'agent-secure',
+    ]);
+    assert.equal(body.components.find((component) => component.id === 'agent-brain')?.state, 'configured');
+    assert.equal(JSON.stringify(body).includes(root), false);
+    assert.equal(JSON.stringify(body).includes(home), false);
+    assert.equal(brainCalls, beforeBrainCalls);
+    assert.equal(brainChatCalls, beforeBrainChatCalls);
+  });
+
   it('streams the same answer for a chat bound to a project', async () => {
     const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'mock', model: 'echo', project: 'mockproj' });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, await response.clone().text());
     assert.equal(answerText(await protocolLines(response)), 'mock(echo): hello');
     const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
     const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: unknown[] }> }> };
@@ -307,17 +350,17 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(denied.status, 200);
     assert.equal(brainCalls, 0);
 
-    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
-      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
-    }));
+    writeBrainPolicy(root, 'brain');
     const allowed = await getProviders('?project=mockproj');
     assert.equal(allowed.status, 200);
     const body = await allowed.json() as { providers: Array<{ id: string; models: string[] }> };
     const brain = body.providers.find((provider) => provider.id === 'brain');
     assert.deepEqual(brain?.models, ['fallback-model', 'chat', 'anthropic/claude-sonnet']);
     assert.equal(brainCalls, 1);
-    assert.equal(brainAuthorization, 'Bearer gateway-token');
-    assert.doesNotMatch(JSON.stringify(body), /gateway-token/);
+    assert.equal(brainAuthorization, 'Bearer bpi1.payload.signature');
+    assert.equal(brainProfileHeader, 'agent-control');
+    assert.equal(brainRevision, BRAIN_PROFILE.revision);
+    assert.doesNotMatch(JSON.stringify(body), /bpi1\.payload\.signature/);
 
     const unknown = await getProviders('?project=not-registered');
     assert.equal(unknown.status, 400);
@@ -325,9 +368,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   });
 
   it('streams inference through Brain while keeping workspace tools on the Agent-Control host', async () => {
-    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
-      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
-    }));
+    writeBrainPolicy(root, 'brain');
     const response = await post({
       messages: [{ role: 'user', content: 'hello' }], provider: 'brain', model: 'chat', project: 'mockproj',
     });
@@ -335,7 +376,9 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(response.status, 200);
     assert.equal(answerText(await protocolLines(response)), 'brain-backed reply after host tool');
     assert.equal(brainChatCalls, 2);
-    assert.equal(brainAuthorization, 'Bearer gateway-token');
+    assert.equal(brainAuthorization, 'Bearer bpi1.payload.signature');
+    assert.equal(brainProfileHeader, 'agent-control');
+    assert.equal(brainRevision, BRAIN_PROFILE.revision);
     assert.equal(brainChatBodies[0].model, 'chat');
     assert.ok(Array.isArray(brainChatBodies[0].tools) && brainChatBodies[0].tools.length > 0);
     const followUpMessages = brainChatBodies[1].messages as Array<{ role: string }>;
@@ -347,9 +390,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   });
 
   it('cancels the Brain request when the browser stops the turn, and keeps the partial answer', async () => {
-    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
-      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
-    }));
+    writeBrainPolicy(root, 'brain');
     const conversation = '55555555-5555-4555-8555-555555555555';
     const browser = new AbortController();
     const response = await fetch(`${origin}/api/agent/chat`, {
@@ -387,11 +428,9 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   });
 
   it('shows a refused Brain call as a sanitized error, and logs neither the upstream body nor the prompt', async () => {
-    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
-      schema_version: 1, default: 'read', llm: { endpoints: ['brain'] },
-    }));
+    writeBrainPolicy(root, 'brain');
     const response = await post({ messages: [{ role: 'user', content: 'PROMPT-MARKER-71' }], provider: 'brain', model: 'refuse', project: 'mockproj' });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, await response.clone().text());
     const lines = await protocolLines(response);
     const errors = lines.filter((l) => l.startsWith('e:')).map((l) => JSON.parse(l.slice(2)) as string);
     assert.deepEqual(errors, ['The model endpoint refused the credentials (HTTP 401). Check the endpoint\'s credential.']);
@@ -399,14 +438,12 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
 
     await eventually(async () => (/Inference error: unauthorized/.test(serverLog) ? true : undefined));
     assert.match(serverLog, /Inference error: unauthorized \(HTTP 401, AI_APICallError\)/);
-    assert.doesNotMatch(serverLog, /PROMPT-MARKER-71|acct-brain-9|sk-upstream-secret|gateway-token/);
+    assert.doesNotMatch(serverLog, /PROMPT-MARKER-71|acct-brain-9|sk-upstream-secret|bpi1\.payload\.signature/);
   });
 
   it('shows a Brain that is down as unreachable, and never falls back to a direct endpoint', async () => {
     // The direct endpoint answers and the policy lists it, so a fallback would have somewhere to go.
-    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
-      schema_version: 1, default: 'read', llm: { endpoints: ['brain-down', 'direct'] },
-    }));
+    writeBrainPolicy(root, 'brain-down', 'direct');
     const directBefore = directCalls;
 
     const response = await post({ messages: [{ role: 'user', content: 'are you there?' }], provider: 'brain-down', model: 'chat', project: 'mockproj' });
@@ -419,9 +456,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   });
 
   it('ends a turn whose model stays silent with a timeout error, and closes the Brain request', async () => {
-    writeFileSync(join(root, '.local', 'agent', 'policies', 'mockproj.json'), JSON.stringify({
-      schema_version: 1, default: 'read', llm: { endpoints: ['brain', 'brain-slow'] },
-    }));
+    writeBrainPolicy(root, 'brain', 'brain-slow');
     const response = await post({ messages: [{ role: 'user', content: 'anyone there?' }], provider: 'brain-slow', model: 'silent', project: 'mockproj' });
     assert.equal(response.status, 200);
     const lines = await protocolLines(response);

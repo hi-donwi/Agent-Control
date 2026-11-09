@@ -15,7 +15,7 @@ describe('createChatTools', () => {
     // Plain-object schemas are read as zod schemas by the AI SDK and threw on every
     // request ("Cannot read properties of undefined (reading 'typeName')").
     const tools = createChatTools(new WorkspaceBridge('/nonexistent-workspace'));
-    assert.ok(Object.keys(tools).length >= 10);
+    assert.deepEqual(Object.keys(tools), []);
     const result = streamText({
       model: createMockModel('echo'),
       messages: [{ role: 'user', content: 'ping' }],
@@ -30,6 +30,17 @@ describe('createChatTools', () => {
     }
     assert.equal(error, undefined);
     assert.equal(text, 'mock(echo): ping');
+  });
+
+  it('offers no workspace or project tools to an unbound chat', async () => {
+    const calls: string[] = [];
+    const tools = createChatTools(fakeBridge(calls));
+    for (const name of ['list_projects', 'project_tree', 'context_pack', 'read_file', 'search_code', 'scan_security', 'diagnose_database', 'diagnose_infra']) {
+      assert.equal(name in tools, false, name);
+    }
+    assert.equal('route_skills' in tools, false);
+    assert.equal('get_skill' in tools, false);
+    assert.deepEqual(calls, []);
   });
 });
 
@@ -64,8 +75,20 @@ describe('createChatTools bound to a project (ADR-0011)', () => {
     await assert.rejects(() => run(tools, 'context_pack', { projectKey: 'other' }), /bound to demo/);
     await assert.rejects(() => run(tools, 'scan_security', { projectKey: 'other' }), /bound to demo/);
     await run(tools, 'context_pack', { projectKey: 'demo' });
-    await run(tools, 'route_skills', { taskDescription: 'x', projectKey: 'other' });
-    assert.deepEqual(calls, ['contextPack:["demo"]', 'route:["x","demo"]']);
+    assert.equal('route_skills' in tools, false, 'remote project chats cannot discover private skill catalogs');
+    assert.equal('get_skill' in tools, false, 'remote project chats cannot fetch project-domain skills');
+    assert.deepEqual(calls, ['contextPack:["demo"]']);
+  });
+
+  it('allows project-domain skills only to a locally scoped project chat', async () => {
+    const calls: string[] = [];
+    const tools = createChatTools(fakeBridge(calls), { ...scope, remote: false });
+    await run(tools, 'route_skills', { taskDescription: 'domain workflow', projectKey: 'other' });
+    await run(tools, 'get_skill', { skillName: 'domain-workflow' });
+    assert.deepEqual(calls, [
+      'route:["domain workflow","demo"]',
+      'readSkill:["domain-workflow","demo"]',
+    ]);
   });
 
   it('reads files of its project, its memory and runs, and the framework - nothing else', async () => {

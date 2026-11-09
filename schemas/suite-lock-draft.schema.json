@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Workspace Suite lock draft metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "suite_version", "platform", "components"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "suite_version": { "$ref": "#/$defs/semver" },
+    "platform": {
+      "enum": ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "windows-arm64", "windows-x64"]
+    },
+    "components": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "$ref": "#/$defs/agent-control" },
+        { "$ref": "#/$defs/agent-brain-service" },
+        { "$ref": "#/$defs/agent-workspace" },
+        { "$ref": "#/$defs/agent-skills" },
+        { "$ref": "#/$defs/agent-secure" }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "delivery", "version", "artifact_name"],
+      "properties": {
+        "id": { "type": "string" },
+        "delivery": { "const": "artifact" },
+        "version": { "$ref": "#/$defs/semver" },
+        "artifact_name": { "type": "string", "pattern": "^(agent-control|agent-workspace|agent-skills|agent-secure)-(darwin-arm64|darwin-x64|linux-arm64|linux-x64|windows-arm64|windows-x64)(\\.tar\\.gz|\\.zip)$" }
+      }
+    },
+    "agent-brain-service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "delivery", "version", "service_contract"],
+      "properties": {
+        "id": { "const": "agent-brain" },
+        "delivery": { "const": "service" },
+        "version": { "$ref": "#/$defs/semver" },
+        "service_contract": { "const": "agent-brain-profile-v1" }
+      }
+    },
+    "agent-control": { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-control" } } }] },
+    "agent-workspace": { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-workspace" } } }] },
+    "agent-skills": { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-skills" } } }] },
+    "agent-secure": { "allOf": [{ "$ref": "#/$defs/component" }, { "properties": { "id": { "const": "agent-secure" } } }] }
+  }
+}
