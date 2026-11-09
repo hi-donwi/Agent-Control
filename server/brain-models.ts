@@ -1,4 +1,4 @@
-import type { Endpoint } from './endpoints.js';
+import { isBrainProfileCredential, type Endpoint } from './endpoints.js';
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 const MAX_MODEL_RESPONSE_BYTES = 1024 * 1024;
@@ -46,12 +46,16 @@ export async function discoverBrainModels(
   if (endpoint.protocol !== 'openai-chat' || endpoint.purpose !== 'agent-brain' || !endpoint.baseUrl) {
     throw new Error('Agent Brain model discovery is not enabled for this endpoint');
   }
+  if (!endpoint.routingProfile) throw new Error('Agent Brain endpoint has no routing profile');
+  if (!isBrainProfileCredential(credential)) throw new Error('Agent Brain model discovery requires a profile-scoped credential');
 
   const url = new URL(endpoint.baseUrl);
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/models`;
   url.search = '';
   url.hash = '';
   const headers = new Headers({ Accept: 'application/json' });
+  headers.set('X-Brain-Profile', endpoint.routingProfile.id);
+  headers.set('X-Brain-Revision', endpoint.routingProfile.revision);
   if (credential) headers.set('Authorization', `Bearer ${credential}`);
 
   let response: Response;

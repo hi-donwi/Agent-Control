@@ -21,6 +21,9 @@
     "desktop:host:build": "node scripts/build-desktop-host.mjs",
     "desktop:host:smoke": "node scripts/desktop-host-smoke.mjs",
     "desktop:host:bundle-smoke": "node scripts/desktop-host-smoke.mjs --bundle",
+    "suite:create-lock-draft": "tsx scripts/suite-package.ts draft",
+    "suite:sign-lock": "tsx scripts/suite-package.ts sign",
+    "suite:assemble": "tsx scripts/suite-package.ts assemble",
     "desktop:build": "tauri build"
   },
   "dependencies": {

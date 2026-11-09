@@ -1,11 +1,17 @@
 # Agent-Control
 
-AI-powered workspace assistant whose model inference runs through Agent Brain.
+Agent-Control is the host and operator UI for the Agent Workspace Suite. Model inference
+runs through Agent Brain.
 
-A standalone, loopback-only chat interface that understands your Agent-Workspace
+A loopback-only assistant and workspace control surface that understands your Agent-Workspace
 projects, context, memory, and runs. Every model call goes through the Agent Brain
 gateway, which owns the provider accounts, keys, and routing; Agent-Control never calls a
 provider directly.
+
+Suite boundaries and the phased packaging plan are in
+[docs/suite-architecture.md](docs/suite-architecture.md). The current desktop build includes
+the Agent-Control host only; component readiness is visible in Settings, but installation and
+updates remain operator-managed.
 
 ## Desk
 
@@ -34,7 +40,7 @@ pnpm run dev
 - **Inference through Agent Brain** — every chat turn goes to the Brain gateway; providers, accounts, and keys live in Brain, not here
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
 - **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
-- **Authoritative Skill Retrieval** — `get_skill` powered by `Agent-Skills` (48 standardized software engineering workflows)
+- **Authoritative Skill Retrieval** — `get_skill` reads the Agent-Skills catalog synchronized into the selected workspace
 - **Generative UIDL UI Preview** — live in-chat interactive rendering of UIDL documents (`uidl-runtime`) for metrics, forms, and cards
 - **Studio Handoff** — one-click `Studio ↗` direct export into `UIDL-Builder` for visual drag-and-drop customization
 - **Streaming chat** — real-time SSE streaming with markdown rendering
@@ -60,8 +66,8 @@ deterministically and offline, for tests and demos:
 {
   "endpoints": {
     "brain": { "protocol": "openai-chat", "baseUrl": "http://127.0.0.1:52140/v1",
-               "apiKey": "file:~/.lokal/serve.token", "locality": "remote", "purpose": "agent-brain",
-               "models": ["antigravity/claude-sonnet-4-6", "antigravity/gemini-3-flash", "codex/gpt-5.5"] },
+               "apiKey": "file:~/.lokal/agent-control.token", "locality": "remote", "purpose": "agent-brain",
+               "routingProfile": { "id": "agent-control", "revision": "sha256:<64 lowercase hex characters>" } },
     "mock":  { "protocol": "mock", "models": ["echo"] }
   }
 }
@@ -69,15 +75,20 @@ deterministically and offline, for tests and demos:
 
 `apiKey` is a reference: `env:NAME`, `keychain:NAME` (macOS Keychain), or `file:PATH` for
 a token file that only its owner can read (`chmod 600`; an absolute path or `~/...`). A
-literal key is rejected. The file may also list endpoints of other protocols
+literal key is rejected. For Brain, issue a profile-scoped credential on the Brain host
+with `brain router credential agent-control --protocol chat`; it writes the token and a
+non-secret profile manifest under `~/.lokal/`. Never use `serve.token` as an Agent-Control
+credential. The profile ID/revision must match both Brain's current `routing_profiles`
+configuration and this workspace's project policy below. The file may also list endpoints of other protocols
 (`openai-chat`, `openai-responses`, `anthropic-messages`) for other workspace tools; the
 chat lists none of them and refuses a request that names one.
 
 **Brain is remote.** `brain serve` listens on loopback but forwards requests to cloud
 accounts, so an Agent Brain endpoint must be declared `"locality": "remote"`; a project's
 context then reaches it only when that project's policy lists it (below). When
-`~/.lokal/serve.token` exists and no endpoint is named `lokal`, the host adds that gateway
-as `lokal`, remote and with the Agent Brain purpose. List real model ids from
+`~/.lokal/agent-control.token` and its `.json` profile manifest exist and no endpoint is
+named `lokal`, the host adds that gateway as `lokal`, remote and with the Agent Brain purpose.
+List real model ids from
 `GET /v1/models`; a project-bound chat also asks Brain for them once the project's policy
 allows it.
 
@@ -114,10 +125,21 @@ only for a chat that names a `project` whose operator policy lists it, in
 `<workspace>/.local/agent/policies/<project>.json`:
 
 ```json
-{ "schema_version": 1, "default": "read", "llm": { "endpoints": ["brain"] } }
+{
+  "schema_version": 1,
+  "default": "read",
+  "llm": {
+    "endpoints": ["brain"],
+    "brain_profiles": [
+      { "endpoint": "brain", "profile_id": "agent-control", "revision": "sha256:<same revision as endpoint config>" }
+    ]
+  }
+}
 ```
 
-Without that entry the request is refused with 403. `POST /api/agent/chat` accepts
+Both the endpoint name and exact profile revision must be allowed; an endpoint-only grant,
+missing profile grant, or stale revision is refused with 403 before network egress.
+`POST /api/agent/chat` accepts
 `"project": "<key>"` next to `provider` and `model`; the sidebar's **Project** selector
 sends it, and disables endpoints the project may not use.
 

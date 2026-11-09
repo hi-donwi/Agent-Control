@@ -1,6 +1,6 @@
 import type { ChatModel } from './providers/types.js';
-import { egressDecision, loadLlmAllowlist } from './egress.js';
-import { resolveCredential, type CredentialReaders, type Endpoint, type Locality } from './endpoints.js';
+import { egressDecision, loadBrainProfileAllowlist, loadLlmAllowlist } from './egress.js';
+import { isBrainProfileCredential, resolveCredential, type CredentialReaders, type Endpoint, type Locality } from './endpoints.js';
 import { createEndpointModel } from './providers/endpoint-model.js';
 import type { AppConfig } from './config.js';
 
@@ -43,12 +43,16 @@ export function chatDefaults(config: AppConfig, endpoints: Endpoint[]): { provid
 /** 400 for a bad project key, 403 when the project may not send context to `target`. */
 function egressRefusal(target: Endpoint, request: ChatModelRequest, root: string): { status: 400 | 403; error: string } | null {
   let allowlist: string[] | null = null;
+  let brainProfiles: ReturnType<typeof loadBrainProfileAllowlist> = null;
   try {
-    if (request.project) allowlist = loadLlmAllowlist(root, request.project);
+    if (request.project) {
+      allowlist = loadLlmAllowlist(root, request.project);
+      brainProfiles = loadBrainProfileAllowlist(root, request.project);
+    }
   } catch (error) {
     return { status: 400, error: (error as Error).message };
   }
-  const decision = egressDecision(target, request.project, allowlist);
+  const decision = egressDecision(target, request.project, allowlist, brainProfiles);
   return decision.allowed ? null : { status: 403, error: decision.reason };
 }
 
@@ -76,7 +80,13 @@ export function resolveChatModel(request: ChatModelRequest, deps: ChatModelDeps)
   if (refusal) return refusal;
   try {
     const apiKey = resolveCredential(endpoint.credential, { env: deps.env ?? process.env, keychain: deps.keychain });
-    return { model: createEndpointModel(endpoint, request.model, apiKey), locality: endpoint.locality };
+    if (endpoint.purpose === 'agent-brain' && !isBrainProfileCredential(apiKey)) {
+      throw new Error('Agent Brain requires a profile-scoped credential; issue one with `brain router credential`.');
+    }
+    const routingHeaders = endpoint.routingProfile
+      ? { 'X-Brain-Profile': endpoint.routingProfile.id, 'X-Brain-Revision': endpoint.routingProfile.revision }
+      : undefined;
+    return { model: createEndpointModel(endpoint, request.model, apiKey, routingHeaders), locality: endpoint.locality };
   } catch (error) {
     return { status: 400, error: `endpoint ${endpoint.name}: ${(error as Error).message}` };
   }

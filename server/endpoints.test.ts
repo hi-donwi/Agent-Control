@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_CHAT_TIMEOUTS, chatTimeouts, loadEndpoints, localityOf, parseEndpoints, resolveCredential } from './endpoints.js';
+import { DEFAULT_CHAT_TIMEOUTS, chatTimeouts, isBrainProfileCredential, loadEndpoints, localityOf, parseEndpoints, resolveCredential } from './endpoints.js';
 
 describe('parseEndpoints', () => {
+  const brainProfile = { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` };
+
   it('reads one endpoint per protocol, models included', () => {
     const endpoints = parseEndpoints({
       endpoints: {
         anthropic: { protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com/v1', apiKey: 'env:ANTHROPIC_API_KEY', models: ['m1'] },
         xai: { protocol: 'openai-chat', baseUrl: 'https://api.x.ai/v1', apiKey: 'keychain:xai' },
         openai: { protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1', apiKey: 'env:OPENAI_API_KEY' },
-        brain: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', apiKey: 'file:~/.brain/serve.token', locality: 'remote', purpose: 'agent-brain' },
+        brain: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', apiKey: 'file:~/.brain/agent-control.token', locality: 'remote', purpose: 'agent-brain', routingProfile: brainProfile },
         mock: { protocol: 'mock', models: ['echo'] },
       },
     });
@@ -26,6 +28,7 @@ describe('parseEndpoints', () => {
     assert.deepEqual(endpoints[0].models, ['m1']);
     assert.deepEqual(endpoints[1].models, []);
     assert.equal(endpoints[3].purpose, 'agent-brain');
+    assert.deepEqual(endpoints[3].routingProfile, brainProfile);
   });
 
   it('refuses a literal key and does not repeat it', () => {
@@ -45,6 +48,20 @@ describe('parseEndpoints', () => {
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-responses', baseUrl: 'https://a.example/v1', purpose: 'agent-brain' } } }), /purpose/);
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://a.example/v1', purpose: 'custom' } } }), /purpose/);
     assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1/v1', purpose: 'agent-brain' } } }), /purpose/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://a.example/v1', purpose: 'agent-brain', routingProfile: brainProfile } } }), /apiKey/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://a.example/v1', purpose: 'agent-brain', apiKey: 'env:BRAIN_TOKEN' } } }), /routingProfile/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://a.example/v1', purpose: 'agent-brain', apiKey: 'env:BRAIN_TOKEN', routingProfile: { id: '../x', revision: brainProfile.revision } } } }), /routingProfile/);
+    assert.throws(() => parseEndpoints({ endpoints: { x: { protocol: 'openai-chat', baseUrl: 'https://a.example/v1', purpose: 'agent-brain', apiKey: 'env:BRAIN_TOKEN', routingProfile: { ...brainProfile, revision: 'latest' } } } }), /routingProfile/);
+  });
+});
+
+describe('isBrainProfileCredential', () => {
+  it('accepts only bounded signed-profile token envelopes', () => {
+    assert.equal(isBrainProfileCredential('bpi1.payload.signature'), true);
+    assert.equal(isBrainProfileCredential('master-token'), false);
+    assert.equal(isBrainProfileCredential('bpi1.only-one-part'), false);
+    assert.equal(isBrainProfileCredential(`bpi1.${'a'.repeat(4096)}.signature`), false);
+    assert.equal(isBrainProfileCredential(undefined), false);
   });
 });
 
@@ -81,7 +98,7 @@ describe('file credentials and declared locality', () => {
 
 describe('model-silence timeouts', () => {
   const brain = (timeouts: unknown) => ({
-    endpoints: { brain: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', locality: 'remote', purpose: 'agent-brain', timeouts } },
+    endpoints: { brain: { protocol: 'openai-chat', baseUrl: 'http://127.0.0.1:52140/v1', apiKey: 'file:~/.brain/agent-control.token', locality: 'remote', purpose: 'agent-brain', routingProfile: { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` }, timeouts } },
   });
 
   it('reads an endpoint override in whole milliseconds, either field alone', () => {
@@ -129,17 +146,27 @@ describe('loadEndpoints', () => {
     assert.deepEqual(loadEndpoints(root).map((e) => e.name), ['mock']);
   });
 
-  it('auto-discovers lokal endpoint when requested and serve.token exists', () => {
+  it('auto-discovers lokal endpoint only when a scoped credential and profile manifest exist', () => {
     const root = mkdtempSync(join(tmpdir(), 'ac-endpoints-'));
     const home = mkdtempSync(join(tmpdir(), 'ac-home-'));
     mkdirSync(join(home, '.lokal'), { recursive: true });
-    writeFileSync(join(home, '.lokal', 'serve.token'), 'token\n');
+    writeFileSync(join(home, '.lokal', 'agent-control.token'), 'scoped-token\n');
+    writeFileSync(join(home, '.lokal', 'agent-control.token.json'), JSON.stringify({ id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` }));
 
     const endpoints = loadEndpoints(root, { autoDiscoverLokal: true, home });
     assert.equal(endpoints.length, 1);
     assert.equal(endpoints[0].name, 'lokal');
     assert.equal(endpoints[0].locality, 'remote');
     assert.equal(endpoints[0].purpose, 'agent-brain');
+    assert.deepEqual(endpoints[0].routingProfile, { id: 'agent-control', revision: `sha256:${'a'.repeat(64)}` });
+  });
+
+  it('does not auto-discover from the gateway master token', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-endpoints-'));
+    const home = mkdtempSync(join(tmpdir(), 'ac-home-'));
+    mkdirSync(join(home, '.lokal'), { recursive: true });
+    writeFileSync(join(home, '.lokal', 'serve.token'), 'master-token\n');
+    assert.deepEqual(loadEndpoints(root, { autoDiscoverLokal: true, home }), []);
   });
 });
 

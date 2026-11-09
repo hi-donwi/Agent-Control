@@ -5,6 +5,10 @@ resource. The executable contains the Node runtime and bundled server dependenci
 not include the workspace, workspace CLI, external system tools, provider credentials, or
 user configuration.
 
+This is the Agent-Control application package, not yet the complete Agent Workspace Suite
+installer. The component boundary, readiness contract, and future signed suite manifest are
+documented in [suite-architecture.md](suite-architecture.md).
+
 ## Build and verify
 
 Use macOS and one of the Node versions allowed by `package.json` (22.23.4+, 24.22.1+, or

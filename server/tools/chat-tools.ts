@@ -139,7 +139,7 @@ export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope, chil
       },
     },
     get_skill: {
-      description: 'Fetch the authoritative instructions and guidelines for a skill from Agent-Skills / .agents/skills (e.g. codebase-onboarding, rest-api-contract, quarkus-service, uidl-runtime)',
+      description: 'Fetch authoritative skill instructions from the public catalog, or from this project when the chat is local and project-bound.',
       parameters: {
         type: 'object' as const,
         properties: {
@@ -150,8 +150,10 @@ export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope, chil
         },
         required: ['skillName'],
       },
-      execute: async ({ skillName }: { skillName: string }) => {
-        const content = await bridge.readSkill(skillName);
+      execute: async ({ skillName, projectKey }: { skillName: string; projectKey?: string }) => {
+        const content = projectKey
+          ? await bridge.readSkill(skillName, projectKey)
+          : await bridge.readSkill(skillName);
         return { content };
       },
     },
@@ -229,7 +231,7 @@ export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope, chil
       },
     },
   };
-  const scoped = scope ? bindToProject(tools, scope) : tools;
+  const scoped = scope ? bindToProject(tools, scope) : {};
   return withJsonSchema({ ...scoped, ...(scope && child ? subagentTools(scope, scoped, child.model, child.signal, child.onUsage) : {}) });
 }
 
@@ -304,14 +306,18 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
     execute: async (args: never) => tool.execute(adapt(args as A) as never),
   });
   const {
-    list_projects: _list, project_tree: _tree, diagnose_database, diagnose_infra, ...rest
+    list_projects: _list, project_tree: _tree, diagnose_database, diagnose_infra, route_skills, get_skill, ...rest
   } = tools;
   return {
     ...rest,
-    ...(scope.remote ? {} : { diagnose_database, diagnose_infra }),
+    ...(scope.remote ? {} : {
+      diagnose_database,
+      diagnose_infra,
+      route_skills: wrap(route_skills, (a) => ({ ...a, projectKey: scope.project })),
+      get_skill: wrap(get_skill, (a) => ({ ...a, projectKey: scope.project })),
+    }),
     context_pack: wrap(tools.context_pack, (a) => ({ ...a, projectKey: own(a.projectKey) })),
     scan_security: wrap(tools.scan_security, (a) => ({ ...a, projectKey: own(a.projectKey) })),
-    route_skills: wrap(tools.route_skills, (a) => ({ ...a, projectKey: scope.project })),
     read_file: readFileTool(tools.read_file, scope, inside),
     search_code: searchCodeTool(tools.search_code, scope, inside),
     run_command: {

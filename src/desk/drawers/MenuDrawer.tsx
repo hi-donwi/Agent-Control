@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
 import { apiFetch, chooseDesktopWorkspace, getDesktopWorkspaceRoot } from '../../lib/api';
 import { BackIcon, ChevronIcon, CloseIcon } from '../icons';
@@ -10,6 +10,7 @@ import { DayItem } from '../pm/DayItem';
 import type { PmAlert } from '../pm/types';
 import type { PmPage } from '../pm/pages';
 import type { NoteDraft } from '../command/command-state';
+import type { SuiteManifest, SuiteComponentState } from '../../lib/suite';
 
 export type MenuSection = SectionId | 'settings' | 'inbox';
 
@@ -220,10 +221,31 @@ function Nav({ floor, project, onSection, onFloor, alerts, onPage }: Props) {
   );
 }
 
+function useSuiteManifest() {
+  const [manifest, setManifest] = useState<SuiteManifest | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let current = true;
+    void apiFetch<SuiteManifest>('suite')
+      .then((value) => { if (current) setManifest(value); })
+      .catch(() => { if (current) setError('Component status is unavailable. The suite continues to work without this summary.'); });
+    return () => { current = false; };
+  }, []);
+  return { manifest, error };
+}
+
+const SUITE_STATE_LABEL: Record<SuiteComponentState, string> = {
+  ready: 'Ready',
+  configured: 'Configured',
+  'not-configured': 'Not configured',
+  'not-installed': 'Not installed',
+};
+
 function Settings({ theme, onTheme }: Props) {
   const [workspacePending, setWorkspacePending] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
+  const { manifest: suite, error: suiteError } = useSuiteManifest();
   const workspaceRoot = getDesktopWorkspaceRoot();
   const classic = new URL(window.location.href);
   classic.searchParams.set('ui', 'classic');
@@ -267,6 +289,32 @@ function Settings({ theme, onTheme }: Props) {
           </p>
         </div>
       </div>
+      <section className="suite-panel" aria-labelledby="suite-panel-title">
+        <div className="suite-panel__heading">
+          <h3 className="settings-label" id="suite-panel-title">Agent Workspace Suite</h3>
+          <p className="settings-hint">Readiness only; components remain independently managed.</p>
+        </div>
+        {suiteError && <p className="suite-panel__message" role="status">{suiteError}</p>}
+        {!suite && !suiteError && <p className="suite-panel__message" role="status">Checking local component configuration.</p>}
+        {suite && (
+          <ul className="suite-component-list" aria-label="Suite component readiness">
+            {suite.components.map((component) => (
+              <li className="suite-component" key={component.id}>
+                <div className="suite-component__copy">
+                  <p className="suite-component__name">{component.name}</p>
+                  <p className="suite-component__role">{component.role} · {component.distribution}</p>
+                  <p className="suite-component__detail">{component.detail}</p>
+                  <p className="suite-component__requirement">Needed for {component.requiredFor}</p>
+                </div>
+                <span className="suite-component__state" data-state={component.state}>
+                  {SUITE_STATE_LABEL[component.state]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="settings-hint">Workspace data, Brain credentials, skill sources, and security policies stay with their owning components.</p>
+      </section>
       {workspaceRoot && (
         <div className="settings-row workspace-setting">
           <div className="workspace-setting__copy">
