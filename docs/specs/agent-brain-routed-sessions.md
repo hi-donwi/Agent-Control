@@ -53,8 +53,9 @@ through the existing OpenAI-compatible streaming path, so tool execution remains
 
 The account guide documents `brain accounts` CLI management and private credential storage
 (`secrets/`, mode 0600 where supported); it explicitly says the gateway must restart after
-configuration changes. There is no documented HTTP API for account CRUD, login/OAuth, model
-refresh, or routing-profile administration. Current routing strategies are `priority` and
+configuration changes. Brain now exposes a typed `/manage/v1/` API for redacted account
+management, provider checks/model discovery, supported OAuth sessions, and routing-profile
+administration. Current routing strategies are `priority` and
 `round-robin` within a selected provider. There is no weighted strategy or explicit cross-provider
 failover profile contract. The stable local-chat contract is text-only; structured tool requests
 use compatible endpoint accounts. A Brain-side local tool-call path is therefore a prerequisite
@@ -74,6 +75,17 @@ for the settings UI and routing profiles. Do not edit Brain's config files direc
 Agent-Control, and do not send provider keys through the chat/model path.
 
 ## Proposed behavior
+
+### Agent-Control project-bound Brain MCP client
+
+When a project chat routes to an Agent Brain endpoint, Agent-Control may start a temporary local
+`brain mcp --root <registered-project-or-worktree>` stdio client. The root comes only from the
+server-constructed `ChatScope`, never a browser/model argument. It bridges only `repo_map`,
+`find_symbol`, `search_code`, and `project_commands` as `brain_*` tools, then closes the MCP
+process on chat completion/error/cancellation. Unbound chats get no Brain MCP tools; skills,
+knowledge, provider, and generic MCP tools are not bridged. Requires `brain` on `PATH`, or
+`AGENT_BRAIN_BINARY` to point to the local executable. A bounded four-session semaphore limits
+stdio subprocesses; failures degrade to existing Agent-Control tools. See ADR-0007.
 
 1. A typed Brain inference adapter handles every interactive and specialist model-generation
    request. It supports SSE, tool calls/results, abort propagation, timeouts, and sanitized Brain
@@ -121,17 +133,23 @@ These are proposed contracts, not existing routes:
   cancellation through to the selected backend. A per-session affinity mechanism is optional for
   the first slice; if enabled, Brain owns the binding and the caller supplies only an opaque
   session ID.
-- **Read-only control plane:** versioned endpoints for provider capabilities, redacted accounts
+- **Read-only/status plane:** versioned endpoints for provider capabilities, redacted accounts
   and model discovery, routing profile list/detail/revision, health/cooldown, and safe test/refresh
   operations. Do not expose credential references, bridge management keys, or raw secrets.
-- **Management plane:** Brain-owned create/login/reauth/disable/remove/account-test and
-  routing-profile CRUD operations, with OAuth begin/callback/status where supported. Mutations
-  validate provider capabilities and update config atomically; gateway reload/restart is handled
-  by Brain rather than Agent-Control. The management authority is distinct from inference
-  credentials and is loopback-only, Host/Origin checked, authenticated, and CSRF-resistant.
+- **Management plane:** Brain-owned account create/test/model refresh/disable/remove and
+  routing-profile CRUD, bounded OAuth sessions, redacted runtime/backend/model catalog status,
+  configured-backend selection, installed hardware profile selection, and confirmed catalog
+  model pull/removal for supported adapters, registered-root RAG index/search, and Brain-user
+  skill inventory/validate/remove plus static MCP tool inventory. Mutations validate typed
+  resources; Brain requires a restart for config changes. The management authority
+  is distinct from inference credentials and is Host/same-Origin checked, authenticated, and
+  CSRF-resistant.
+- **Service visibility:** Settings shows redacted launchd/systemd installation and gateway health.
+  Service install/uninstall stays CLI-owned because it mutates OS state and may stop the serving
+  gateway.
 - **Least privilege:** issue an Agent-Control inference credential scoped to approved profile
   IDs/revisions and protocols, not the Brain master token or raw provider credentials. Admin
-  actions use a separate short-lived capability. Never put either token in a chat transcript,
+  actions use a separate management credential. Never put either token in a chat transcript,
   model tool schema, browser persistent storage, or usage record.
 - **Profile identity (2026-11-08 implementation contract):** Brain stores `routing_profiles`
   in its private router configuration. A profile maps exact caller-visible model IDs to a
@@ -156,8 +174,8 @@ These are proposed contracts, not existing routes:
   include the same endpoint, profile ID, and revision in `llm.brain_profiles`. Agent-Control
   sends those values as headers on model discovery and inference; the browser cannot override
   them. Missing or mismatched profile authorization denies the request before network egress.
-- **Settings UI:** Agent-Control can show profile/account metadata and status; credential entry and
-  OAuth consent are Brain-owned. The UI must label that local file permissions are not encrypted
+- **Settings UI:** Agent-Control embeds the Brain-origin management console; provider credential
+  entry and OAuth consent are Brain-owned. The UI must label that local file permissions are not encrypted
   credential storage and preserve Brain's existing `env:`/`file:` secret-reference options.
 
 ## Tech stack and commands
@@ -241,16 +259,25 @@ These are proposed contracts, not existing routes:
 1. The Brain gateway covers inference but is not a stateful session API. This spec recommends
    keeping conversation history and tool orchestration in Agent-Control; confirm if the word
    “session” requires Brain-side conversation persistence instead.
-2. Choose the management surface: Brain-hosted embedded settings form (recommended to keep
-   provider secrets out of Agent-Control frontend/server) versus a direct browser call to Brain's
-   authenticated management API. In either case, secrets are never proxied through Agent-Control
-   backend or returned to its UI state.
-3. Resolved 2026-11-06: the uncommitted Brain gateway/backend/config changes were verified and
-   landed on Brain's main. The account management API and routing-profile contract are still new
-   work.
-4. The Brain gateway's auth currently supports master/account-scoped tokens, not profile/revision
-   scoped client credentials. Add a least-privilege Agent-Control credential before enabling
-   cross-provider profiles.
+2. **Resolved 2026-11-10:** use a Brain-origin management page embedded in Agent-Control. The
+   Agent-Control backend never proxies management API traffic or receives provider secrets. Brain
+   issues a distinct management credential; the page keeps it only in the Brain-origin browser
+   session.
+3. The management contract now covers provider capabilities, API-key/no-auth/native account
+   records, Brain-managed Antigravity/Codex OAuth, no-inference account checks/model refresh,
+   routing profiles, configured backend selection, hardware profile selection, and catalog-only
+   Ollama model pull/unload/removal with disk/residency safeguards, and registered-root RAG
+   index/search over local embeddings, Brain-user skills inventory/validate/remove, and static
+   MCP tool inventory. Native CLI login, OS service installation, skill installation and
+   project/configured sources, and MCP process/tool invocation remain CLI-owned. The console only
+   shows trace aggregates and runs a fixed synthetic local smoke evaluation; raw trace import/
+    detail and custom evaluation specs remain CLI-owned. Forge candidate inventory/evaluation and
+    promotion are available only after local owner review with owned-only provenance; mining,
+    drafting, hardening, and external-content promotion remain CLI-owned. Do not expose a generic
+    CLI or shell endpoint to close these gaps.
+4. Profile-scoped inference credentials and per-project egress policies remain separate from
+   management authorization. Changing a profile requires updating the relevant project's policy
+   revision before chat can use it.
 
 ## Progress
 
@@ -264,6 +291,11 @@ These are proposed contracts, not existing routes:
   endpoint and a legacy provider are refused before any request, and that a Brain that is down
   never reaches a direct endpoint. Behavior 7 and the first half of success criterion 1 hold;
   specialists already reuse the parent's Brain model.
-- **Still open:** Brain-backed account/profile settings (behavior 3, success criterion 2),
-  profile-scoped egress (behavior 5), the least-privilege inference credential (blocker 4), and
-  local tool-call parity in Brain.
+- **2026-11-10, Brain management slices.** Brain issues a domain-separated management
+  credential, rejects inference/account credentials on `/manage/v1/`, serves a Brain-origin
+  operator UI, and exposes redacted provider/account and validated profile operations, supported
+  OAuth sessions, credential checks/model refresh, a safe local runtime/model console,
+  registered-root RAG index/search, Brain-user skill management, and read-only MCP inventory.
+  Agent Control embeds only the configured Brain origin; its backend and
+  frontend do not receive provider/backend secrets or the management credential. Native local
+  client sign-in and the remaining Brain CLI subsystems remain open as listed above.

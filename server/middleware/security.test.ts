@@ -14,6 +14,12 @@ describe('contentSecurityPolicy', () => {
     assert.match(contentSecurityPolicy('abc123'), /script-src 'self' 'nonce-abc123'/);
   });
 
+  it('allows only explicitly configured Brain origins for the embedded management UI', () => {
+    const csp = contentSecurityPolicy(undefined, ['https://brain.example', 'http://127.0.0.1:52140', 'https://evil.invalid/path', 'javascript:alert(1)']);
+    assert.match(csp, /frame-src 'self' https:\/\/brain\.example http:\/\/127\.0\.0\.1:52140/);
+    assert.doesNotMatch(csp, /evil\.invalid|javascript:/);
+  });
+
   it('keeps the rest of the policy identical either way', () => {
     const withoutNonce = contentSecurityPolicy();
     const withNonce = contentSecurityPolicy('abc123');

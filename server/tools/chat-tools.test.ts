@@ -42,6 +42,26 @@ describe('createChatTools', () => {
     assert.equal('get_skill' in tools, false);
     assert.deepEqual(calls, []);
   });
+
+  it('offers Brain MCP tools only when the host supplies them for a bound project chat', () => {
+    const brainCodeTools = {
+      brain_repo_map: {
+        description: 'Read-only repo map under the bound root.',
+        parameters: { properties: { depth: { type: 'number' } } },
+        execute: async () => ({ content: 'map' }),
+      },
+    };
+    assert.equal('brain_repo_map' in createChatTools(fakeBridge([]), undefined, undefined, brainCodeTools), false);
+    assert.equal('brain_repo_map' in createChatTools(fakeBridge([]), { root: '/ws', project: 'demo', folder: 'projects/acme/demo', remote: true }, undefined, brainCodeTools), true);
+    assert.equal('run_command' in createChatTools(fakeBridge([]), { root: '/ws', project: 'demo', folder: 'projects/acme/demo', remote: true }, undefined, {
+      run_command: brainCodeTools.brain_repo_map,
+    }), true, 'the existing Agent-Control run_command remains present and approval-gated');
+    const protectedTools = createChatTools(fakeBridge([]), { root: '/ws', project: 'demo', folder: 'projects/acme/demo', remote: true }, undefined, {
+      run_command: brainCodeTools.brain_repo_map,
+    });
+    assert.equal(typeof protectedTools.run_command.description, 'string');
+    assert.match(protectedTools.run_command.description as string, /operator.*approval/i);
+  });
 });
 
 /** A bridge that records what it was asked, instead of running ws. */
