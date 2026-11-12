@@ -61,6 +61,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   let token: string;
   let brainServer: HttpServer;
   let brainPort: number;
+  let brainDownPort: number;
   let brainCalls = 0;
   let brainAuthorization = '';
   let brainProfileHeader = '';
@@ -170,7 +171,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
       directServer.listen(0, '127.0.0.1', () => resolve((directServer.address() as AddressInfo).port));
     });
     // Nothing listens here: a Brain that is down.
-    const brainDownPort = await freePort();
+    brainDownPort = await freePort();
     mkdirSync(join(root, '.agents', 'standards'), { recursive: true });
     mkdirSync(join(root, '.agents', 'bin'), { recursive: true });
     mkdirSync(join(root, '.local', 'agent', 'policies'), { recursive: true });
@@ -335,6 +336,20 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(config.status, 404);
     assert.match(serverLog, /config\.json holds API keys for openai, anthropic/);
     assert.doesNotMatch(serverLog, /sk-legacy-openai-key|sk-ant-legacy-key/);
+  });
+
+  it('exposes only configured Agent Brain origins for the embedded management UI', async () => {
+    const response = await fetch(`${origin}/api/agent/brain-management-targets`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { targets: Array<{ id: string; managementUrl: string }> };
+    assert.deepEqual(body.targets, [
+      { id: 'brain', managementUrl: `http://127.0.0.1:${brainPort}` },
+      { id: 'brain-slow', managementUrl: `http://127.0.0.1:${brainPort}` },
+      { id: 'brain-down', managementUrl: `http://127.0.0.1:${brainDownPort}` },
+    ]);
+    const csp = response.headers.get('content-security-policy') ?? '';
+    assert.match(csp, /frame-src 'self'.*http:\/\/127\.0\.0\.1:/);
+    assert.doesNotMatch(csp, /agent-control\.token/);
   });
 
   it('discovers Brain models only for a registered project whose policy allows the gateway', async () => {

@@ -103,13 +103,22 @@ function scriptNonceOf(c: Context): string | undefined {
 }
 
 /** Build the Content-Security-Policy, optionally allowing one nonce'd inline script. */
-export function contentSecurityPolicy(scriptNonce?: string): string {
+export function contentSecurityPolicy(scriptNonce?: string, brainFrameOrigins: readonly string[] = []): string {
+  const origins = [...new Set(brainFrameOrigins.filter((origin) => {
+    try {
+      const parsed = new URL(origin);
+      return parsed.origin === origin && (parsed.protocol === 'https:' || parsed.protocol === 'http:');
+    } catch {
+      return false;
+    }
+  }))];
   return [
     "default-src 'self'",
     scriptNonce ? `script-src 'self' 'nonce-${scriptNonce}'` : "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "connect-src 'self'",
+    `frame-src 'self'${origins.length ? ` ${origins.join(' ')}` : ''}`,
     "img-src 'self' data:",
     "frame-ancestors 'none'",
     "object-src 'none'",
@@ -118,14 +127,14 @@ export function contentSecurityPolicy(scriptNonce?: string): string {
 }
 
 /** Middleware: set security headers on every response. */
-export function securityHeaders() {
+export function securityHeaders(brainFrameOrigins: readonly string[] = []) {
   return async (c: Context, next: Next) => {
     await next();
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('X-Frame-Options', 'DENY');
     c.header('Referrer-Policy', 'no-referrer');
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    c.header('Content-Security-Policy', contentSecurityPolicy(scriptNonceOf(c)));
+    c.header('Content-Security-Policy', contentSecurityPolicy(scriptNonceOf(c), brainFrameOrigins));
   };
 }
 

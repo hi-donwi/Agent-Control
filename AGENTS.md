@@ -44,8 +44,10 @@ offline `mock`). Streaming chat with markdown rendering and syntax highlighting.
   scope - keep the scope check in `appendMessage`.
 - No emojis in UI, logs, or docs; use SVG icons or text badges such as `[WARN]`.
 - CI (`test`, `security / gate`) is required on `main`; merge through a PR.
-- File reads MUST be sandboxed: resolved path must start with workspace root.
-- Use `execFile` (not `exec`) for subprocess calls. Validate all arguments.
+- File reads MUST be sandboxed through `server/tools/path-sandbox.ts`: the real path,
+  symlinks followed, stays inside the root and outside `.git`, `.local` and env files.
+- Use `execFile` (not `exec`) for subprocess calls. Validate all arguments, and pass
+  model-supplied text as an option value (`-e <query>`) or after `--`, never as a bare positional.
 - React JSX for rendering — no `dangerouslySetInnerHTML`.
 - CSS custom properties for theming — no Tailwind.
 - All server responses include CSP, X-Frame-Options, X-Content-Type-Options.

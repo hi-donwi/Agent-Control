@@ -11,6 +11,7 @@ import type { PmAlert } from '../pm/types';
 import type { PmPage } from '../pm/pages';
 import type { NoteDraft } from '../command/command-state';
 import type { SuiteManifest, SuiteComponentState } from '../../lib/suite';
+import { BrainManagement } from './BrainManagement';
 
 export type MenuSection = SectionId | 'settings' | 'inbox';
 
@@ -67,7 +68,7 @@ export function MenuDrawer(props: Props) {
   }), [noteDraft, onNoteDraftSaved, project]);
   const title = section ? (section === 'settings' ? 'Settings' : section === 'inbox' ? 'Inbox' : SECTIONS[section].title) : 'Menu';
   return (
-    <Drawer label={title} wide={section !== null && section !== 'settings' && section !== 'inbox'} onClose={onClose}>
+    <Drawer label={title} wide={section !== null && section !== 'inbox'} onClose={onClose}>
       <header className="drawer-head">
         {section && (
           <button type="button" className="icon-btn" onClick={() => onSection(null)} aria-label="Back to menu">
@@ -289,6 +290,7 @@ function Settings({ theme, onTheme }: Props) {
           </p>
         </div>
       </div>
+      <BrainManagement />
       <section className="suite-panel" aria-labelledby="suite-panel-title">
         <div className="suite-panel__heading">
           <h3 className="settings-label" id="suite-panel-title">Agent Workspace Suite</h3>

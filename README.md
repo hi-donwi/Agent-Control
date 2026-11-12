@@ -38,6 +38,12 @@ pnpm run dev
 ## Features
 
 - **Inference through Agent Brain** — every chat turn goes to the Brain gateway; providers, accounts, and keys live in Brain, not here
+- **Brain operator settings** — Settings embeds the Brain-origin console to inspect provider capabilities, manage API-key/OAuth/native account records, run provider checks/model refresh, and edit routing profiles
+- **Brain code-intelligence MCP** — project-bound Brain chats can use repo-map, symbol lookup, code search, and project-command metadata through a short-lived allowlisted stdio MCP client rooted at the selected project/worktree
+
+Brain code-intelligence MCP requires the local `brain` CLI on `PATH` or `AGENT_BRAIN_BINARY`
+configured for the server. It is started only for project-bound Brain chats; the model never
+chooses its executable, arguments, or root. See ADR-0007.
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
 - **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
 - **Authoritative Skill Retrieval** — `get_skill` reads the Agent-Skills catalog synchronized into the selected workspace
@@ -57,6 +63,32 @@ Brain owns provider accounts, credentials, local models, and routing; Agent-Cont
 it the conversation and runs the tools itself. There is no direct provider path and no API
 key field: when Brain is down or refuses a request, the chat shows the error and never
 falls back to a provider SDK.
+
+Settings embeds the Brain-origin management console from a configured Agent Brain
+endpoint. A separate credential is issued by `brain router management-credential`;
+provider keys and OAuth consent remain inside Brain's origin. Neither the management
+credential nor provider keys pass through Agent-Control's backend or workspace
+configuration. Brain supports API-key/no-auth account setup, managed Antigravity/Codex
+OAuth sign-in, no-inference credential checks/model refresh, and routing profiles.
+The console also reports hardware/backend status, selects an already-configured backend or
+installed hardware profile, and confirms catalog-only Ollama model pulls/unloads/removals with
+disk, active-request, and active-role safeguards. Registered-root RAG indexing and citation
+search also run inside Brain's origin; the root path is registered with the Brain CLI and never
+enters the Agent-Control page or backend. Native client login and OS service installation remain
+in the official local CLI. Settings can list, inspect, validate, and remove Brain-user skills and
+show the read-only MCP tool inventory; skill installation, project/configured skill sources,
+MCP process lifecycle/tool invocation remain CLI/stdio-owned. Settings imports only a single
+validated Brain-user `SKILL.md`; project/configured sources and skill archives remain CLI-owned.
+Trace summaries omit content, and a
+fixed synthetic local model smoke evaluation is available; raw trace import/detail, custom eval
+specs, and Forge trace mining/drafting/hardening remain CLI-owned. Settings can show opaque Forge
+candidate gates and promote only candidates already reviewed locally with owned-only provenance,
+fresh evaluation, and safety checks.
+
+Settings also shows whether the fixed launchd/systemd Brain service is installed and whether the
+gateway is reachable. Installing or uninstalling the OS service remains `brain service install`
+or `brain service uninstall` in a local Brain terminal; the console does not issue OS service
+commands because uninstall may stop the gateway serving the request.
 
 An Agent Brain endpoint is declared in `<workspace>/.local/agent/endpoints.json` (outside
 every repository) with `"purpose": "agent-brain"`. A `mock` endpoint answers
@@ -192,6 +224,12 @@ source moves to the worktree: `write_file` and `edit_file` (both gated like
 the chat sees its own edits, not the unedited primary checkout. Reads of the project's
 memory, runs, or the framework itself are unaffected; a coding session never changes
 those.
+
+`read_file` and `search_code` need no approval, so their sandbox is the boundary. A read
+or a search path is resolved through symlinks and refused when the real location leaves
+the workspace (or the worktree), or crosses `.git`, `.local` or an env file (`.env`,
+`.env.*`, `.envrc`; `.example`, `.sample` and `.template` files are readable) at any
+depth. A search query is always a pattern, never a ripgrep option.
 
 ## Web control desk mode
 

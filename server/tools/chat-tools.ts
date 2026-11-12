@@ -44,7 +44,12 @@ function withJsonSchema(tools: Record<string, PlainTool>): Record<string, Tool> 
 }
 
 /** The workspace tools offered to the model in /api/agent/chat. */
-export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope, child?: { model: LanguageModel; signal?: AbortSignal; onUsage?: (usage: SubagentUsage) => void }): Record<string, Tool> {
+export function createChatTools(
+  bridge: WorkspaceBridge,
+  scope?: ChatScope,
+  child?: { model: LanguageModel; signal?: AbortSignal; onUsage?: (usage: SubagentUsage) => void },
+  brainCodeTools: Record<string, PlainTool> = {},
+): Record<string, Tool> {
   const tools: Record<string, PlainTool> = {
     list_projects: {
       description: 'List all registered projects in the workspace',
@@ -231,7 +236,10 @@ export function createChatTools(bridge: WorkspaceBridge, scope?: ChatScope, chil
       },
     },
   };
-  const scoped = scope ? bindToProject(tools, scope) : {};
+  const safeBrainCodeTools = Object.fromEntries(
+    Object.entries(brainCodeTools).filter(([name]) => ['brain_repo_map', 'brain_find_symbol', 'brain_search_code', 'brain_project_commands'].includes(name)),
+  );
+  const scoped = scope ? bindToProject({ ...tools, ...safeBrainCodeTools }, scope) : {};
   return withJsonSchema({ ...scoped, ...(scope && child ? subagentTools(scope, scoped, child.model, child.signal, child.onUsage) : {}) });
 }
 

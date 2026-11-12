@@ -15,6 +15,7 @@ import { HandBackConflict, discardSession, shipSession, startVerify } from './ha
 import { chatDefaults, isChatEndpoint, resolveChatModel } from './chat-model.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './tools/workspace.js';
 import { createChatTools, type ChatScope } from './tools/chat-tools.js';
+import { openBrainCodeSession, type BrainMcpSession } from './tools/brain-mcp.js';
 import { gitDiff } from './tools/worktree-files.js';
 import { parseProjectList } from './projects.js';
 import { egressDecision, loadBrainProfileAllowlist, loadLlmAllowlist } from './egress.js';
@@ -81,6 +82,14 @@ function safeLoadEndpoints(): Endpoint[] {
 const endpoints = safeLoadEndpoints();
 // Chat inference runs only through Agent Brain (server/chat-model.ts); `mock` is offline.
 const chatEndpoints = endpoints.filter(isChatEndpoint);
+const brainManagementTargets = endpoints.flatMap((endpoint) => {
+  if (endpoint.purpose !== 'agent-brain' || !endpoint.baseUrl) return [];
+  const url = new URL(endpoint.baseUrl);
+  const loopback = ['127.0.0.1', 'localhost', '::1'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) return [];
+  return [{ id: endpoint.name, managementUrl: url.origin }];
+});
+const brainManagementOrigins = [...new Set(brainManagementTargets.map((target) => target.managementUrl))];
 const defaults = chatDefaults(config, endpoints);
 if (ignoredKeys.length) {
   // Names only: the keys themselves are never printed.
@@ -145,7 +154,7 @@ const app = new Hono();
 
 // Global middleware
 app.use('*', loopbackOnly());
-app.use('*', securityHeaders());
+app.use('*', securityHeaders(brainManagementOrigins));
 
 // API routes require token
 if (DESKTOP_MODE) {
@@ -199,6 +208,11 @@ app.get(`${AGENT_API}/providers`, async (c) => {
     defaultProvider: defaults.provider,
     defaultModel: defaults.model,
   });
+});
+
+app.get(`${AGENT_API}/brain-management-targets`, (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ targets: brainManagementTargets });
 });
 
 // ── API: local suite component readiness (no remote probes or scans) ──
@@ -261,8 +275,18 @@ app.post(`${AGENT_API}/chat`, async (c) => {
     }
   }
 
+  let brainMcp: BrainMcpSession | undefined;
   try {
     const model = resolved.model;
+    const brainBacked = endpoints.some((endpoint) => endpoint.name === provider && endpoint.purpose === 'agent-brain');
+    if (scope && brainBacked) {
+      try {
+        brainMcp = await openBrainCodeSession(scope, { signal: c.req.raw.signal });
+      } catch {
+        // The existing Agent-Control workspace tools remain available if the local Brain CLI is absent.
+        brainMcp = undefined;
+      }
+    }
 
     const start = new Date().toISOString();
     const result = streamText({
@@ -289,7 +313,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
           start: child.start, end: child.end, finishReason: child.finishReason,
           tokens: { input: child.inputTokens, output: child.outputTokens, cacheRead: 0, cacheWrite: 0 },
         }),
-      }),
+      }, brainMcp?.tools),
       stopWhen: stepCountIs(5),
       // The browser stopping the turn (Stop, closed tab) cancels the upstream request too,
       // so Agent Brain or the provider stops generating and billing for it.
@@ -323,7 +347,6 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         console.error('Usage record not written:', err instanceof Error ? err.message : String(err));
       }
     };
-    const brainBacked = endpoints.some((endpoint) => endpoint.name === provider && endpoint.purpose === 'agent-brain');
     const tapped = scope && brainBacked ? activity.tap(scope.project, result.fullStream, c.req.raw.signal) : result.fullStream;
     const parts = conversation
       ? captureAssistant(tapped, (message) => {
@@ -334,13 +357,21 @@ app.post(`${AGENT_API}/chat`, async (c) => {
         }
       })
       : tapped;
-    return new Response(toLineStream(parts, usage, { clientSignal: c.req.raw.signal }), {
+    const closeBrainMcpAfterStream = async function* () {
+      try {
+        for await (const part of parts) yield part;
+      } finally {
+        await brainMcp?.close();
+      }
+    };
+    return new Response(toLineStream(closeBrainMcpAfterStream(), usage, { clientSignal: c.req.raw.signal }), {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
       },
     });
   } catch (err) {
+    await brainMcp?.close();
     // Setup failed before the stream started: a fixed message for the browser (server/inference-errors.ts).
     const { message, logLine } = chatSetupError(err);
     console.error(logLine);

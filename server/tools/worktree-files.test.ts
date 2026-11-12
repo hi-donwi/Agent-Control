@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAX_FILE, editWorktreeFile, gitDiff, readWorktreeFile, writeWorktreeFile } from './worktree-files.js';
@@ -41,6 +41,27 @@ describe('readWorktreeFile', () => {
   it('refuses a path outside the worktree', async () => {
     const wt = tmpWorktree();
     await assert.rejects(() => readWorktreeFile(wt, '../../etc/passwd'), /outside the worktree/);
+  });
+
+  it('refuses a symlink that leaves the worktree', async () => {
+    const wt = tmpWorktree();
+    const outside = tmpWorktree();
+    writeFileSync(join(outside, 'secret.txt'), 'outside');
+    symlinkSync(join(outside, 'secret.txt'), join(wt, 'link.txt'));
+    symlinkSync(outside, join(wt, 'linked-dir'));
+    await assert.rejects(() => readWorktreeFile(wt, 'link.txt'), /outside the worktree/);
+    await assert.rejects(() => readWorktreeFile(wt, 'linked-dir/secret.txt'), /outside the worktree/);
+  });
+
+  it('refuses repository metadata and env files, but reads an env template', async () => {
+    const wt = tmpWorktree();
+    writeFileSync(join(wt, '.git'), 'gitdir: elsewhere\n');
+    mkdirSync(join(wt, 'app'));
+    writeFileSync(join(wt, 'app', '.env'), 'TOKEN=secret\n');
+    writeFileSync(join(wt, '.env.example'), 'TOKEN=\n');
+    await assert.rejects(() => readWorktreeFile(wt, '.git'), /denied/i);
+    await assert.rejects(() => readWorktreeFile(wt, 'app/.env'), /denied/i);
+    assert.equal(await readWorktreeFile(wt, '.env.example'), 'TOKEN=\n');
   });
 
   it('refuses a directory - the same "must be a file" guard bridge.readProjectFile has', async () => {

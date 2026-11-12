@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { lstat, readFile, realpath, stat } from 'node:fs/promises';
 import { parseProjectList } from '../projects.js';
+import { locateInside } from './path-sandbox.js';
 
 /** Resolve the workspace root containing AGENTS.md and .agents/standards. */
 export function findWorkspaceRoot(startDir?: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -42,6 +43,9 @@ export function findWorkspaceRoot(startDir?: string, env: NodeJS.ProcessEnv = pr
   }
   return process.cwd();
 }
+
+/** A coding session's worktree: the one place under `.local/` that search_code may search. */
+const WORKTREES = join('.local', 'worktrees');
 
 /**
  * Bridge to the `ws` CLI for workspace awareness.
@@ -97,23 +101,23 @@ export class WorkspaceBridge {
     return this.ws(['context', 'pack', projectKey]);
   }
 
-  /** Read a file within the workspace, sandboxed. */
+  /**
+   * Read a file within the workspace, sandboxed: the file that is really read, symlinks
+   * followed, must be inside the workspace and outside repository metadata, private
+   * local material and env files at any depth.
+   */
   async readProjectFile(filePath: string): Promise<string> {
-    const resolved = resolve(this.workspaceRoot, filePath);
-    // Security: ensure resolved path is within workspace root
-    if (!resolved.startsWith(this.workspaceRoot + sep)) {
-      throw new Error('File path escapes workspace boundary');
+    const located = await locateInside(this.workspaceRoot, filePath);
+    if ('refused' in located) {
+      throw new Error(located.refused === 'outside' ? 'File path escapes workspace boundary' : 'Access denied to this path');
     }
-    // Don't allow reading sensitive files
-    const forbidden = ['.local', '.git', 'node_modules'];
-    const relative = resolved.slice(this.workspaceRoot.length + 1);
-    if (forbidden.some(f => relative.startsWith(f + sep) || relative === f)) {
+    if (located.relative.split(sep)[0] === 'node_modules') {
       throw new Error('Access denied to this path');
     }
-    const info = await stat(resolved);
+    const info = await stat(located.path);
     if (!info.isFile()) throw new Error('Not a file');
     if (info.size > 512 * 1024) throw new Error('File too large (max 512KB)');
-    return readFile(resolved, 'utf-8');
+    return readFile(located.path, 'utf-8');
   }
 
   /** Search for a pattern in project files using ripgrep. */
@@ -122,19 +126,25 @@ export class WorkspaceBridge {
     if (!query || query.length > 200) {
       throw new Error('Invalid search query');
     }
-    const searchPath = projectFolder
-      ? resolve(this.workspaceRoot, projectFolder)
-      : this.workspaceRoot;
-    // Security: ensure search path is within workspace
-    if (!searchPath.startsWith(this.workspaceRoot)) {
-      throw new Error('Search path escapes workspace boundary');
+    // ripgrep follows a symlink it is given as the search path, and searches a hidden or
+    // ignored location it is pointed at directly, so the path is held to the read_file rules.
+    let located;
+    try {
+      located = await locateInside(this.workspaceRoot, projectFolder ?? '.', WORKTREES);
+    } catch {
+      return 'No results found.';
     }
+    if ('refused' in located) {
+      throw new Error(located.refused === 'outside' ? 'Search path escapes workspace boundary' : 'Access denied to this path');
+    }
+    const searchPath = located.path;
     return new Promise((ok) => {
+      // `-e` and `--`: a query such as `-uuuLe<pattern>` is a pattern, never ripgrep options.
       execFile('rg', [
         '--json', '-i', '--max-count', '20', '--max-filesize', '256K',
         '-g', '!node_modules', '-g', '!.git', '-g', '!dist',
         '-g', '!.local', '-g', '!*.lock',
-        query, searchPath,
+        '-e', query, '--', searchPath,
       ], { timeout: 10_000, maxBuffer: 512 * 1024 }, (err, stdout) => {
         if (err && !stdout) ok('No results found.');
         else ok(stdout);
