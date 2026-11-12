@@ -1,8 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { WorkspaceBridge, findWorkspaceRoot } from './workspace.js';
 
 const WORKSPACE_ROOT = findWorkspaceRoot(import.meta.dirname);
@@ -143,5 +144,144 @@ describe('findWorkspaceRoot desktop mode', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+/** Writes `content` at `root/relPath`, creating the directories on the way. */
+function put(root: string, relPath: string, content: string): string {
+  const file = join(root, relPath);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, content);
+  return file;
+}
+
+/** A throwaway workspace next to a directory that is not part of it. */
+function sandboxFixture(): { root: string; outside: string } {
+  const parent = mkdtempSync(join(tmpdir(), 'ac-sandbox-'));
+  const root = join(parent, 'ws');
+  const outside = join(parent, 'ws-other');
+  mkdirSync(root);
+  mkdirSync(outside);
+  put(outside, 'secret.txt', 'needle outside the workspace');
+  return { root, outside };
+}
+
+describe('WorkspaceBridge.readProjectFile sandbox', () => {
+  it('reads a regular file and an env template', async () => {
+    const { root } = sandboxFixture();
+    put(root, 'projects/demo/src/a.ts', 'export const a = 1;\n');
+    put(root, 'projects/demo/.env.example', 'API_KEY=\n');
+    const bridge = new WorkspaceBridge(root);
+    assert.equal(await bridge.readProjectFile('projects/demo/src/a.ts'), 'export const a = 1;\n');
+    assert.equal(await bridge.readProjectFile('projects/demo/.env.example'), 'API_KEY=\n');
+  });
+
+  it('refuses repository metadata, private local material and env files at any depth', async () => {
+    const { root } = sandboxFixture();
+    const denied = [
+      '.git/config',
+      '.local/notes.md',
+      'projects/demo/.git/config',
+      'projects/demo/.env',
+      'projects/demo/.env.production',
+      'projects/demo/.envrc',
+      'projects/demo/tools/.local/dump.sql',
+      'context/.git/HEAD',
+    ];
+    for (const path of denied) put(root, path, 'token=secret\n');
+    const bridge = new WorkspaceBridge(root);
+    for (const path of denied) {
+      await assert.rejects(bridge.readProjectFile(path), /Access denied/, path);
+    }
+    // A case-insensitive file system resolves this to .git/config.
+    await assert.rejects(bridge.readProjectFile('projects/demo/.GIT/config'), /Access denied/);
+  });
+
+  it('refuses a symlink that leaves the workspace', async () => {
+    const { root, outside } = sandboxFixture();
+    mkdirSync(join(root, 'projects', 'demo'), { recursive: true });
+    symlinkSync(join(outside, 'secret.txt'), join(root, 'projects', 'demo', 'link.txt'));
+    symlinkSync(outside, join(root, 'projects', 'demo', 'linked-dir'));
+    const bridge = new WorkspaceBridge(root);
+    await assert.rejects(bridge.readProjectFile('projects/demo/link.txt'), /escapes workspace boundary/);
+    await assert.rejects(bridge.readProjectFile('projects/demo/linked-dir/secret.txt'), /escapes workspace boundary/);
+  });
+
+  it('refuses a symlink into a denied location', async () => {
+    const { root } = sandboxFixture();
+    put(root, 'projects/demo/.git/config', 'token=secret\n');
+    symlinkSync(join(root, 'projects', 'demo', '.git', 'config'), join(root, 'projects', 'demo', 'alias.txt'));
+    await assert.rejects(new WorkspaceBridge(root).readProjectFile('projects/demo/alias.txt'), /Access denied/);
+  });
+
+  it('follows a symlink that stays inside the workspace', async () => {
+    const { root } = sandboxFixture();
+    put(root, 'AGENTS.md', '# Workspace\n');
+    mkdirSync(join(root, 'docs'));
+    symlinkSync(join(root, 'AGENTS.md'), join(root, 'docs', 'agents.md'));
+    assert.equal(await new WorkspaceBridge(root).readProjectFile('docs/agents.md'), '# Workspace\n');
+  });
+
+  it('reads through a workspace root that is itself a symlink', async () => {
+    const { root } = sandboxFixture();
+    put(root, 'docs/readme.md', 'hello\n');
+    const alias = join(dirname(root), 'ws-alias');
+    symlinkSync(root, alias);
+    assert.equal(await new WorkspaceBridge(alias).readProjectFile('docs/readme.md'), 'hello\n');
+  });
+});
+
+const ripgrepMissing = spawnSync('rg', ['--version']).status === 0 ? false : 'ripgrep is not installed';
+
+describe('WorkspaceBridge.search sandbox', () => {
+  it('searches for a query that looks like an option instead of passing it to ripgrep', { skip: ripgrepMissing }, async () => {
+    const { root } = sandboxFixture();
+    put(root, 'notes.txt', 'run rg with --files to list files\n');
+    const output = await new WorkspaceBridge(root).search('--files');
+    assert.match(output, /"type":"match"/);
+    assert.match(output, /notes\.txt/);
+  });
+
+  it('does not let the query switch off ignore rules, hidden-file filtering or symlink handling', { skip: ripgrepMissing }, async () => {
+    const { root, outside } = sandboxFixture();
+    put(root, 'projects/demo/.gitignore', '.env\n');
+    put(root, 'projects/demo/.env', 'TOKEN=needle\n');
+    symlinkSync(outside, join(root, 'projects', 'demo', 'linked-dir'));
+    // Bundled short options: unrestricted, follow symlinks, then the pattern.
+    const output = await new WorkspaceBridge(root).search('-uuuLeneedle', 'projects/demo');
+    assert.doesNotMatch(output, /"type":"match"/);
+  });
+
+  it('refuses a sibling directory that only shares the name prefix of the root', async () => {
+    const { root } = sandboxFixture();
+    await assert.rejects(new WorkspaceBridge(root).search('needle', '../ws-other'), /escapes workspace boundary/);
+  });
+
+  it('refuses a search path that is a symlink out of the workspace', async () => {
+    const { root, outside } = sandboxFixture();
+    mkdirSync(join(root, 'projects', 'demo'), { recursive: true });
+    symlinkSync(outside, join(root, 'projects', 'demo', 'linked-dir'));
+    await assert.rejects(new WorkspaceBridge(root).search('needle', 'projects/demo/linked-dir'), /escapes workspace boundary/);
+  });
+
+  it('refuses to search inside locations read_file denies', async () => {
+    const { root } = sandboxFixture();
+    for (const path of ['projects/demo/.git/config', 'projects/demo/.env', '.local/agent/sessions/chat.json']) {
+      put(root, path, 'token=secret\n');
+    }
+    const bridge = new WorkspaceBridge(root);
+    for (const path of ['projects/demo/.git', 'projects/demo/.env', '.local', '.local/agent/sessions']) {
+      await assert.rejects(bridge.search('token', path), /Access denied/, path);
+    }
+  });
+
+  it('still searches a coding session worktree under .local/worktrees', { skip: ripgrepMissing }, async () => {
+    const { root } = sandboxFixture();
+    const worktree = join(root, '.local', 'worktrees', 'demo', 'session-1');
+    put(worktree, 'src/a.ts', 'export const needle = 1;\n');
+    put(worktree, '.git', 'gitdir: elsewhere\n');
+    const bridge = new WorkspaceBridge(root);
+    assert.match(await bridge.search('needle', join(worktree, 'src')), /a\.ts/);
+    await assert.rejects(bridge.search('gitdir', join(worktree, '.git')), /Access denied/);
   });
 });

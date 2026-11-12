@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, normalize, relative, resolve } from 'node:path';
+import { locateInside } from './path-sandbox.js';
 
 /** The same cap `WorkspaceBridge.readProjectFile()` applies to the primary checkout. */
 const MAX_FILE = 512 * 1024;
@@ -21,12 +22,23 @@ export async function writeWorktreeFile(worktree: string, relPath: string, conte
   await writeFile(abs, content, 'utf-8');
 }
 
+/**
+ * read_file needs no approval, so its sandbox is the boundary: a symlink committed to the
+ * repository must not carry a read out of the worktree, and the same locations
+ * `WorkspaceBridge.readProjectFile()` denies stay denied here.
+ */
 export async function readWorktreeFile(worktree: string, relPath: string): Promise<string> {
-  const abs = resolveInside(worktree, relPath);
-  const info = await stat(abs);
+  resolveInside(worktree, relPath); // refuses an absolute path, which locateInside would resolve
+  const located = await locateInside(worktree, relPath);
+  if ('refused' in located) {
+    throw new Error(located.refused === 'outside'
+      ? `${relPath} is outside the worktree`
+      : `access to ${normalize(relPath)} is denied`);
+  }
+  const info = await stat(located.path);
   if (!info.isFile()) throw new Error(`${normalize(relPath)} is not a file`);
   if (info.size > MAX_FILE) throw new Error(`${normalize(relPath)} is too large (max ${MAX_FILE / 1024}KB)`);
-  return readFile(abs, 'utf-8');
+  return readFile(located.path, 'utf-8');
 }
 
 export type EditResult = { replaced: true } | { error: string };

@@ -225,6 +225,12 @@ the chat sees its own edits, not the unedited primary checkout. Reads of the pro
 memory, runs, or the framework itself are unaffected; a coding session never changes
 those.
 
+`read_file` and `search_code` need no approval, so their sandbox is the boundary. A read
+or a search path is resolved through symlinks and refused when the real location leaves
+the workspace (or the worktree), or crosses `.git`, `.local` or an env file (`.env`,
+`.env.*`, `.envrc`; `.example`, `.sample` and `.template` files are readable) at any
+depth. A search query is always a pattern, never a ripgrep option.
+
 ## Web control desk mode
 
 `ws web --agent` starts this host beside the Agent-Workspace control plane (ADR-0019) and
