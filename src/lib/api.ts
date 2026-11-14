@@ -1,6 +1,11 @@
 import { TOKEN_KEY, resolveToken, withoutToken } from './token';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { validateDesktopBootstrap, validateDesktopWorkspaceRoot } from './desktop-bootstrap';
+import {
+  validateDesktopBootstrap,
+  validateDesktopHostStatus,
+  validateDesktopWorkspaceRoot,
+  type DesktopHostStatus,
+} from './desktop-bootstrap';
 
 /** Shown when the server refuses the token: a restarted server has made a new one. */
 export const SIGN_IN_HINT = 'The server did not accept this page\'s token. Open the desk with the link the server printed (it ends in ?token=...).';
@@ -20,9 +25,31 @@ let desktopMode = false;
 let desktopWorkspaceRoot: string | null = null;
 let kept = false;
 let initialization: Promise<boolean> | undefined;
+let lastBootstrapRefresh = 0;
+let bootstrapRefresh: Promise<void> | undefined;
+
+async function refreshDesktopBootstrap(force = false): Promise<void> {
+  if (!isTauri()) return;
+  if (!force && Date.now() - lastBootstrapRefresh < 1000) return;
+  if (bootstrapRefresh) return bootstrapRefresh;
+  bootstrapRefresh = (async () => {
+    const response = await invoke<unknown>('desktop_bootstrap');
+    const bootstrap = validateDesktopBootstrap(response);
+    desktopMode = true;
+    apiBaseUrl = bootstrap.apiBaseUrl;
+    token = bootstrap.token;
+    lastBootstrapRefresh = Date.now();
+  })();
+  try {
+    await bootstrapRefresh;
+  } finally {
+    bootstrapRefresh = undefined;
+  }
+}
 
 /** Initialize the native host connection before rendering any UI that can call the API. */
 export function initializeApi(): Promise<boolean> {
+  if (desktopMode) return refreshDesktopBootstrap().then(() => true);
   if (!initialization) {
     initialization = (async () => {
       if (!isTauri()) return true;
@@ -30,15 +57,18 @@ export function initializeApi(): Promise<boolean> {
         await invoke<unknown>('desktop_workspace_root'),
       );
       if (!desktopWorkspaceRoot) return false;
-      const response = await invoke<unknown>('desktop_bootstrap');
-      const bootstrap = validateDesktopBootstrap(response);
-      desktopMode = true;
-      apiBaseUrl = bootstrap.apiBaseUrl;
-      token = bootstrap.token;
+      await refreshDesktopBootstrap(true);
       return true;
     })();
   }
   return initialization;
+}
+
+export async function getDesktopHostStatus(): Promise<DesktopHostStatus | null> {
+  if (!isTauri()) return null;
+  const status = validateDesktopHostStatus(await invoke<unknown>('desktop_host_status'));
+  if (status.lifecycle === 'running') await refreshDesktopBootstrap();
+  return status;
 }
 
 export function getDesktopWorkspaceRoot(): string | null {

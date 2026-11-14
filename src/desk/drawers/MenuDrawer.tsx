@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
-import { apiFetch, chooseDesktopWorkspace, getDesktopWorkspaceRoot } from '../../lib/api';
+import { apiFetch, chooseDesktopWorkspace, getDesktopHostStatus, getDesktopWorkspaceRoot } from '../../lib/api';
 import { BackIcon, ChevronIcon, CloseIcon } from '../icons';
 import { SectionView, type SectionCommands } from '../uidl/SectionView';
 import { SECTIONS, sectionDocument, type SectionId } from '../uidl/documents';
@@ -11,6 +11,7 @@ import type { PmAlert } from '../pm/types';
 import type { PmPage } from '../pm/pages';
 import type { NoteDraft } from '../command/command-state';
 import type { SuiteManifest, SuiteComponentState } from '../../lib/suite';
+import type { DesktopHostStatus } from '../../lib/desktop-bootstrap';
 import { BrainManagement } from './BrainManagement';
 
 export type MenuSection = SectionId | 'settings' | 'inbox';
@@ -246,10 +247,27 @@ function Settings({ theme, onTheme }: Props) {
   const [workspacePending, setWorkspacePending] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
+  const [hostStatus, setHostStatus] = useState<DesktopHostStatus | null>(null);
   const { manifest: suite, error: suiteError } = useSuiteManifest();
   const workspaceRoot = getDesktopWorkspaceRoot();
   const classic = new URL(window.location.href);
   classic.searchParams.set('ui', 'classic');
+
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    let current = true;
+    const refresh = async () => {
+      try {
+        const status = await getDesktopHostStatus();
+        if (current && status) setHostStatus(status);
+      } catch {
+        if (current) setHostStatus({ lifecycle: 'restarting', restartCount: 0, lastExitCode: null });
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 1500);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [workspaceRoot]);
 
   async function changeWorkspace() {
     setWorkspacePending(true);
@@ -291,6 +309,17 @@ function Settings({ theme, onTheme }: Props) {
         </div>
       </div>
       <BrainManagement />
+      {workspaceRoot && (
+        <section className="suite-panel" aria-labelledby="desktop-host-title">
+          <div className="suite-panel__heading">
+            <h3 className="settings-label" id="desktop-host-title">Desktop host</h3>
+            <p className="settings-hint">The local workspace host is supervised by the desktop app.</p>
+          </div>
+          <p className="suite-panel__message" role="status" aria-live="polite">
+            {hostStatus ? `Host ${hostStatus.lifecycle}; ${hostStatus.restartCount} restarts${hostStatus.lastExitCode === null ? '' : `; last exit ${hostStatus.lastExitCode}`}.` : 'Checking local host status.'}
+          </p>
+        </section>
+      )}
       <section className="suite-panel" aria-labelledby="suite-panel-title">
         <div className="suite-panel__heading">
           <h3 className="settings-label" id="suite-panel-title">Agent Workspace Suite</h3>

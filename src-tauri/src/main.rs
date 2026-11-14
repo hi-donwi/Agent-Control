@@ -2,9 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desktop_bootstrap;
+mod restart_policy;
+mod rotating_log;
 mod workspace_selection;
 
-use desktop_bootstrap::{DesktopBootstrap, DesktopHost};
+use desktop_bootstrap::{DesktopBootstrap, DesktopHost, DesktopHostStatus};
 use std::io;
 use tauri::{path::BaseDirectory, AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -41,6 +43,15 @@ fn desktop_workspace_root(
 ) -> Result<Option<String>, String> {
     ensure_trusted_main_window(&window)?;
     Ok(desktop_host.workspace_root())
+}
+
+#[tauri::command]
+fn desktop_host_status(
+    window: tauri::WebviewWindow,
+    desktop_host: State<'_, DesktopHost>,
+) -> Result<DesktopHostStatus, String> {
+    ensure_trusted_main_window(&window)?;
+    Ok(desktop_host.status())
 }
 
 #[tauri::command]
@@ -93,6 +104,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_bootstrap,
             desktop_workspace_root,
+            desktop_host_status,
             desktop_select_workspace
         ])
         .run(tauri::generate_context!())

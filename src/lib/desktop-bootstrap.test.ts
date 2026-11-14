@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDesktopBootstrap, validateDesktopWorkspaceRoot } from './desktop-bootstrap.js';
+import { validateDesktopBootstrap, validateDesktopHostStatus, validateDesktopWorkspaceRoot } from './desktop-bootstrap.js';
 
 describe('validateDesktopBootstrap', () => {
   const valid = {
@@ -44,5 +44,26 @@ describe('validateDesktopWorkspaceRoot', () => {
     for (const value of [undefined, '', '  ', 1, {}, '/path\u0000with-null']) {
       assert.throws(() => validateDesktopWorkspaceRoot(value));
     }
+  });
+});
+
+describe('validateDesktopHostStatus', () => {
+  it('accepts only sanitized lifecycle and restart metadata', () => {
+    assert.deepEqual(validateDesktopHostStatus({
+      lifecycle: 'restarting', restartCount: 2, lastExitCode: 7,
+    }), { lifecycle: 'restarting', restartCount: 2, lastExitCode: 7 });
+    assert.deepEqual(validateDesktopHostStatus({
+      lifecycle: 'running', restartCount: 0, lastExitCode: null,
+    }), { lifecycle: 'running', restartCount: 0, lastExitCode: null });
+  });
+
+  it('rejects host paths, tokens, invalid counters, and unknown fields', () => {
+    for (const value of [
+      { lifecycle: 'running', restartCount: 0, lastExitCode: null, token: 'a'.repeat(64) },
+      { lifecycle: 'running', restartCount: -1, lastExitCode: null },
+      { lifecycle: 'offline', restartCount: 0, lastExitCode: null },
+      { lifecycle: 'stopped', restartCount: 0, lastExitCode: null, path: '/private' },
+      null,
+    ]) assert.throws(() => validateDesktopHostStatus(value));
   });
 });
