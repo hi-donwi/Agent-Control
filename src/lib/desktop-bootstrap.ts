@@ -4,6 +4,32 @@ export interface DesktopBootstrap {
   token: string;
 }
 
+export interface DesktopHostStatus {
+  lifecycle: 'running' | 'restarting' | 'stopped';
+  restartCount: number;
+  lastExitCode: number | null;
+}
+
+export function validateDesktopHostStatus(value: unknown): DesktopHostStatus {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid desktop host status.');
+  }
+  const record = value as Record<string, unknown>;
+  const keys = new Set(['lifecycle', 'restartCount', 'lastExitCode']);
+  if (Object.keys(record).some((key) => !keys.has(key))
+    || !['running', 'restarting', 'stopped'].includes(String(record.lifecycle))
+    || !Number.isInteger(record.restartCount)
+    || Number(record.restartCount) < 0
+    || !(record.lastExitCode === null || Number.isInteger(record.lastExitCode))) {
+    throw new Error('Invalid desktop host status.');
+  }
+  return {
+    lifecycle: record.lifecycle as DesktopHostStatus['lifecycle'],
+    restartCount: record.restartCount as number,
+    lastExitCode: record.lastExitCode as number | null,
+  };
+}
+
 /** Validate the native desktop's selected-workspace status before rendering or using it. */
 export function validateDesktopWorkspaceRoot(value: unknown): string | null {
   if (value === null) return null;

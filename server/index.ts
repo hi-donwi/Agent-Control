@@ -34,6 +34,7 @@ import {
   setScriptNonce,
 } from './middleware/security.js';
 import { createDesktopReadyLine } from './desktop-protocol.js';
+import { attachDesktopShutdown } from './desktop-shutdown.js';
 import { forwardToControl } from './proxy.js';
 import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation, listConversations, openConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
@@ -49,8 +50,12 @@ import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
 const { config, ignoredKeys } = loadConfig();
-const TOKEN = generateToken();
 const DESKTOP_MODE = process.env.AC_DESKTOP_MODE === '1';
+const inheritedDesktopToken = process.env.AC_DESKTOP_TOKEN;
+if (DESKTOP_MODE && inheritedDesktopToken && !/^[a-f0-9]{64}$/.test(inheritedDesktopToken)) {
+  throw new Error('Invalid desktop host session token.');
+}
+const TOKEN = DESKTOP_MODE && inheritedDesktopToken ? inheritedDesktopToken : generateToken();
 if (DESKTOP_MODE && process.env.HOST && process.env.HOST !== '127.0.0.1') {
   throw new Error('Desktop host must bind to 127.0.0.1.');
 }
@@ -824,10 +829,13 @@ if (process.env.NODE_ENV === 'production' && !DESKTOP_MODE) {
 }
 
 // ── Start server ───────────────────────────────────────────────────────
-const PORT = DESKTOP_MODE ? 0 : parseInt(process.env.PORT ?? '3141', 10);
+const PORT = Number(process.env.PORT ?? (DESKTOP_MODE ? '0' : '3141'));
+if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
+  throw new Error('Invalid local Agent-Control host port.');
+}
 const HOST = DESKTOP_MODE ? '127.0.0.1' : process.env.HOST ?? '127.0.0.1';
 
-serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info) => {
+const hostServer = serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info) => {
   if (DESKTOP_MODE) {
     process.stdout.write(createDesktopReadyLine({ port: info.port, token: TOKEN }));
     return;
@@ -847,3 +855,7 @@ serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info) => {
   console.log(`  Open: ${url}`);
   console.log('');
 });
+
+if (DESKTOP_MODE) {
+  attachDesktopShutdown(hostServer, process.stdin);
+}

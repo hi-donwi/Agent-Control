@@ -22,38 +22,30 @@ try {
 const home = await mkdtemp(join(tmpdir(), 'agent-control-host-smoke-'));
 await mkdir(join(home, '.agents', 'standards'), { recursive: true });
 await writeFile(join(home, 'AGENTS.md'), '# Smoke-test workspace\n');
-const child = spawn(executable, [], {
-  cwd: home,
-  env: {
-    ...process.env,
-    AC_DESKTOP_MODE: '1',
-    HOST: '127.0.0.1',
-    PORT: '0',
-    NODE_ENV: 'production',
-    HOME: home,
-    USERPROFILE: home,
-    WS_WORKSPACE_ROOT: home,
-  },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-let stderr = '';
-child.stderr.setEncoding('utf8');
-child.stderr.on('data', (chunk) => { stderr += chunk; });
-const exited = new Promise((resolveExit) => {
-  child.once('exit', resolveExit);
-  child.once('error', resolveExit);
-});
+const baseEnv = {
+  PATH: process.env.PATH ?? '',
+  SystemRoot: process.env.SystemRoot,
+  WINDIR: process.env.WINDIR,
+  AC_DESKTOP_MODE: '1',
+  HOST: '127.0.0.1',
+  NODE_ENV: 'production',
+  HOME: home,
+  USERPROFILE: home,
+  WS_WORKSPACE_ROOT: home,
+};
+let child;
 
 try {
-  const line = await readReadyLine(child, () => stderr);
-  const ready = JSON.parse(line);
+  let started = await startHost(baseEnv, '0');
+  child = started.child;
+  const ready = started.ready;
   assert.deepEqual(Object.keys(ready).sort(), ['host', 'port', 'protocolVersion', 'token', 'type']);
   assert.equal(ready.type, 'agent-control-ready');
   assert.equal(ready.protocolVersion, 1);
   assert.equal(ready.host, '127.0.0.1');
   assert.ok(Number.isInteger(ready.port) && ready.port > 0 && ready.port <= 65535);
   assert.match(ready.token, /^[a-f0-9]{64}$/);
-  assert.doesNotMatch(stderr, new RegExp(ready.token));
+  assert.doesNotMatch(started.stderr(), new RegExp(ready.token));
 
   const endpoint = `http://${ready.host}:${ready.port}/api/agent/providers`;
   const origin = 'tauri://localhost';
@@ -66,11 +58,53 @@ try {
     headers: { Origin: origin, Authorization: `Bearer ${ready.token}` },
   })).status, 200);
   assert.equal((await fetch(`http://${ready.host}:${ready.port}/`)).status, 404);
-  console.log('[PASS] packaged host readiness and desktop authentication');
+  await stopGracefully(child);
+  child = undefined;
+
+  started = await startHost(baseEnv, String(ready.port), ready.token);
+  child = started.child;
+  assert.deepEqual(started.ready, ready, 'a supervised restart preserves loopback endpoint and session token');
+  assert.doesNotMatch(started.stderr(), new RegExp(ready.token));
+  await stopGracefully(child);
+  child = undefined;
+  console.log('[PASS] packaged host readiness, authentication, restart identity, and graceful shutdown');
 } finally {
-  if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-  await exited;
+  if (child && child.exitCode === null && child.signalCode === null) child.kill();
   await rm(home, { recursive: true, force: true });
+}
+
+async function startHost(env, port, token) {
+  const child = spawn(executable, [], {
+    cwd: home,
+    env: { ...env, PORT: port, ...(token ? { AC_DESKTOP_TOKEN: token } : {}) },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  try {
+    const line = await readReadyLine(child, () => stderr);
+    return { child, ready: JSON.parse(line), stderr: () => stderr };
+  } catch (error) {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await new Promise((resolveExit) => child.once('exit', resolveExit));
+    }
+    throw error;
+  }
+}
+
+async function stopGracefully(child) {
+  const exited = new Promise((resolveExit) => child.once('exit', resolveExit));
+  child.stdin.write('AC_DESKTOP_SHUTDOWN_V1\n');
+  const result = await Promise.race([
+    exited.then(() => 'exited'),
+    new Promise((resolveTimeout) => setTimeout(() => resolveTimeout('timeout'), 4000)),
+  ]);
+  if (result === 'timeout') {
+    child.kill();
+    throw new Error('Packaged host failed graceful shutdown.');
+  }
 }
 
 function readReadyLine(process, getStderr) {
