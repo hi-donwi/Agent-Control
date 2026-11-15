@@ -90,6 +90,16 @@ export async function clearDesktopToolOverride(name: DesktopToolName): Promise<D
   return validateDesktopTools(await apiFetch<unknown>(`tools/${name}`, { method: 'DELETE' }));
 }
 
+export async function getDesktopAutostartStatus(): Promise<boolean | null> {
+  if (!isTauri()) return null;
+  return invoke<boolean>('desktop_autostart_status');
+}
+
+export async function setDesktopAutostart(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) throw new Error('Launch-at-login is available only in the desktop app.');
+  return invoke<boolean>('desktop_set_autostart', { enabled });
+}
+
 export function getDesktopWorkspaceRoot(): string | null {
   return desktopWorkspaceRoot;
 }

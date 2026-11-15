@@ -1,14 +1,23 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_lifecycle;
 mod desktop_bootstrap;
 mod restart_policy;
 mod rotating_log;
 mod workspace_selection;
 
+use app_lifecycle::AppLifecycle;
 use desktop_bootstrap::{DesktopBootstrap, DesktopHost, DesktopHostStatus};
 use std::io;
-use tauri::{path::BaseDirectory, AppHandle, Manager, State};
+use tauri::{
+    image::Image,
+    menu::{Menu, MenuItem},
+    path::BaseDirectory,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, State, WindowEvent,
+};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartManagerExt};
 use tauri_plugin_dialog::DialogExt;
 
 /// Native desktop commands are available only to the app's trusted main webview.
@@ -55,6 +64,83 @@ fn desktop_host_status(
 }
 
 #[tauri::command]
+fn desktop_autostart_status(window: tauri::WebviewWindow, app: AppHandle) -> Result<bool, String> {
+    ensure_trusted_main_window(&window)?;
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|_| "Could not read launch-at-login status.".to_string())
+}
+
+#[tauri::command]
+fn desktop_set_autostart(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<bool, String> {
+    ensure_trusted_main_window(&window)?;
+    let autostart = app.autolaunch();
+    if enabled {
+        autostart.enable()
+    } else {
+        autostart.disable()
+    }
+    .map_err(|_| "Could not update launch-at-login settings.".to_string())?;
+    autostart
+        .is_enabled()
+        .map_err(|_| "Could not verify launch-at-login settings.".to_string())
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_app(app: &AppHandle) {
+    if let Some(lifecycle) = app.try_state::<AppLifecycle>() {
+        lifecycle.request_quit();
+    }
+    if let Some(desktop_host) = app.try_state::<DesktopHost>() {
+        desktop_host.stop();
+    }
+    app.exit(0);
+}
+
+fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show Agent Control", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))?;
+    let tray = TrayIconBuilder::new()
+        .icon(icon)
+        .tooltip("Agent Control")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_main_window(app),
+            "quit" => quit_app(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    app.manage(tray);
+    Ok(())
+}
+
+#[tauri::command]
 async fn desktop_select_workspace(
     window: tauri::WebviewWindow,
     app: AppHandle,
@@ -84,8 +170,16 @@ async fn desktop_select_workspace(
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            app.manage(AppLifecycle::default());
             let host_resource = app
                 .path()
                 .resolve("agent-control-host", BaseDirectory::Resource)
@@ -99,13 +193,27 @@ fn main() {
                 .start_saved_workspace()
                 .map_err(io::Error::other)?;
             app.manage(desktop_host);
+            build_tray(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    let lifecycle = window.app_handle().state::<AppLifecycle>();
+                    if lifecycle.should_hide_on_close() {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             desktop_bootstrap,
             desktop_workspace_root,
             desktop_host_status,
-            desktop_select_workspace
+            desktop_select_workspace,
+            desktop_autostart_status,
+            desktop_set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
