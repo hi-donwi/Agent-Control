@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, sep } from 'node:path';
 import { followTask } from './workflow.js';
 import { readCodingSession, writeCodingSession, type CodingSession, type VerifyState } from './coding-sessions.js';
+import { ToolDependencyError, toolLocator } from './tool-locator.js';
 
 /**
  * Handing a coding session's work back (desk phase 4b): verify it where it is, then ship
@@ -37,8 +38,9 @@ const ANSI_RE = /\u001b\[[0-9;]*m/g;
 
 function git(cwd: string, args: string[], env: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, timeout: 120_000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || err.message).trim()));
+    execFile(toolLocator.resolve('git'), args, { cwd, timeout: 120_000, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, ...env } }, (err, stdout, stderr) => {
+      if (err?.code === 'ENOENT') reject(new ToolDependencyError('git'));
+      else if (err) reject(new Error((stderr || err.message).trim()));
       else resolve(stdout.trim());
     });
   });

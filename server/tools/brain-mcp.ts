@@ -3,6 +3,7 @@ import { relative, resolve, sep } from 'node:path';
 import { Client, type CallToolResult, type ListToolsResult } from '@modelcontextprotocol/client';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import type { ChatScope, PlainTool } from './chat-tools.js';
+import { toolLocator } from '../tool-locator.js';
 
 const ALLOWED_BRAIN_CODE_TOOLS = ['repo_map', 'find_symbol', 'search_code', 'project_commands'] as const;
 const MAX_TOOL_OUTPUT_CHARS = 48_000;
@@ -157,7 +158,7 @@ export async function openBrainCodeSession(
       closeTransport = session.close;
     } else {
       const transport = new StdioClientTransport({
-        command: options.command ?? process.env.AGENT_BRAIN_BINARY?.trim() ?? 'brain',
+        command: options.command ?? toolLocator.resolve('brain'),
         args: ['mcp', '--root', root],
         cwd: root,
         env: {

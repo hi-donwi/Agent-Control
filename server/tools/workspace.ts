@@ -4,6 +4,16 @@ import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { lstat, readFile, realpath, stat } from 'node:fs/promises';
 import { parseProjectList } from '../projects.js';
 import { locateInside } from './path-sandbox.js';
+import { ToolDependencyError, toolLocator, type ToolLocator } from '../tool-locator.js';
+
+export class WorkspaceSearchError extends Error {
+  readonly code = 'SEARCH_PATH_UNAVAILABLE';
+
+  constructor() {
+    super('The requested workspace search path is unavailable.');
+    this.name = 'WorkspaceSearchError';
+  }
+}
 
 /** Resolve the workspace root containing AGENTS.md and .agents/standards. */
 export function findWorkspaceRoot(startDir?: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -53,13 +63,15 @@ const WORKTREES = join('.local', 'worktrees');
  */
 export class WorkspaceBridge {
   workspaceRoot: string;
-  constructor(workspaceRoot: string) {
+  private readonly locator: ToolLocator;
+  constructor(workspaceRoot: string, locator: ToolLocator = toolLocator) {
     this.workspaceRoot = workspaceRoot;
+    this.locator = locator;
   }
 
   /** Run a ws subcommand and return stdout. */
   ws(args: string[]): Promise<string> {
-    const wsBin = resolve(this.workspaceRoot, '.agents', 'bin', 'ws');
+    const wsBin = this.locator.resolve('ws', this.workspaceRoot);
     return new Promise((ok, fail) => {
       execFile(wsBin, args, {
         cwd: this.workspaceRoot,
@@ -67,7 +79,8 @@ export class WorkspaceBridge {
         maxBuffer: 1024 * 1024,
         env: { ...process.env, PAGER: 'cat' },
       }, (err, stdout, stderr) => {
-        if (err) fail(new Error(`ws ${args.join(' ')} failed: ${stderr || err.message}`));
+        if (err?.code === 'ENOENT') fail(new ToolDependencyError('ws'));
+        else if (err) fail(new Error(`ws ${args.join(' ')} failed: ${stderr || err.message}`));
         else ok(stdout);
       });
     });
@@ -87,7 +100,8 @@ export class WorkspaceBridge {
   async health(): Promise<string> {
     try {
       return await this.ws(['doctor', '--ci']);
-    } catch {
+    } catch (error) {
+      if (error instanceof ToolDependencyError) throw error;
       return 'Health check failed or not available.';
     }
   }
@@ -132,21 +146,23 @@ export class WorkspaceBridge {
     try {
       located = await locateInside(this.workspaceRoot, projectFolder ?? '.', WORKTREES);
     } catch {
-      return 'No results found.';
+      throw new WorkspaceSearchError();
     }
     if ('refused' in located) {
       throw new Error(located.refused === 'outside' ? 'Search path escapes workspace boundary' : 'Access denied to this path');
     }
     const searchPath = located.path;
-    return new Promise((ok) => {
+    return new Promise((ok, fail) => {
       // `-e` and `--`: a query such as `-uuuLe<pattern>` is a pattern, never ripgrep options.
-      execFile('rg', [
+      execFile(this.locator.resolve('rg'), [
         '--json', '-i', '--max-count', '20', '--max-filesize', '256K',
         '-g', '!node_modules', '-g', '!.git', '-g', '!dist',
         '-g', '!.local', '-g', '!*.lock',
         '-e', query, '--', searchPath,
       ], { timeout: 10_000, maxBuffer: 512 * 1024 }, (err, stdout) => {
-        if (err && !stdout) ok('No results found.');
+        if (err?.code === 'ENOENT') fail(new ToolDependencyError('rg'));
+        else if (err && err.code !== 1 && !stdout) fail(new Error('The workspace search tool failed.'));
+        else if (err && err.code === 1 && !stdout) ok('No results found.');
         else ok(stdout);
       });
     });

@@ -138,11 +138,13 @@ impl DesktopHost {
         }
 
         // Start and authenticate the replacement before persisting or dropping the live host.
-        let (bootstrap, child) = start_host(&self.host_resource, &workspace_root, None)?;
+        let (bootstrap, child) =
+            start_host(&self.host_resource, &workspace_root, &self.config_dir, None)?;
         let supervisor = HostSupervisor::start(
             bootstrap,
             child,
             self.host_resource.clone(),
+            self.config_dir.clone(),
             workspace_root.clone(),
         );
         if persist {
@@ -164,11 +166,17 @@ impl HostSupervisor {
         bootstrap: DesktopBootstrap,
         child: HostChild,
         host_resource: PathBuf,
+        config_dir: PathBuf,
         workspace_root: PathBuf,
     ) -> Self {
         let restart_bootstrap = bootstrap.clone();
         Self::with_restart(bootstrap, child, move || {
-            start_host(&host_resource, &workspace_root, Some(&restart_bootstrap))
+            start_host(
+                &host_resource,
+                &workspace_root,
+                &config_dir,
+                Some(&restart_bootstrap),
+            )
         })
     }
 
@@ -473,14 +481,27 @@ pub(crate) fn parse_ready_line(line: &str) -> Result<DesktopBootstrap, &'static 
 pub(crate) fn start_host(
     host_resource: &Path,
     workspace_root: &Path,
+    app_config_dir: &Path,
     restart_from: Option<&DesktopBootstrap>,
 ) -> Result<(DesktopBootstrap, HostChild), String> {
     prepare_host_log()?;
+    let resource_root = host_resource.parent().unwrap_or(host_resource);
+    let bundled_tools = std::env::join_paths([
+        resource_root.to_path_buf(),
+        resource_root.join("bin"),
+        resource_root.join("tools"),
+    ])
+    .map_err(|_| "Could not configure bundled dependency search paths.".to_string())?;
     let mut command = host_command(host_resource)?;
     configure_process_group(&mut command);
 
     let mut child = command
         .env("AC_DESKTOP_MODE", "1")
+        .env(
+            "AC_TOOL_OVERRIDES_PATH",
+            app_config_dir.join("tool-paths.json"),
+        )
+        .env("AC_BUNDLED_TOOLS_DIR", bundled_tools)
         .env("HOST", "127.0.0.1")
         .env(
             "PORT",

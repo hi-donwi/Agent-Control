@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { join } from 'node:path';
+import { ToolDependencyError, toolLocator } from '../tool-locator.js';
 
 /** Runs `ws <args>` with `input` on stdin and returns stdout; rejects with stderr. */
 export type WsInputRunner = (args: string[], input: string) => Promise<string>;
@@ -22,15 +22,17 @@ export function reportedLine(output: string, word: string): string {
  * an argument array and never a shell (ADR-0019 §2).
  */
 export function realWsInputRunner(workspaceRoot: string): WsInputRunner {
-  const wsBin = join(workspaceRoot, '.agents', 'bin', 'ws');
   return (args, input) => new Promise((resolve, reject) => {
+    let wsBin: string;
+    try { wsBin = toolLocator.resolve('ws', workspaceRoot); } catch (error) { reject(error); return; }
     const child = execFile(wsBin, args, {
       cwd: workspaceRoot,
       timeout: 15_000,
       maxBuffer: 256 * 1024,
       env: { ...process.env, PAGER: 'cat', WS_AGENT: 'agent-control' },
     }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stripAnsi(stderr || err.message).trim()));
+      if (err?.code === 'ENOENT') reject(new ToolDependencyError('ws'));
+      else if (err) reject(new Error(stripAnsi(stderr || err.message).trim()));
       else resolve(stdout);
     });
     child.stdin?.end(input);

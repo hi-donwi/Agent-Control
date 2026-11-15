@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { sha256Hex } from '../approvals.js';
+import { ToolDependencyError, toolLocator } from '../tool-locator.js';
 import type { GateDeps } from './gate.js';
 
 type BrainDecision = 'inactive' | 'allow' | 'ask' | 'deny';
@@ -20,9 +21,14 @@ function snapshot(path: string): string | undefined {
 }
 
 /** Operator-selected executable; fixed argv, bounded output, no shell. */
-export function runBrain(cwd: string, args: string[], maxBuffer = 128 * 1024, binary = process.env.AGENT_BRAIN_BINARY || 'brain'): Promise<string> {
+export function runBrain(cwd: string, args: string[], maxBuffer = 128 * 1024, binary?: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(binary, args, { cwd, timeout: 5000, maxBuffer }, (error, stdout) => error ? reject(error) : resolve(stdout));
+    const executable = binary ?? toolLocator.resolve('brain');
+    execFile(executable, args, { cwd, timeout: 5000, maxBuffer }, (error, stdout) => {
+      if (error?.code === 'ENOENT') reject(new ToolDependencyError('brain'));
+      else if (error) reject(error);
+      else resolve(stdout);
+    });
   });
 }
 
@@ -30,7 +36,7 @@ export function runBrain(cwd: string, args: string[], maxBuffer = 128 * 1024, bi
 export async function evaluateBrainPolicy(
   deps: GateDeps,
   input: unknown,
-  binary = process.env.AGENT_BRAIN_BINARY || 'brain',
+  binary?: string,
 ): Promise<BrainEvaluation> {
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(deps.project)) return { decision: 'deny', error: 'invalid project key' };
   // Business task mutations retain their existing gate; Brain governs coding tools.

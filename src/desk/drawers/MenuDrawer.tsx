@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
-import { apiFetch, chooseDesktopWorkspace, getDesktopHostStatus, getDesktopWorkspaceRoot } from '../../lib/api';
+import {
+  apiFetch, chooseDesktopWorkspace, clearDesktopToolOverride, getDesktopHostStatus,
+  getDesktopTools, getDesktopWorkspaceRoot, refreshDesktopToolsFromLoginShell,
+  setDesktopToolOverride,
+} from '../../lib/api';
+import type { DesktopToolName, DesktopToolStatus } from '../../lib/desktop-tools';
 import { BackIcon, ChevronIcon, CloseIcon } from '../icons';
 import { SectionView, type SectionCommands } from '../uidl/SectionView';
 import { SECTIONS, sectionDocument, type SectionId } from '../uidl/documents';
@@ -243,11 +248,18 @@ const SUITE_STATE_LABEL: Record<SuiteComponentState, string> = {
   'not-installed': 'Not installed',
 };
 
+const REQUIRED_TOOLS: DesktopToolName[] = ['ws', 'brain', 'rg', 'git'];
+
 function Settings({ theme, onTheme }: Props) {
   const [workspacePending, setWorkspacePending] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
   const [hostStatus, setHostStatus] = useState<DesktopHostStatus | null>(null);
+  const [tools, setTools] = useState<DesktopToolStatus[]>([]);
+  const [toolPaths, setToolPaths] = useState<Partial<Record<DesktopToolName, string>>>({});
+  const [toolError, setToolError] = useState('');
+  const [toolMessage, setToolMessage] = useState('');
+  const [toolPending, setToolPending] = useState(false);
   const { manifest: suite, error: suiteError } = useSuiteManifest();
   const workspaceRoot = getDesktopWorkspaceRoot();
   const classic = new URL(window.location.href);
@@ -268,6 +280,71 @@ function Settings({ theme, onTheme }: Props) {
     const timer = window.setInterval(() => void refresh(), 1500);
     return () => { current = false; window.clearInterval(timer); };
   }, [workspaceRoot]);
+
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    let current = true;
+    const refresh = async () => {
+      try {
+        const statuses = await getDesktopTools();
+        if (current) setTools(statuses);
+      } catch {
+        if (current) setToolError('Dependency status is unavailable.');
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [workspaceRoot]);
+
+  async function refreshLoginPath() {
+    setToolPending(true);
+    setToolError('');
+    setToolMessage('Checking the login-shell PATH.');
+    try {
+      setTools(await refreshDesktopToolsFromLoginShell());
+      setToolMessage('Dependency search refreshed.');
+    } catch (cause) {
+      setToolError(cause instanceof Error ? cause.message : 'Could not refresh dependency search.');
+      setToolMessage('Dependency search needs attention.');
+    } finally {
+      setToolPending(false);
+    }
+  }
+
+  async function saveToolPath(name: DesktopToolName) {
+    const path = toolPaths[name]?.trim();
+    if (!path) return;
+    setToolPending(true);
+    setToolError('');
+    setToolMessage(`Saving ${name} override.`);
+    try {
+      setTools(await setDesktopToolOverride(name, path));
+      setToolPaths((current) => ({ ...current, [name]: '' }));
+      setToolMessage(`${name} override saved.`);
+    } catch (cause) {
+      setToolError(cause instanceof Error ? cause.message : `Could not save ${name} override.`);
+      setToolMessage('Dependency override needs attention.');
+    } finally {
+      setToolPending(false);
+    }
+  }
+
+  async function resetToolPath(name: DesktopToolName) {
+    setToolPending(true);
+    setToolError('');
+    setToolMessage(`Removing ${name} override.`);
+    try {
+      setTools(await clearDesktopToolOverride(name));
+      setToolPaths((current) => ({ ...current, [name]: '' }));
+      setToolMessage(`${name} override removed.`);
+    } catch (cause) {
+      setToolError(cause instanceof Error ? cause.message : `Could not remove ${name} override.`);
+      setToolMessage('Dependency override needs attention.');
+    } finally {
+      setToolPending(false);
+    }
+  }
 
   async function changeWorkspace() {
     setWorkspacePending(true);
@@ -318,6 +395,49 @@ function Settings({ theme, onTheme }: Props) {
           <p className="suite-panel__message" role="status" aria-live="polite">
             {hostStatus ? `Host ${hostStatus.lifecycle}; ${hostStatus.restartCount} restarts${hostStatus.lastExitCode === null ? '' : `; last exit ${hostStatus.lastExitCode}`}.` : 'Checking local host status.'}
           </p>
+        </section>
+      )}
+      {workspaceRoot && (
+        <section className="suite-panel" aria-labelledby="tool-locator-title">
+          <div className="suite-panel__heading">
+            <h3 className="settings-label" id="tool-locator-title">Required tools</h3>
+            <p className="settings-hint">Agent Control needs ws, brain, ripgrep, and git. Overrides are stored separately from endpoint credentials.</p>
+          </div>
+          <button type="button" disabled={toolPending} onClick={() => void refreshLoginPath()}>
+            Search login-shell PATH
+          </button>
+          <ul className="suite-component-list">
+            {REQUIRED_TOOLS.map((name) => {
+              const status = tools.find((candidate) => candidate.name === name);
+              return (
+                <li className="suite-component" key={name}>
+                  <div className="suite-component__details">
+                    <span className="suite-component__name">{name}</span>
+                    <span className="suite-component__status" data-state={status?.available ? 'ready' : 'missing'}>
+                      {status?.available ? `Available · ${status.source}` : 'Not found'}
+                    </span>
+                    {status?.path && <code className="suite-component__version">{status.path}</code>}
+                  </div>
+                  <div className="suite-component__actions">
+                    <label className="visually-hidden" htmlFor={`tool-path-${name}`}>{name} executable override</label>
+                    <input
+                      id={`tool-path-${name}`}
+                      type="text"
+                      value={toolPaths[name] ?? ''}
+                      placeholder={status?.path ?? 'Absolute executable path'}
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(event) => setToolPaths((current) => ({ ...current, [name]: event.target.value }))}
+                    />
+                    <button className="btn" type="button" disabled={toolPending || !toolPaths[name]?.trim()} onClick={() => void saveToolPath(name)}>Save</button>
+                    {status?.overridden && <button className="btn" type="button" disabled={toolPending} onClick={() => void resetToolPath(name)}>Reset</button>}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {toolMessage && <p className="suite-panel__message" role="status" aria-live="polite">{toolMessage}</p>}
+          {toolError && <p className="suite-panel__error" role="alert">{toolError}</p>}
         </section>
       )}
       <section className="suite-panel" aria-labelledby="suite-panel-title">

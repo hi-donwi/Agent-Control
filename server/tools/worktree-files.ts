@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, normalize, relative, resolve } from 'node:path';
 import { locateInside } from './path-sandbox.js';
+import { ToolDependencyError, toolLocator } from '../tool-locator.js';
 
 /** The same cap `WorkspaceBridge.readProjectFile()` applies to the primary checkout. */
 const MAX_FILE = 512 * 1024;
@@ -60,8 +61,9 @@ export async function editWorktreeFile(worktree: string, relPath: string, oldStr
 
 function runGit(worktree: string, args: string[]): Promise<string> {
   return new Promise((resolve_, reject) => {
-    execFile('git', args, { cwd: worktree, timeout: 15_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
-      if (err && !stdout) reject(err);
+    execFile(toolLocator.resolve('git'), args, { cwd: worktree, timeout: 15_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+      if (err?.code === 'ENOENT') reject(new ToolDependencyError('git'));
+      else if (err && !stdout) reject(err);
       else resolve_(stdout);
     });
   });
