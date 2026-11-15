@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { stripAnsi, type WsInputRunner } from './ws-input.js';
 import { KEY_RE, contextDir, inside } from './workspace-files.js';
+import { ToolDependencyError, toolLocator } from '../tool-locator.js';
 
 /**
  * Project management for the desk (Agent-Workspace ADR-0024): Today, alerts, tasks across
@@ -26,15 +27,17 @@ const RESTRICTED = ['contacts', 'commercial'] as const;
  * large, so the output limit is higher.
  */
 export function realWsReader(workspaceRoot: string): WsInputRunner {
-  const wsBin = join(workspaceRoot, '.agents', 'bin', 'ws');
   return (args, input) => new Promise((resolve, reject) => {
+    let wsBin: string;
+    try { wsBin = toolLocator.resolve('ws', workspaceRoot); } catch (error) { reject(error); return; }
     const child = execFile(wsBin, args, {
       cwd: workspaceRoot,
       timeout: 20_000,
       maxBuffer: 8 * 1024 * 1024,
       env: { ...process.env, PAGER: 'cat', WS_AGENT: 'agent-control' },
     }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stripAnsi(stderr || err.message).trim().replace(/^(error: |workspace (tasks|pm): )/, '')));
+      if (err?.code === 'ENOENT') reject(new ToolDependencyError('ws'));
+      else if (err) reject(new Error(stripAnsi(stderr || err.message).trim().replace(/^(error: |workspace (tasks|pm): )/, '')));
       else resolve(stdout);
     });
     child.stdin?.end(input);

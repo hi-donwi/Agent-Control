@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { ToolDependencyError, ToolLocator } from '../tool-locator.js';
 import { WorkspaceBridge, findWorkspaceRoot } from './workspace.js';
 
 const WORKSPACE_ROOT = findWorkspaceRoot(import.meta.dirname);
@@ -234,6 +235,28 @@ describe('WorkspaceBridge.readProjectFile sandbox', () => {
 const ripgrepMissing = spawnSync('rg', ['--version']).status === 0 ? false : 'ripgrep is not installed';
 
 describe('WorkspaceBridge.search sandbox', () => {
+  it('reports missing ripgrep as a typed dependency error, not empty search results', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ac-search-no-rg-'));
+    const locator = new ToolLocator({
+      homeDir: root,
+      bundledDirs: [],
+      homebrewDirs: [],
+      loginShellPathDirs: [],
+      inheritedPathDirs: [],
+      overridesPath: join(root, 'tool-paths.json'),
+    });
+    try {
+      await assert.rejects(new WorkspaceBridge(root, locator).search('needle'), (error: unknown) => {
+        assert.ok(error instanceof ToolDependencyError);
+        assert.equal(error.code, 'TOOL_NOT_FOUND');
+        assert.equal(error.tool, 'rg');
+        return true;
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('searches for a query that looks like an option instead of passing it to ripgrep', { skip: ripgrepMissing }, async () => {
     const { root } = sandboxFixture();
     put(root, 'notes.txt', 'run rg with --files to list files\n');

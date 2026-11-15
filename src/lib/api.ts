@@ -6,6 +6,7 @@ import {
   validateDesktopWorkspaceRoot,
   type DesktopHostStatus,
 } from './desktop-bootstrap';
+import { validateDesktopTools, type DesktopToolName, type DesktopToolStatus } from './desktop-tools';
 
 /** Shown when the server refuses the token: a restarted server has made a new one. */
 export const SIGN_IN_HINT = 'The server did not accept this page\'s token. Open the desk with the link the server printed (it ends in ?token=...).';
@@ -69,6 +70,24 @@ export async function getDesktopHostStatus(): Promise<DesktopHostStatus | null> 
   const status = validateDesktopHostStatus(await invoke<unknown>('desktop_host_status'));
   if (status.lifecycle === 'running') await refreshDesktopBootstrap();
   return status;
+}
+
+export async function getDesktopTools(): Promise<DesktopToolStatus[]> {
+  return validateDesktopTools(await apiFetch<unknown>('tools'));
+}
+
+export async function refreshDesktopToolsFromLoginShell(): Promise<DesktopToolStatus[]> {
+  return validateDesktopTools(await apiFetch<unknown>('tools/refresh-login-path', { method: 'POST' }));
+}
+
+export async function setDesktopToolOverride(name: DesktopToolName, path: string): Promise<DesktopToolStatus[]> {
+  return validateDesktopTools(await apiFetch<unknown>(`tools/${name}`, {
+    method: 'PUT', body: JSON.stringify({ path }),
+  }));
+}
+
+export async function clearDesktopToolOverride(name: DesktopToolName): Promise<DesktopToolStatus[]> {
+  return validateDesktopTools(await apiFetch<unknown>(`tools/${name}`, { method: 'DELETE' }));
 }
 
 export function getDesktopWorkspaceRoot(): string | null {

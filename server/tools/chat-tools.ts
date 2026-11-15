@@ -6,6 +6,8 @@ import { runCommand } from './run-command.js';
 import { editFileTool, writeFileTool } from './worktree-mutate.js';
 import { gitDiff, readWorktreeFile } from './worktree-files.js';
 import { pmTools } from './pm-tools.js';
+import { ToolDependencyError } from '../tool-locator.js';
+import { WorkspaceSearchError } from './workspace.js';
 
 /** A chat bound to one project (ADR-0011): what its tools may reach. */
 export interface ChatScope {
@@ -118,8 +120,18 @@ export function createChatTools(
         required: ['query'],
       },
       execute: async ({ query, folder }: { query: string; folder?: string }) => {
-        const output = await bridge.search(query, folder);
-        return { content: output };
+        try {
+          const output = await bridge.search(query, folder);
+          return { content: output };
+        } catch (error) {
+          if (error instanceof ToolDependencyError) {
+            return { error: { code: error.code, tool: error.tool, message: error.message } };
+          }
+          if (error instanceof WorkspaceSearchError) {
+            return { error: { code: error.code, message: error.message } };
+          }
+          throw error;
+        }
       },
     },
     route_skills: {

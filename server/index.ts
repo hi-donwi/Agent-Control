@@ -35,6 +35,7 @@ import {
 } from './middleware/security.js';
 import { createDesktopReadyLine } from './desktop-protocol.js';
 import { attachDesktopShutdown } from './desktop-shutdown.js';
+import { isToolName, toolLocator } from './tool-locator.js';
 import { forwardToControl } from './proxy.js';
 import { WORKSPACE_SCOPE, appendMessage, captureAssistant, isConversationId, isScope, latestConversation, listConversations, openConversation } from './conversations.js';
 import { ActivityRegistry, deskFloor, floorEvents, isCollection, queryRows, readCollection } from './desk/index.js';
@@ -173,6 +174,49 @@ app.use('/api/agent/*', tokenAuth(TOKEN, { allowQueryToken: !DESKTOP_MODE }));
 // browser suite loads the desk dozens of times a minute, so it raises the ceiling.
 const RATE_LIMIT = Math.max(1, parseInt(process.env.AC_RATE_LIMIT_PER_MINUTE ?? '', 10) || 120);
 app.use('/api/agent/*', rateLimit(RATE_LIMIT, 60_000));
+
+app.get(`${AGENT_API}/tools`, (c) => {
+  if (!DESKTOP_MODE) return c.json({ error: 'Desktop dependency settings are unavailable.' }, 404);
+  return c.json({ tools: toolLocator.status(WORKSPACE_ROOT) });
+});
+
+app.post(`${AGENT_API}/tools/refresh-login-path`, (c) => {
+  if (!DESKTOP_MODE) return c.json({ error: 'Desktop dependency settings are unavailable.' }, 404);
+  return c.json({ tools: toolLocator.refreshLoginShellPath() });
+});
+
+app.put(`${AGENT_API}/tools/:name`, async (c) => {
+  if (!DESKTOP_MODE) return c.json({ error: 'Desktop dependency settings are unavailable.' }, 404);
+  const name = c.req.param('name');
+  if (!isToolName(name)) return c.json({ error: 'Unknown dependency tool.', code: 'UNKNOWN_TOOL' }, 400);
+  const contentLength = Number(c.req.header('content-length') ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > 8192) {
+    return c.json({ error: 'Tool override request is too large.', code: 'INVALID_TOOL_OVERRIDE' }, 413);
+  }
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid tool override request.', code: 'INVALID_TOOL_OVERRIDE' }, 400); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || Object.keys(body).some((key) => key !== 'path')
+    || typeof (body as { path?: unknown }).path !== 'string') {
+    return c.json({ error: 'Tool override must contain one absolute path.', code: 'INVALID_TOOL_OVERRIDE' }, 400);
+  }
+  try {
+    return c.json({ tools: await toolLocator.setOverride(name, (body as { path: string }).path) });
+  } catch {
+    return c.json({ error: 'Tool override must point to an existing executable file.', code: 'INVALID_TOOL_OVERRIDE' }, 400);
+  }
+});
+
+app.delete(`${AGENT_API}/tools/:name`, async (c) => {
+  if (!DESKTOP_MODE) return c.json({ error: 'Desktop dependency settings are unavailable.' }, 404);
+  const name = c.req.param('name');
+  if (!isToolName(name)) return c.json({ error: 'Unknown dependency tool.', code: 'UNKNOWN_TOOL' }, 400);
+  try {
+    return c.json({ tools: await toolLocator.clearOverride(name) });
+  } catch {
+    return c.json({ error: 'Tool overrides could not be saved.', code: 'TOOL_OVERRIDE_SAVE_FAILED' }, 500);
+  }
+});
 
 // ── API: Providers & models ────────────────────────────────────────────
 app.get(`${AGENT_API}/providers`, async (c) => {

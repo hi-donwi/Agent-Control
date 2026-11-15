@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createChatTools } from './chat-tools.js';
 import { WorkspaceBridge } from './workspace.js';
+import { ToolDependencyError } from '../tool-locator.js';
 import type { Tool } from 'ai';
 import { createMockModel } from '../providers/mock.js';
 
@@ -132,6 +133,20 @@ describe('createChatTools bound to a project (ADR-0011)', () => {
     await run(tools, 'search_code', { query: 'q', folder: 'projects/acme/demo/src' });
     await assert.rejects(() => run(tools, 'search_code', { query: 'q', folder: 'projects/acme' }), /outside project demo/);
     assert.deepEqual(calls, ['search:["q","projects/acme/demo"]', 'search:["q","projects/acme/demo/src"]']);
+  });
+
+  it('returns typed dependency errors to the tool caller when ripgrep is unavailable', async () => {
+    const bridge = fakeBridge([]);
+    bridge.search = async () => { throw new ToolDependencyError('rg'); };
+    const tools = createChatTools(bridge, scope);
+
+    assert.deepEqual(await run(tools, 'search_code', { query: 'needle' }), {
+      error: {
+        code: 'TOOL_NOT_FOUND',
+        tool: 'rg',
+        message: 'Required tool "rg" is unavailable. Configure its path in Settings.',
+      },
+    });
   });
 });
 
