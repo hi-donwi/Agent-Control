@@ -114,7 +114,13 @@ export function apiOriginOnly(options: {
 
     const origin = c.req.header('origin');
     const requestOrigin = new URL(c.req.url).origin;
-    if (!origin || (origin !== requestOrigin && !allowedOrigins.has(origin))) {
+    // Fetch omits Origin on same-origin GET/HEAD requests. Require the browser's
+    // protected Fetch Metadata signal for those reads; all other API requests
+    // still need an explicit, allowed Origin.
+    const sameOriginBrowserRead = !origin
+      && ['GET', 'HEAD'].includes(c.req.method)
+      && c.req.header('sec-fetch-site') === 'same-origin';
+    if (!sameOriginBrowserRead && (!origin || (origin !== requestOrigin && !allowedOrigins.has(origin)))) {
       return c.json({ error: 'Request origin is not allowed.' }, 403);
     }
     await next();

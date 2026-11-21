@@ -138,6 +138,14 @@ describe('apiOriginOnly', () => {
     assert.equal((await app.request('/page')).status, 200);
   });
 
+  it('accepts a same-origin browser read when Fetch omits Origin', async () => {
+    const app = standaloneApp();
+    const response = await app.request('/api/health', {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+    });
+    assert.equal(response.status, 200);
+  });
+
   it('uses the desktop origin policy for the full API namespace', async () => {
     const app = new Hono();
     app.use('*', apiOriginOnly({ desktopOrigins: ['tauri://localhost'] }));
