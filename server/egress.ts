@@ -4,10 +4,10 @@ import { loadPolicy, type BrainProfileGrant } from './policy.js';
 export { policyPath } from './policy.js';
 
 /**
- * Which endpoints may receive a project's context (Agent-Workspace ADR-0021).
+ * Which endpoints may receive a project's context (DONWI Workspace ADR-0021).
  *
  * The operator policy of ADR-0014, `<workspace>/.local/agent/policies/<project>.json`,
- * may list them under `llm.endpoints`. Agent-Brain endpoints additionally require an
+ * may list them under `llm.endpoints`. DONWI Brain endpoints additionally require an
  * exact `llm.brain_profiles` grant for the configured profile ID/revision.
  * A local endpoint is always allowed - nothing leaves the machine. A remote endpoint is
  * allowed only for a project whose policy names it. A missing, invalid, or
@@ -24,7 +24,7 @@ export function loadLlmAllowlist(workspaceRoot: string, project: string): string
   return Array.isArray(endpoints) ? endpoints : null;
 }
 
-/** The project's exact Agent-Brain profile revision grants, or null when none are listed. */
+/** The project's exact DONWI Brain profile revision grants, or null when none are listed. */
 export function loadBrainProfileAllowlist(workspaceRoot: string, project: string): BrainProfileGrant[] | null {
   return loadPolicy(workspaceRoot, project)?.llm?.brain_profiles ?? null;
 }

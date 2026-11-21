@@ -1,6 +1,6 @@
 # Brain policy at coding-tool dispatch
 
-Agent Control remains the tool executor. Brain's read-only `agent check` command can
+DONWI Desk remains the tool executor. Brain's read-only `agent check` command can
 add an operator-selected policy to `run_command`, `write_file`, and `edit_file`.
 
 The operator opts a project in by creating

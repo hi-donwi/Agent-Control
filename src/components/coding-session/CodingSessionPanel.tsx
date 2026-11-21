@@ -14,7 +14,7 @@ function shortPath(path: string): string {
   return parts.length <= 2 ? path : '.../' + parts.slice(-2).join('/');
 }
 
-/** Start/stop control for the selected project's coding session (Agent-Workspace ADR-0019). */
+/** Start/stop control for the selected project's coding session (DONWI Workspace ADR-0019). */
 export function CodingSessionPanel({ session, busy, error, onStart, onStop }: Props) {
   return (
     <div className="coding-session-panel">

@@ -86,7 +86,7 @@ function safeLoadEndpoints(): Endpoint[] {
   }
 }
 const endpoints = safeLoadEndpoints();
-// Chat inference runs only through Agent Brain (server/chat-model.ts); `mock` is offline.
+// Chat inference runs only through DONWI Brain (server/chat-model.ts); `mock` is offline.
 const chatEndpoints = endpoints.filter(isChatEndpoint);
 const brainManagementTargets = endpoints.flatMap((endpoint) => {
   if (endpoint.purpose !== 'agent-brain' || !endpoint.baseUrl) return [];
@@ -99,13 +99,13 @@ const brainManagementOrigins = [...new Set(brainManagementTargets.map((target) =
 const defaults = chatDefaults(config, endpoints);
 if (ignoredKeys.length) {
   // Names only: the keys themselves are never printed.
-  console.warn(`${CONFIG_PATH} holds API keys for ${ignoredKeys.join(', ')}; Agent-Control no longer uses them `
-    + '(chat runs through Agent Brain). Remove its "providers" entry.');
+  console.warn(`${CONFIG_PATH} holds API keys for ${ignoredKeys.join(', ')}; DONWI Desk no longer uses them `
+    + '(chat runs through DONWI Brain). Remove its "providers" entry.');
 }
 
 // ── System prompt with workspace awareness ─────────────────────────────
-const SYSTEM_PROMPT = `You are Agent Control, an AI-powered workspace assistant.
-You help the user understand and navigate their Agent-Workspace — its projects,
+const SYSTEM_PROMPT = `You are DONWI Desk, an AI-powered workspace assistant.
+You help the user understand and navigate their DONWI Workspace — its projects,
 context, memory, runs, tasks, and code.
 
 Workspace root: ${WORKSPACE_ROOT}
@@ -117,7 +117,7 @@ You have access to the following tools:
 - read_file: Read a file within the workspace (sandboxed)
 - search_code: Search for patterns in project files using ripgrep
 - route_skills: Get skill recommendations for a given task
-- get_skill: Read the full instructions and standards for any workspace skill (from Agent-Skills / .agents/skills)
+- get_skill: Read the full instructions and standards for any workspace skill (from DONWI Skills / .agents/skills)
 - diagnose_database: Inspect PostgreSQL health, locks, active queries, invalid/unused indexes, and XID wraparound using dbakit
 - diagnose_infra: Inspect Linux host, Docker, Swarm, and Kubernetes SRE diagnostics using opskit
 - scan_security: Run security audits (secrets, CVEs) on a project using agent-secure
@@ -332,7 +332,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       try {
         brainMcp = await openBrainCodeSession(scope, { signal: c.req.raw.signal });
       } catch {
-        // The existing Agent-Control workspace tools remain available if the local Brain CLI is absent.
+        // The existing DONWI Desk workspace tools remain available if the local Brain CLI is absent.
         brainMcp = undefined;
       }
     }
@@ -365,7 +365,7 @@ app.post(`${AGENT_API}/chat`, async (c) => {
       }, brainMcp?.tools),
       stopWhen: stepCountIs(5),
       // The browser stopping the turn (Stop, closed tab) cancels the upstream request too,
-      // so Agent Brain or the provider stops generating and billing for it.
+      // so DONWI Brain or the provider stops generating and billing for it.
       abortSignal: c.req.raw.signal,
       // A model that says nothing for this long ends the turn (server/endpoints.ts). The
       // SDK reports it as an abort, which toLineStream tells from the browser's Stop.
@@ -663,7 +663,7 @@ for (const [path, blocked] of [['block', true], ['unblock', false]] as const) {
 }
 
 // One project's room: memory, work, blockers, people, and context in one read.
-// ── Desk: project management (Agent-Workspace ADR-0024) ─────────────────
+// ── Desk: project management (DONWI Workspace ADR-0024) ─────────────────
 // Today, alerts, tasks across every client, and client dossiers - each a `ws ... --json`
 // read, so the desk and agents share one implementation.
 const pmFail = (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) });
@@ -875,7 +875,7 @@ if (process.env.NODE_ENV === 'production' && !DESKTOP_MODE) {
 // ── Start server ───────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? (DESKTOP_MODE ? '0' : '3141'));
 if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
-  throw new Error('Invalid local Agent-Control host port.');
+  throw new Error('Invalid local DONWI Desk host port.');
 }
 const HOST = DESKTOP_MODE ? '127.0.0.1' : process.env.HOST ?? '127.0.0.1';
 
@@ -888,7 +888,7 @@ const hostServer = serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info
   console.log('');
   console.log('  ╭──────────────────────────────────────────╮');
   console.log('  │                                          │');
-  console.log('  │   Agent Control                          │');
+  console.log('  │   DONWI Desk                             │');
   console.log('  │                                          │');
   console.log(`  │   Local:  http://${HOST}:${PORT}         │`);
   console.log('  │                                          │');

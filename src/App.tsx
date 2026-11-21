@@ -75,7 +75,7 @@ export function App() {
   const prevApprovalsCount = useRef<number | null>(null);
   useEffect(() => {
     const count = pendingApprovals.length;
-    const base = 'Agent Control';
+    const base = 'DONWI Desk';
     document.title = count > 0 ? `(${count}) ${base}` : base;
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -126,7 +126,7 @@ export function App() {
           <div className="brand">
             <div className="brand-icon">A</div>
             <div className="brand-text">
-              <span className="brand-name">Agent Control</span>
+              <span className="brand-name">DONWI Desk</span>
               <span className="brand-subtitle">AI Workspace Assistant</span>
             </div>
           </div>
@@ -253,13 +253,13 @@ export function App() {
               </svg>
             </button>
             <span className="chat-title">
-              {currentProvider?.name ?? 'Agent Control'}
+              {currentProvider?.name ?? 'DONWI Desk'}
               {selectedModel && <span className="chat-subtitle"> · {selectedModel}</span>}
             </span>
           </div>
           <div className="chat-status">
             <span className={`status-dot${noProviders ? ' disconnected' : ''}`} />
-            {noProviders ? 'No Agent Brain endpoint' : 'Ready'}
+            {noProviders ? 'No DONWI Brain endpoint' : 'Ready'}
           </div>
         </header>
 
@@ -272,12 +272,12 @@ export function App() {
                 <path d="M12 7v4M8 16h.01M16 16h.01" />
               </svg>
             </div>
-            <h2>Agent Control</h2>
+            <h2>DONWI Desk</h2>
             <p>Your AI-powered workspace assistant. Ask about projects, code, context, memory — or anything else.</p>
 
             {noProviders && (
               <div className="error-notice" style={{ marginBottom: 24, maxWidth: 480 }}>
-                No Agent Brain endpoint is configured. Chat runs only through Agent Brain: add an
+                No DONWI Brain endpoint is configured. Chat runs only through DONWI Brain: add an
                 endpoint with <code>"purpose": "agent-brain"</code> to <code>.local/agent/endpoints.json</code>.
               </div>
             )}

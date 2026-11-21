@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { KEY_RE } from './workspace-files.js';
 
 /**
- * What an agent session outside this host says it is doing, as Agent-Workspace writes it:
+ * What an agent session outside this host says it is doing, as DONWI Workspace writes it:
  * `<root>/.local/agent/activity/<session>.json`, one record per session, replaced on every
  * change (`ws agent activity`, or the Claude Code hooks `ws hooks install` adds). Names
  * only - a tool name at most, never input, prompts, or output.

@@ -4,22 +4,22 @@ import { test, expect } from './fixtures.js';
 import { LEGACY_ANTHROPIC_KEY, LEGACY_OPENAI_KEY } from './workspace.js';
 
 /**
- * Chat runs only through Agent Brain, which keeps provider accounts and keys: no screen asks
+ * Chat runs only through DONWI Brain, which keeps provider accounts and keys: no screen asks
  * for a key, and keys left in ~/.agent-control/config.json from before never reach the page.
  */
 
 const configPath = (home: string) => join(home, '.agent-control', 'config.json');
 
-test('the desk settings point at Agent Brain and hold no key field', async ({ page, deskUrl }) => {
+test('the desk settings point at DONWI Brain and hold no key field', async ({ page, deskUrl }) => {
   await page.goto(deskUrl);
   await page.getByRole('button', { name: /^Menu/ }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
 
-  await expect(page.getByText('Chat runs only through Agent Brain', { exact: false })).toBeVisible();
+  await expect(page.getByText('Chat runs only through DONWI Brain', { exact: false })).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
-  const suite = page.getByRole('region', { name: 'Agent Workspace Suite' });
+  const suite = page.getByRole('region', { name: 'DONWI Agent Suite' });
   await expect(suite).toBeVisible();
-  for (const component of ['Agent-Control', 'Agent-Brain', 'Agent-Workspace', 'Agent-Skills', 'Agent-Secure']) {
+  for (const component of ['DONWI Desk', 'DONWI Brain', 'DONWI Workspace', 'DONWI Skills', 'DONWI Secure']) {
     await expect(suite.getByText(component, { exact: true })).toBeVisible();
   }
   await page.setViewportSize({ width: 360, height: 800 });

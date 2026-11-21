@@ -56,7 +56,7 @@ describe('createChatTools', () => {
     assert.equal('brain_repo_map' in createChatTools(fakeBridge([]), { root: '/ws', project: 'demo', folder: 'projects/acme/demo', remote: true }, undefined, brainCodeTools), true);
     assert.equal('run_command' in createChatTools(fakeBridge([]), { root: '/ws', project: 'demo', folder: 'projects/acme/demo', remote: true }, undefined, {
       run_command: brainCodeTools.brain_repo_map,
-    }), true, 'the existing Agent-Control run_command remains present and approval-gated');
+    }), true, 'the existing DONWI Desk run_command remains present and approval-gated');
     const protectedTools = createChatTools(fakeBridge([]), { root: '/ws', project: 'demo', folder: 'projects/acme/demo', remote: true }, undefined, {
       run_command: brainCodeTools.brain_repo_map,
     });

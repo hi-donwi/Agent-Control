@@ -1,6 +1,6 @@
 name: ci
 
-# Agent-Control runs LLM calls and workspace tools on the operator's machine. CI keeps
+# DONWI Desk runs LLM calls and workspace tools on the operator's machine. CI keeps
 # the server typed, linted, tested, and buildable, and scans it like every other
 # public repository of this account. Tests use the offline mock endpoint only.
 on:
@@ -26,7 +26,7 @@ jobs:
       # desktop app ships for macOS, which never compiles it, and Tauri has no gtk4 release
       # yet. Revisit when Tauri moves to gtk4 or on the expiry date, whichever comes first.
       # chrono is flagged unmaintained (no vulnerability) and reaches us only through
-      # tauri-utils -> serde_with; Agent-Control does not depend on it directly. Revisit
+      # tauri-utils -> serde_with; DONWI Desk does not depend on it directly. Revisit
       # when Tauri drops serde_with's chrono feature or on the expiry date.
       # zvariant, zbus_names and zvariant_derive are flagged unmaintained because zbus 6
       # absorbed them; tauri-plugin-single-instance 2.5.5 still needs zbus 5 for Linux

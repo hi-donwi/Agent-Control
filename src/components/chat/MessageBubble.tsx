@@ -15,7 +15,7 @@ export function MessageBubble({ message }: Props) {
         {isUser ? 'U' : 'AC'}
       </div>
       <div className="message-content">
-        <div className="message-role">{isUser ? 'You' : 'Agent Control'}</div>
+        <div className="message-role">{isUser ? 'You' : 'DONWI Desk'}</div>
         <div className="message-body">
           {message.content ? (
             <MarkdownRenderer content={message.content} />

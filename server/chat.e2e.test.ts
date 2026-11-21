@@ -179,7 +179,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     mkdirSync(join(root, 'projects', 'mock', 'mockproj'), { recursive: true });
     mkdirSync(join(home, '.brain'), { recursive: true });
     writeFileSync(join(home, '.brain', 'agent-control.token'), 'bpi1.payload.signature\n', { mode: 0o600 });
-    // Keys from before chat went through Agent Brain: the server must ignore them, never list
+    // Keys from before chat went through DONWI Brain: the server must ignore them, never list
     // them as providers, and never print them.
     mkdirSync(join(home, '.agent-control'), { recursive: true });
     writeFileSync(join(home, '.agent-control', 'config.json'), JSON.stringify({
@@ -266,7 +266,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
       name: string;
       components: Array<{ id: string; state: string }>;
     };
-    assert.equal(body.name, 'Agent Workspace Suite');
+    assert.equal(body.name, 'DONWI Agent Suite');
     assert.deepEqual(body.components.map((component) => component.id), [
       'agent-control', 'agent-brain', 'agent-workspace', 'agent-skills', 'agent-secure',
     ]);
@@ -302,11 +302,11 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(unbound.status, 400);
   });
 
-  it('refuses an endpoint that is not Agent Brain, and a legacy provider, before any request', async () => {
+  it('refuses an endpoint that is not DONWI Brain, and a legacy provider, before any request', async () => {
     for (const provider of ['remote', 'direct']) {
       const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider, model: 'x', project: 'mockproj' });
       assert.equal(response.status, 400);
-      assert.match((await response.json() as { error: string }).error, /not an Agent Brain endpoint/);
+      assert.match((await response.json() as { error: string }).error, /not a DONWI Brain endpoint/);
     }
     const legacy = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'openai', model: 'gpt-4o' });
     assert.equal(legacy.status, 400);
@@ -314,7 +314,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(directCalls, 0);
   });
 
-  it('refuses Agent Brain for a chat without a project policy that lists it', async () => {
+  it('refuses DONWI Brain for a chat without a project policy that lists it', async () => {
     const before = brainChatCalls;
     const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'brain', model: 'chat' });
     assert.equal(response.status, 403);
@@ -322,7 +322,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(brainChatCalls, before);
   });
 
-  it('lists only Agent Brain and mock endpoints, and ignores legacy provider keys', async () => {
+  it('lists only DONWI Brain and mock endpoints, and ignores legacy provider keys', async () => {
     const response = await fetch(`${origin}/api/agent/providers`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(response.status, 200);
     const body = await response.json() as { providers: Array<{ id: string }>; defaultProvider: string; defaultModel: string };
@@ -338,7 +338,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.doesNotMatch(serverLog, /sk-legacy-openai-key|sk-ant-legacy-key/);
   });
 
-  it('exposes only configured Agent Brain origins for the embedded management UI', async () => {
+  it('exposes only configured DONWI Brain origins for the embedded management UI', async () => {
     const response = await fetch(`${origin}/api/agent/brain-management-targets`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(response.status, 200);
     const body = await response.json() as { targets: Array<{ id: string; managementUrl: string }> };
@@ -382,7 +382,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(brainCalls, 1);
   });
 
-  it('streams inference through Brain while keeping workspace tools on the Agent-Control host', async () => {
+  it('streams inference through Brain while keeping workspace tools on the DONWI Desk host', async () => {
     writeBrainPolicy(root, 'brain');
     const response = await post({
       messages: [{ role: 'user', content: 'hello' }], provider: 'brain', model: 'chat', project: 'mockproj',

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Agent Workspace Suite release lock",
+  "title": "DONWI Agent Suite release lock",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "suite_version", "platform", "privacy_gate", "license_gate", "components", "signature"],

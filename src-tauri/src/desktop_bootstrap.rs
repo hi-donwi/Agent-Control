@@ -96,7 +96,7 @@ impl DesktopHost {
             .map_err(|_| "The desktop host state is unavailable.".to_string())?;
         let running = running
             .as_ref()
-            .ok_or_else(|| "Choose a workspace to start Agent Control.".to_string())?;
+            .ok_or_else(|| "Choose a workspace to start DONWI Desk.".to_string())?;
         running.supervisor.bootstrap()
     }
 
@@ -217,7 +217,7 @@ impl HostSupervisor {
                 if matches!(snapshot.status.lifecycle, HostLifecycle::Running) {
                     Ok(snapshot.bootstrap.clone())
                 } else {
-                    Err("The local Agent-Control host is restarting.".to_string())
+                    Err("The local DONWI Desk host is restarting.".to_string())
                 }
             })
     }
@@ -526,7 +526,7 @@ pub(crate) fn start_host(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|_| "Could not start the local Agent-Control host.".to_string())?;
+        .map_err(|_| "Could not start the local DONWI Desk host.".to_string())?;
 
     let Some(stderr) = child.stderr.take() else {
         stop_child(&mut child, SHUTDOWN_TIMEOUT);
@@ -557,7 +557,7 @@ pub(crate) fn start_host(
         Err(_) => {
             stop_child(&mut child, SHUTDOWN_TIMEOUT);
             let _ = stderr_log.join();
-            return Err("The local Agent-Control host did not become ready in time.".to_string());
+            return Err("The local DONWI Desk host did not become ready in time.".to_string());
         }
     };
 
@@ -656,7 +656,7 @@ fn ensure_private_directory(path: &Path) -> Result<(), String> {
 fn host_command(_host_resource: &Path) -> Result<Command, String> {
     let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .ok_or_else(|| "Could not locate the Agent-Control project root.".to_string())?
+        .ok_or_else(|| "Could not locate the DONWI Desk project root.".to_string())?
         .to_path_buf();
     let mut command = Command::new("node");
     command
@@ -668,7 +668,7 @@ fn host_command(_host_resource: &Path) -> Result<Command, String> {
 #[cfg(not(debug_assertions))]
 fn host_command(host_resource: &Path) -> Result<Command, String> {
     if !host_resource.is_file() {
-        return Err("The bundled Agent-Control host is missing.".to_string());
+        return Err("The bundled DONWI Desk host is missing.".to_string());
     }
     Ok(Command::new(host_resource))
 }
@@ -680,21 +680,20 @@ fn read_bounded_line(reader: &mut impl BufRead) -> Result<String, String> {
             .fill_buf()
             .map_err(|_| "Could not read local host readiness.".to_string())?;
         if available.is_empty() {
-            return Err("The local Agent-Control host exited before readiness.".to_string());
+            return Err("The local DONWI Desk host exited before readiness.".to_string());
         }
         let end = available.iter().position(|byte| *byte == b'\n');
         let count = end.map_or(available.len(), |index| index + 1);
         if bytes.len() + count > MAX_READY_LINE_BYTES {
             return Err(
-                "The local Agent-Control host sent an oversized readiness message.".to_string(),
+                "The local DONWI Desk host sent an oversized readiness message.".to_string(),
             );
         }
         bytes.extend_from_slice(&available[..count]);
         reader.consume(count);
         if end.is_some() {
-            return String::from_utf8(bytes).map_err(|_| {
-                "The local Agent-Control host sent invalid readiness text.".to_string()
-            });
+            return String::from_utf8(bytes)
+                .map_err(|_| "The local DONWI Desk host sent invalid readiness text.".to_string());
         }
     }
 }

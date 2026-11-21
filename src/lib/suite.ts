@@ -19,6 +19,6 @@ export interface SuiteComponent {
 
 export interface SuiteManifest {
   schemaVersion: 1;
-  name: 'Agent Workspace Suite';
+  name: 'DONWI Agent Suite';
   components: SuiteComponent[];
 }

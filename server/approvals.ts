@@ -10,7 +10,7 @@ export function sha256Hex(data: string): string {
 }
 
 /**
- * Local approval record for actions that stay on this machine (Agent-Workspace
+ * Local approval record for actions that stay on this machine (DONWI Workspace
  * ADR-0020). An action `ws policy check`-style classification marks
  * `approval-required` is not executed on a model's say-so: a request is recorded,
  * an operator decides once, and the executor re-verifies every bound field

@@ -6,7 +6,7 @@ import { KEY_RE, contextDir, inside } from './workspace-files.js';
 import { ToolDependencyError, toolLocator } from '../tool-locator.js';
 
 /**
- * Project management for the desk (Agent-Workspace ADR-0024): Today, alerts, tasks across
+ * Project management for the desk (DONWI Workspace ADR-0024): Today, alerts, tasks across
  * every client, and client dossiers. Every read is `ws ... --json`, so the desk, the CLI, and
  * agents see one implementation; every write goes through `ws` too. The one thing only the
  * desk reads itself is a client's restricted records (contacts, commercial terms): they are

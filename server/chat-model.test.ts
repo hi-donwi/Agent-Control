@@ -40,7 +40,7 @@ describe('mock model', () => {
 });
 
 describe('isChatEndpoint', () => {
-  it('admits Agent Brain and the offline mock, and nothing else', () => {
+  it('admits DONWI Brain and the offline mock, and nothing else', () => {
     assert.equal(isChatEndpoint(brain), true);
     assert.equal(isChatEndpoint(mock), true);
     assert.equal(isChatEndpoint(xai), false);
@@ -60,7 +60,7 @@ describe('resolveChatModel', () => {
     assert.ok('model' in result && result.model.provider === 'mock');
   });
 
-  it('uses Agent Brain only for a project whose policy lists it', () => {
+  it('uses DONWI Brain only for a project whose policy lists it', () => {
     const allowed = resolveChatModel({ provider: 'brain', model: 'm', project: 'demo' }, deps);
     assert.ok('model' in allowed && allowed.model.provider === 'brain.chat' && allowed.locality === 'remote');
     const noProject = resolveChatModel({ provider: 'brain', model: 'm' }, deps);
@@ -69,11 +69,11 @@ describe('resolveChatModel', () => {
     assert.ok('status' in otherProject && otherProject.status === 403);
   });
 
-  it('refuses an endpoint that is not Agent Brain, even when the policy lists it', () => {
+  it('refuses an endpoint that is not DONWI Brain, even when the policy lists it', () => {
     const remote = resolveChatModel({ provider: 'xai', model: 'm', project: 'demo' }, deps);
-    assert.ok('status' in remote && remote.status === 400 && /not an Agent Brain endpoint/.test(remote.error));
+    assert.ok('status' in remote && remote.status === 400 && /not a DONWI Brain endpoint/.test(remote.error));
     const loopback = resolveChatModel({ provider: 'ollama', model: 'm' }, deps);
-    assert.ok('status' in loopback && loopback.status === 400 && /not an Agent Brain endpoint/.test(loopback.error));
+    assert.ok('status' in loopback && loopback.status === 400 && /not a DONWI Brain endpoint/.test(loopback.error));
   });
 
   it('reports a missing credential by name', () => {
@@ -119,12 +119,12 @@ describe('resolveChatModel', () => {
     assert.ok('status' in result && result.status === 400);
   });
 
-  it('names an unknown endpoint and points at Agent Brain, not at API keys', () => {
+  it('names an unknown endpoint and points at DONWI Brain, not at API keys', () => {
     for (const provider of ['nope', 'openai', 'anthropic', 'google']) {
       const unknown = resolveChatModel({ provider, model: 'm' }, deps);
       assert.ok('status' in unknown && unknown.status === 400);
       assert.match(unknown.error, new RegExp(`"${provider}"`));
-      assert.match(unknown.error, /Agent Brain/);
+      assert.match(unknown.error, /DONWI Brain/);
       assert.doesNotMatch(unknown.error, /API key/);
     }
   });
@@ -140,7 +140,7 @@ describe('chatDefaults', () => {
       { provider: 'brain', model: 'auto' });
   });
 
-  it('prefers Agent Brain over mock when the configured default cannot chat', () => {
+  it('prefers DONWI Brain over mock when the configured default cannot chat', () => {
     for (const defaultProvider of ['anthropic', 'xai', '']) {
       assert.deepEqual(chatDefaults({ defaultProvider, defaultModel: 'claude-sonnet-4-20250514' }, [xai, mock, brainWithModels]),
         { provider: 'brain', model: 'auto' });

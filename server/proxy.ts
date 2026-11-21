@@ -1,5 +1,5 @@
 /**
- * Reverse proxy to the Python control plane (Agent-Workspace ADR-0019 §4).
+ * Reverse proxy to the Python control plane (DONWI Workspace ADR-0019 §4).
  *
  * In agent mode the agent host is the single browser-facing origin. Its own API lives
  * under `/api/agent/*`; every other `/api/*` request belongs to the control plane and is

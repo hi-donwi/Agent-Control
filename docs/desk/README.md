@@ -1,15 +1,15 @@
 # Desk
 
-The desk is Agent-Control's default UI: one screen that shows every client, project, and
-agent in an Agent-Workspace as a 2D floor, and two drawers that hold everything else.
+The desk is DONWI Desk's default UI: one screen that shows every client, project, and
+agent in a DONWI Workspace as a 2D floor, and two drawers that hold everything else.
 Wireframes: [wireframe.md](wireframe.md).
 
 The classic chat UI stays reachable at `/?ui=classic` until the desk covers it.
 
 ## Why it lives here
 
-Agent-Workspace's own web control (`ws web`, `ws_web.py`, `apps/workspace-control`) was
-removed for a redesign. Agent-Control is the agent host of Agent-Workspace ADR-0019: it
+DONWI Workspace's own web control (`ws web`, `ws_web.py`, `apps/workspace-control`) was
+removed for a redesign. DONWI Desk is the agent host of DONWI Workspace ADR-0019: it
 already owns chat, approvals (ADR-0020), endpoint egress (ADR-0021), project-bound tools
 (ADR-0011), coding sessions, and the loopback security envelope. The desk is that host's
 UI, so it is built here and not in the framework. A desktop build later wraps the same
@@ -95,7 +95,7 @@ question; opening one shows it, and the next turn is appended to it.
 
 ## Missions
 
-Project management across every client (Agent-Workspace ADR-0024). The records are the
+Project management across every client (DONWI Workspace ADR-0024). The records are the
 framework's - tasks, milestones, reminders, client records in `context/` - and every read is
 `ws ... --json`, so the desk, the CLI, and agents (through `ws mcp`) see one truth. The owner
 chose (2026-10-17): no sprints; contacts and commercial terms shown in the desk only; alerts
@@ -158,7 +158,7 @@ in the desk and the browser only; navigation from the menu, with views in the ma
 | `warning` | Something failed | Host stream error | Amber mark |
 | `offline` | Gone | Not currently emitted by the host floor | Grey, still |
 
-The floor lists only Agent-Control chat sessions routed through Agent Brain. It does not
+The floor lists only DONWI Desk chat sessions routed through DONWI Brain. It does not
 merge workspace agent clocks or `.local/agent/activity/` records, so external CLI/editor
 sessions cannot appear or receive commands from this desk.
 
@@ -240,7 +240,7 @@ src/desk/
 | 1 | Skeleton (done) | This document, the floor, both drawers, UIDL sections |
 | 2a | Live floor (done) | `GET events`; activity records from `ws hooks` and `ws agent activity` for outside agents; pose transitions; large zones span two columns |
 | 2b | Chat history (done) | Per-scope conversations in the host's session log; the latest reloads with the page |
-| 3a | Notes (done) | `ws note` in Agent-Workspace; the Notes section's form runs the host command `notes.add` |
+| 3a | Notes (done) | `ws note` in DONWI Workspace; the Notes section's form runs the host command `notes.add` |
 | 3b | Tasks (done) | `ws task`; the Tasks section adds operator tasks and moves them with row actions, run plan rows stay read-only |
 | 3c | Run plans (done) | Pending, Start, and Done on a plan row through `ws plan status --operator`; blocked and dropped, with a reason, from the mission board since 4c |
 | 4a | Agent work (done) | Start and stop a coding session from the drawer; a Changes tab with the worktree's diff, reloaded after every turn; an approval or denial goes back into the conversation so the agent continues |
@@ -254,7 +254,7 @@ The Changes tab ends a coding session in one of two ways, chosen by the operator
 (2026-10-17): ship the work straight to the project's default branch, or discard it.
 
 - **Verify** runs the operator's contract in the session worktree (`ws verify --worktree`,
-  Agent-Workspace PR #34) and keeps the result with the worktree content it saw, as a git
+  DONWI Workspace PR #34) and keeps the result with the worktree content it saw, as a git
   tree id written through a copy of the index. A result whose worktree changed while the
   contract ran is `stale`.
 - **Ship to main** opens only while the last verify passed. The host checks the worktree
@@ -268,7 +268,7 @@ The Changes tab ends a coding session in one of two ways, chosen by the operator
 
 ## History
 
-Conversations are the host's own state (Agent-Workspace ADR-0019 §2): one event log per
+Conversations are the host's own state (DONWI Workspace ADR-0019 §2): one event log per
 conversation at `<workspace>/.local/agent/sessions/<id>/events.jsonl`. The first line names
 its scope; each later line is one message, with tool calls by name, status, and a result cut
 to 2,000 characters as the transcript shows it. The rules:
@@ -294,7 +294,7 @@ The wireframe was approved with three questions open; the answers:
    plans are Markdown tables other agents edit by hand, so they come last and only
    through `ws`, with a revision check.
 3. **An outside agent's drawer shows its activity and its project's runs; the chat there
-   is Agent Control's.** The desk cannot send a message into a Claude Code or opencode
+   is DONWI Desk's.** The desk cannot send a message into a Claude Code or opencode
    session - they are separate processes with no inbound API - and pretending otherwise
    would lose messages. The drawer says so plainly.
 

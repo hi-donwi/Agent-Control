@@ -16,7 +16,7 @@ export function BrainManagement() {
         setTargetId(available[0]?.id ?? '');
       })
       .catch(() => {
-        if (current) setError('Configured Agent Brain targets could not be loaded.');
+        if (current) setError('Configured DONWI Brain targets could not be loaded.');
       });
     return () => { current = false; };
   }, []);
@@ -27,8 +27,8 @@ export function BrainManagement() {
     <section className="brain-management" aria-labelledby="brain-management-title">
       <header className="brain-management__heading">
         <div>
-          <h3 id="brain-management-title" className="settings-label">Agent Brain management</h3>
-          <p className="settings-hint">This is a Brain-origin interface. Account credentials stay inside Agent Brain and never enter Agent Control.</p>
+          <h3 id="brain-management-title" className="settings-label">DONWI Brain management</h3>
+          <p className="settings-hint">This is a Brain-origin interface. Account credentials stay inside DONWI Brain and never enter DONWI Desk.</p>
         </div>
       </header>
       {targets.length > 1 && (
@@ -44,13 +44,13 @@ export function BrainManagement() {
         <iframe
           key={`${target.id}:${target.managementUrl}`}
           className="brain-management__frame"
-          title={`Agent Brain management for ${target.id}`}
+          title={`DONWI Brain management for ${target.id}`}
           src={`${target.managementUrl}/manage-ui/`}
           sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
           referrerPolicy="no-referrer"
         />
       ) : targets.length === 0 && !error ? (
-        <p className="settings-hint">No secure Agent Brain management endpoint is configured.</p>
+        <p className="settings-hint">No secure DONWI Brain management endpoint is configured.</p>
       ) : null}
     </section>
   );

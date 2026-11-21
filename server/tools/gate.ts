@@ -75,7 +75,7 @@ export async function gate<T>(
     requestId: request.id,
     expiresAt: request.expiresAt,
     message: `This action needs the operator's approval. Ask them to approve request ${request.id} `
-      + `in Agent-Control, then call this tool again with the same arguments and approvalId "${request.id}". `
+      + `in DONWI Desk, then call this tool again with the same arguments and approvalId "${request.id}". `
       + `Do not retry without it - the request will not execute on its own.`,
   };
 }

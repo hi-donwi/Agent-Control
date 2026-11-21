@@ -1,28 +1,28 @@
-# Agent Workspace Suite
+# DONWI Agent Suite
 
 ## Recommendation
 
-Ship one user-facing **Agent Workspace Suite** with Agent-Control as its desktop/loopback
+Ship one user-facing **DONWI Agent Suite** with DONWI Desk as its desktop/loopback
 host and orchestrator. Do not merge component repositories or make their runtimes one
 process. The suite should be assembled from separate, versioned artifacts using a signed
 compatibility manifest and a single installer/update surface.
 
 This is a packaging and product-surface decision, not a source-repository consolidation.
-Agent-Control already integrates the components through `ws`, profile-scoped Agent-Brain
+DONWI Desk already integrates the components through `ws`, profile-scoped DONWI Brain
 endpoints, the workspace skill catalog, and `ws scan`. The first implementation adds an
-inventory of those integrations to Agent-Control Settings and a read-only status endpoint.
-The full installer is a later phase: the current Tauri package contains Agent-Control's
+inventory of those integrations to DONWI Desk Settings and a read-only status endpoint.
+The full installer is a later phase: the current Tauri package contains DONWI Desk's
 Node host only and is not a complete multi-platform suite installer.
 
 ## Component contract
 
-| Component | Owns | Installed/operated as | Readiness shown by Agent-Control |
+| Component | Owns | Installed/operated as | Readiness shown by DONWI Desk |
 |---|---|---|---|
-| Agent-Control | Desk, sessions, approvals, project-bound tools, and suite UI | Bundled host and React UI | `ready` while this host is serving the page |
-| Agent-Brain | Provider accounts, inference credentials, model/profile routing | Separate service; local or remote | `configured` when a `purpose: "agent-brain"` endpoint exists; no health probe is implied |
-| Agent-Workspace | `ws`, project registry, context, runs, policy, and verification contracts | User-selected workspace checkout | `configured` when the selected root has framework markers and an executable `ws` entry point; doctor is not run |
-| Agent-Skills | Portable Agent Skills catalog and pack metadata | Public catalog synchronized into `.agents/skills` in the selected workspace | `configured` when at least one `SKILL.md` exists in that catalog; synchronization is not verified |
-| Agent-Secure | Deterministic audit verdicts, operator policy validation, scanner digest verification | Separate CLI invoked through `ws scan` or CI | `configured` when the CLI can be resolved; policy/digests are not checked and no scan is run |
+| DONWI Desk | Desk, sessions, approvals, project-bound tools, and suite UI | Bundled host and React UI | `ready` while this host is serving the page |
+| DONWI Brain | Provider accounts, inference credentials, model/profile routing | Separate service; local or remote | `configured` when a `purpose: "agent-brain"` endpoint exists; no health probe is implied |
+| DONWI Workspace | `ws`, project registry, context, runs, policy, and verification contracts | User-selected workspace checkout | `configured` when the selected root has framework markers and an executable `ws` entry point; doctor is not run |
+| DONWI Skills | Portable Agent Skills catalog and pack metadata | Public catalog synchronized into `.agents/skills` in the selected workspace | `configured` when at least one `SKILL.md` exists in that catalog; synchronization is not verified |
+| DONWI Secure | Deterministic audit verdicts, operator policy validation, scanner digest verification | Separate CLI invoked through `ws scan` or CI | `configured` when the CLI can be resolved; policy/digests are not checked and no scan is run |
 
 The API reports only component IDs, roles, distribution modes, and readiness states. It
 does not return workspace paths, project/client names, account names, provider URLs,
@@ -38,16 +38,16 @@ project's existing Brain egress policy.
 
 ## Packaging boundary
 
-- Bundle Agent-Control's host and UI in the suite desktop installer.
-- Keep Agent-Brain separately operable so the suite can use the existing remote/VM setup or
+- Bundle DONWI Desk's host and UI in the suite desktop installer.
+- Keep DONWI Brain separately operable so the suite can use the existing remote/VM setup or
   a supported local service. If a future installer includes a local Brain artifact, it must
   be explicit and separately versioned; it must not import provider credentials.
-- Provide the Agent-Workspace framework/CLI through a compatible release artifact or an
+- Provide the DONWI Workspace framework/CLI through a compatible release artifact or an
   explicit workspace bootstrap option. The user's selected workspace and its `context/`,
   `.local/`, and product repositories remain outside the application bundle.
-- Pin Agent-Skills source revision in release metadata and continue to use
-  `ws skills sync`; never maintain a second copy in Agent-Control.
-- Distribute Agent-Secure as a separately versioned CLI/CI gate. Preserve its
+- Pin DONWI Skills source revision in release metadata and continue to use
+  `ws skills sync`; never maintain a second copy in DONWI Desk.
+- Distribute DONWI Secure as a separately versioned CLI/CI gate. Preserve its
   operator-owned policies, scanner digests, fail-closed verdicts, and report redaction.
 - Keep per-machine endpoint credentials, Brain accounts, workspace context, project data,
   and security policy in their existing owner-controlled stores.
@@ -60,7 +60,7 @@ project's existing Brain egress policy.
 2. **Signed compatibility lock (tooling implemented):** the schema is
    `schemas/suite-lock.schema.json`. It records only the suite/component semantic versions,
   target platform, safe artifact names/SHA-256 digests for four bundled components, an
-  Agent-Brain service contract/version (without an endpoint), and an Ed25519 key ID/signature.
+  DONWI Brain service contract/version (without an endpoint), and an Ed25519 key ID/signature.
   Repository URLs, local paths, user/workspace/project names, credentials, and arbitrary notes
   are rejected. Lock entries have one canonical order and enumerate the five named products.
 3. **Reproducible release bundle (tooling implemented, no production lock yet):** sign a draft
@@ -73,7 +73,7 @@ project's existing Brain egress policy.
    release key or lock is checked in.
 4. **Privacy/provenance gate (required before signing):** build from immutable component
    releases in clean release jobs, never from developer checkouts or selected workspaces.
-   Before signing, CI must run the approved Agent-Secure gate and privacy/secret scan over the
+   Before signing, CI must run the approved DONWI Secure gate and privacy/secret scan over the
    release inputs and produce a passing, reviewed build record. The suite assembler verifies
    integrity/provenance assertions; it cannot inspect the semantic contents of an opaque binary
    and is not a substitute for that gate. Keep signing keys in the release secret manager, not
@@ -88,7 +88,7 @@ project's existing Brain egress policy.
 ### Lock signing and assembly
 
 The release pipeline stages exactly four immutable component release assets in a private,
-temporary directory; Agent-Brain is represented as a separately operated service, not a desktop
+temporary directory; DONWI Brain is represented as a separately operated service, not a desktop
 binary. `schemas/suite-lock-draft.schema.json` allows the five component IDs/versions and Brain
 service contract, plus safe artifact basenames for the four bundled components.
 `suite:create-lock-draft` hashes only those four staged files and serializes no staging path. The
@@ -118,9 +118,9 @@ pnpm run suite:assemble -- \
   --trusted-key "agent-suite-release-2026=$SUITE_RELEASE_PUBLIC_KEY_FILE"
 ```
 
-The signing command accepts only an Agent-Secure schema-v1 report with `status: pass`, both
+The signing command accepts only a DONWI Secure schema-v1 report with `status: pass`, both
 `gitleaks` and `osv-scanner` checks passing, no findings, no policy exceptions, and a scanner
-version matching the bundled Agent-Secure component. It stores the policy digest, scanner tool
+version matching the bundled DONWI Secure component. It stores the policy digest, scanner tool
 digests, and a hash of a sanitized attestation. The report's workspace root, timestamp, details,
 and paths do not enter the lock and are never bundled or logged. The release job must verify that
 the report came from the clean source revisions used to build the locked artifacts and that its
@@ -143,7 +143,7 @@ causes assembly to fail. The bundle is a verified artifact folder, not yet a des
 
 The lock signs hashes and release metadata, not the semantic content of an opaque binary. The
 release pipeline therefore must build from clean immutable component releases, run its
-operator-approved Agent-Secure and privacy/secret gates before signing, and retain sanitized
+operator-approved DONWI Secure and privacy/secret gates before signing, and retain sanitized
 provenance evidence outside the user-facing bundle. No release lock or production key is
 available yet, so the commands must not be used to create a pretend release from checkout
 files.
@@ -154,11 +154,11 @@ Audit performed 2026-11-08 against published component tags and GitHub release m
 
 | Component | Published release evidence | Bundle status |
 |---|---|---|
-| Agent-Control | No published GitHub Release artifact. | Not eligible. |
-| Agent-Brain | `v1.0.0` Git tag, but no Release for the profile-scoped service contract. | Not eligible. |
-| Agent-Workspace | No Git tags or GitHub Releases. | Not eligible. |
-| Agent-Skills | No Git tags or GitHub Releases. | Not eligible. |
-| Agent-Secure | `v0.1.6` provides Darwin/Linux assets and SHA-256 values, but no artifact signature. | Insufficient provenance for the suite lock. |
+| DONWI Desk | No published GitHub Release artifact. | Not eligible. |
+| DONWI Brain | `v1.0.0` Git tag, but no Release for the profile-scoped service contract. | Not eligible. |
+| DONWI Workspace | No Git tags or GitHub Releases. | Not eligible. |
+| DONWI Skills | No Git tags or GitHub Releases. | Not eligible. |
+| DONWI Secure | `v0.1.6` provides Darwin/Linux assets and SHA-256 values, but no artifact signature. | Insufficient provenance for the suite lock. |
 
 Therefore no production lock or bundle has been generated. Tests use synthetic temporary artifacts
 and an ephemeral in-memory key only; neither is written to the repository.
@@ -166,13 +166,13 @@ and an ephemeral in-memory key only; neither is written to the repository.
 ## License and privacy release gate
 
 The bundle must preserve each component's applicable license notices; notices must not be
-rewritten or silently redacted. Agent-Control currently has no repository `LICENSE` or package
+rewritten or silently redacted. DONWI Desk currently has no repository `LICENSE` or package
 license declaration, so redistribution rights must be established before a public suite release.
 The suite lock and UI omit individual names and all private paths. If a component's required
 copyright notice contains personal attribution, the release owner must explicitly approve that
 distribution or resolve the license before packaging; this tool never copies notices on its own.
 
-The release job must use clean, immutable component releases, run the approved Agent-Secure and
+The release job must use clean, immutable component releases, run the approved DONWI Secure and
 privacy/secret gate, and sign only after both pass. The assembler validates the signed metadata,
 hashes, and exact staged-file allowlist; it does not claim to inspect opaque binary contents.
 No workspace `context/`, `.local/`, projects, endpoint configuration, provider credentials,
@@ -188,7 +188,7 @@ scanner policy, or skill contents are inputs to the packaging tool.
   artifacts must exist before a production lock can be assembled.
 - No packaging of credentials, private context, client/project data, or user workspaces.
 - No production signing key generation, publication, or trust-root rotation in this change.
-- No changes to Agent-Brain, Agent-Skills, Agent-Secure, or Agent-Workspace source in this
-  Agent-Control slice.
+- No changes to DONWI Brain, DONWI Skills, DONWI Secure, or DONWI Workspace source in this
+  DONWI Desk slice.
 
 See [ADR-0006](adr/0006-agent-workspace-suite-packaging.md) for the decision record.

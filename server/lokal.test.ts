@@ -12,7 +12,7 @@ describe('detectLokalEndpoint', () => {
     assert.equal(detectLokalEndpoint(home), null);
   });
 
-  it('detects the Agent Brain gateway only from a scoped credential and profile manifest', () => {
+  it('detects the DONWI Brain gateway only from a scoped credential and profile manifest', () => {
     const home = mkdtempSync(join(tmpdir(), 'lokal-home-'));
     mkdirSync(join(home, '.lokal'), { recursive: true });
     writeFileSync(join(home, '.lokal', 'agent-control.token'), 'scoped-token\n');
@@ -27,7 +27,7 @@ describe('detectLokalEndpoint', () => {
     assert.equal(ep.credential, 'file:~/.lokal/agent-control.token');
     assert.deepEqual(ep.routingProfile, profile);
     // The gateway forwards to cloud accounts: a project's context reaches it only when that
-    // project's policy lists it, the same as a configured Agent Brain endpoint.
+    // project's policy lists it, the same as a configured DONWI Brain endpoint.
     assert.equal(ep.locality, 'remote');
     assert.equal(ep.purpose, 'agent-brain');
     assert.deepEqual(ep.models, []);

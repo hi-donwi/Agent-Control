@@ -420,7 +420,7 @@ function Settings({ theme, onTheme }: Props) {
         <div>
           <p className="settings-label">Model endpoints</p>
           <p className="settings-hint">
-            Chat runs only through Agent Brain, which keeps provider accounts and keys. Brain endpoints
+            Chat runs only through DONWI Brain, which keeps provider accounts and keys. Brain endpoints
             live in .local/agent/endpoints.json.
           </p>
         </div>
@@ -441,7 +441,7 @@ function Settings({ theme, onTheme }: Props) {
         <section className="suite-panel" aria-labelledby="tool-locator-title">
           <div className="suite-panel__heading">
             <h3 className="settings-label" id="tool-locator-title">Required tools</h3>
-            <p className="settings-hint">Agent Control needs ws, brain, ripgrep, and git. Overrides are stored separately from endpoint credentials.</p>
+            <p className="settings-hint">DONWI Desk needs ws, brain, ripgrep, and git. Overrides are stored separately from endpoint credentials.</p>
           </div>
           <button type="button" disabled={toolPending} onClick={() => void refreshLoginPath()}>
             Search login-shell PATH
@@ -484,7 +484,7 @@ function Settings({ theme, onTheme }: Props) {
         <section className="suite-panel" aria-labelledby="autostart-title">
           <div className="suite-panel__heading">
             <h3 className="settings-label" id="autostart-title">Launch at login</h3>
-            <p className="settings-hint">Optional. Off by default; enable only if you want Agent Control to start when you sign in.</p>
+            <p className="settings-hint">Optional. Off by default; enable only if you want DONWI Desk to start when you sign in.</p>
           </div>
           <label className="suite-autostart-toggle">
             <input
@@ -500,7 +500,7 @@ function Settings({ theme, onTheme }: Props) {
       )}
       <section className="suite-panel" aria-labelledby="suite-panel-title">
         <div className="suite-panel__heading">
-          <h3 className="settings-label" id="suite-panel-title">Agent Workspace Suite</h3>
+          <h3 className="settings-label" id="suite-panel-title">DONWI Agent Suite</h3>
           <p className="settings-hint">Readiness only; components remain independently managed.</p>
         </div>
         {suiteError && <p className="suite-panel__message" role="status">{suiteError}</p>}

@@ -6,7 +6,7 @@ import { readRegistry } from '../desk/registry.js';
 import type { WsInputRunner } from '../desk/ws-input.js';
 
 /**
- * Project management for a chat bound to a project (Agent-Workspace ADR-0024): the same
+ * Project management for a chat bound to a project (DONWI Workspace ADR-0024): the same
  * `ws` commands the desk and `ws mcp` use, within the chat's project and its client's own
  * work. Reading is free; every change is the `task_change` action under the project's
  * operator policy (ADR-0014), so the operator decides whether it runs or waits for an

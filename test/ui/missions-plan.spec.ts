@@ -6,7 +6,7 @@ import { PROJECT } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
- * The Backlog, the Timeline, and the client dossier (Agent-Workspace ADR-0024), against the
+ * The Backlog, the Timeline, and the client dossier (DONWI Workspace ADR-0024), against the
  * stub's task store and a dossier the spec writes. Dates are relative to today, so the
  * Timeline's week always holds them.
  */

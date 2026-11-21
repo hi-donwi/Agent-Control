@@ -8,7 +8,7 @@ interface Props {
   decidingIds: string[];
 }
 
-/** The operator's inbox for local approval requests (Agent-Workspace ADR-0020). */
+/** The operator's inbox for local approval requests (DONWI Workspace ADR-0020). */
 export function ApprovalInbox({ requests, onDecide, decidingIds }: Props) {
   const [, forceTick] = useState(0);
   useEffect(() => {

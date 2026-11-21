@@ -2,7 +2,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from 'node:path';
 
 /**
- * The host's own state (Agent-Workspace ADR-0019 §2): a replayable event log per agent
+ * The host's own state (DONWI Workspace ADR-0019 §2): a replayable event log per agent
  * session - one per conversation - at `<workspace>/.local/agent/sessions/<id>/events.jsonl`.
  * The first line names the conversation's scope (a project key, or `_workspace` for a chat
  * bound to no project); every later line is one message.

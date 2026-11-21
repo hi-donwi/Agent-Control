@@ -22,11 +22,11 @@ export async function getSuiteManifest(input: SuiteReadinessInput): Promise<Suit
 
   return {
     schemaVersion: 1,
-    name: 'Agent Workspace Suite',
+    name: 'DONWI Agent Suite',
     components: [
       {
         id: 'agent-control',
-        name: 'Agent-Control',
+        name: 'DONWI Desk',
         role: 'Host, operator UI, and agent tool orchestration',
         distribution: 'bundled application',
         requiredFor: 'all suite features',
@@ -35,18 +35,18 @@ export async function getSuiteManifest(input: SuiteReadinessInput): Promise<Suit
       },
       {
         id: 'agent-brain',
-        name: 'Agent-Brain',
+        name: 'DONWI Brain',
         role: 'Inference, provider accounts, and model routing',
         distribution: 'separate service',
         requiredFor: 'real model inference',
         state: input.brainConfigured ? 'configured' : 'not-configured',
         detail: input.brainConfigured
           ? 'A Brain endpoint is configured. Connectivity and project egress are checked only when inference is requested.'
-          : 'Configure an Agent-Brain endpoint to enable real model inference.',
+          : 'Configure a DONWI Brain endpoint to enable real model inference.',
       },
       {
         id: 'agent-workspace',
-        name: 'Agent-Workspace',
+        name: 'DONWI Workspace',
         role: 'Workspace framework, ws CLI, context, and project lifecycle',
         distribution: 'selected workspace',
         requiredFor: 'project-aware tools and desk records',
@@ -57,18 +57,18 @@ export async function getSuiteManifest(input: SuiteReadinessInput): Promise<Suit
       },
       {
         id: 'agent-skills',
-        name: 'Agent-Skills',
+        name: 'DONWI Skills',
         role: 'Portable skill catalog and reusable agent workflows',
         distribution: 'workspace-synchronized catalog',
         requiredFor: 'authoritative skill retrieval',
         state: skillsReady ? 'configured' : 'not-installed',
         detail: skillsReady
           ? 'Skill catalog files are present. Catalog synchronization was not checked.'
-          : 'Sync an Agent-Skills catalog into the selected workspace.',
+          : 'Sync a DONWI Skills catalog into the selected workspace.',
       },
       {
         id: 'agent-secure',
-        name: 'Agent-Secure',
+        name: 'DONWI Secure',
         role: 'Deterministic security gate and scanner report normalizer',
         distribution: 'workspace CLI component',
         requiredFor: 'security scans and CI gates',

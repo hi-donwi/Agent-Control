@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 
 /**
- * LLM endpoints configured by wire protocol, not by vendor (Agent-Workspace ADR-0021).
+ * LLM endpoints configured by wire protocol, not by vendor (DONWI Workspace ADR-0021).
  *
  * A vendor, router, or local server that speaks one of these protocols is added in
  * `<workspace>/.local/agent/endpoints.json` - configuration, not code:
@@ -18,11 +18,11 @@ import { isAbsolute, join } from 'node:path';
  * wait longer than DEFAULT_CHAT_TIMEOUTS before a silent model ends the turn.
  *
  * `apiKey` is a reference (`env:NAME`, `keychain:NAME`, or `file:PATH` for a token file
- * readable only by its owner, such as Agent-Brain's `~/.lokal/agent-control.token`), never the
+ * readable only by its owner, such as DONWI Brain's `~/.lokal/agent-control.token`), never the
  * key itself. `mock` is a deterministic, offline model for tests and demos.
  *
  * `"locality": "remote"` marks a loopback endpoint that forwards elsewhere - a gateway or
- * router such as Agent-Brain serving cloud accounts - so a project's context reaches it
+ * router such as DONWI Brain serving cloud accounts - so a project's context reaches it
  * only when that project's policy lists it. It can only tighten: declaring a remote URL
  * `local` is refused.
  */

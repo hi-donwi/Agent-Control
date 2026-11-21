@@ -5,7 +5,7 @@ import type { ApprovalRequest } from '../lib/types';
 const POLL_MS = 5000;
 
 /**
- * Pending local approval requests (Agent-Workspace ADR-0020) for a project. Polls while
+ * Pending local approval requests (DONWI Workspace ADR-0020) for a project. Polls while
  * a project is selected; a project with no policy, or no pending requests, is silently
  * empty - this is a convenience inbox, not where the operator finds out policy is missing.
  */

@@ -4,7 +4,7 @@ import { AISDKError, APICallError, EmptyResponseBodyError, InvalidResponseDataEr
  * The stable, public view of a failed model call. The browser and the server log see only
  * this: an upstream error's message, response body, URL, and request body (which holds the
  * prompt) can carry credentials, account names, and client content, so none of it passes.
- * Agent Brain keeps the detail in its own logs.
+ * DONWI Brain keeps the detail in its own logs.
  */
 export type InferenceErrorCode =
   | 'unauthorized'
@@ -103,7 +103,7 @@ export function chatSetupError(error: unknown): { message: string; logLine: stri
     return { message: publicInferenceError(error).message, logLine: inferenceErrorLogLine(error) };
   }
   return {
-    message: 'The chat turn could not start. The Agent-Control log has the cause.',
+    message: 'The chat turn could not start. The DONWI Desk log has the cause.',
     logLine: `Chat error: ${error instanceof Error ? error.message : String(error)}`,
   };
 }
