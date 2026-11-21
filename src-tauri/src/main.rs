@@ -3,6 +3,7 @@
 
 mod app_lifecycle;
 mod desktop_bootstrap;
+mod launch_agent_migration;
 mod restart_policy;
 mod rotating_log;
 mod workspace_selection;
@@ -90,6 +91,25 @@ fn desktop_set_autostart(
         .map_err(|_| "Could not verify launch-at-login settings.".to_string())
 }
 
+/// Carries launch at login over from the LaunchAgent named after the previous product name.
+/// It never blocks startup: on failure the previous entry stays and the switch reads "off".
+#[cfg(target_os = "macos")]
+fn migrate_launch_at_login(app: &AppHandle) {
+    let Ok(home) = app.path().home_dir() else {
+        return;
+    };
+    let launch_agents = home.join("Library").join("LaunchAgents");
+    let current_label = app.package_info().name.clone();
+    let outcome = launch_agent_migration::migrate(&launch_agents, &current_label, || {
+        app.autolaunch()
+            .enable()
+            .map_err(|_| "Could not enable launch at login under the current name.".to_string())
+    });
+    if let Err(message) = outcome {
+        eprintln!("{message}");
+    }
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -109,13 +129,13 @@ fn quit_app(app: &AppHandle) {
 }
 
 fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Agent Control", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show DONWI Desk", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))?;
     let tray = TrayIconBuilder::new()
         .icon(icon)
-        .tooltip("Agent Control")
+        .tooltip("DONWI Desk")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -151,7 +171,7 @@ async fn desktop_select_workspace(
     app.dialog()
         .file()
         .set_parent(&window)
-        .set_title("Choose your Agent-Workspace folder")
+        .set_title("Choose your DONWI Workspace folder")
         .pick_folder(move |selected| {
             let _ = sender.send(selected);
         });
@@ -180,6 +200,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(AppLifecycle::default());
+            #[cfg(target_os = "macos")]
+            migrate_launch_at_login(app.handle());
             let host_resource = app
                 .path()
                 .resolve("agent-control-host", BaseDirectory::Resource)

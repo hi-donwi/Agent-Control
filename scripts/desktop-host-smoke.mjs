@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const executablePath = process.argv.includes('--bundle')
-  ? 'src-tauri/target/release/bundle/macos/Agent Control.app/Contents/Resources/agent-control-host'
+  ? 'src-tauri/target/release/bundle/macos/DONWI Desk.app/Contents/Resources/agent-control-host'
   : 'src-tauri/target/desktop-host/agent-control-host';
 const executable = resolve(projectRoot, process.env.AC_DESKTOP_HOST_PATH ?? executablePath);
 try {

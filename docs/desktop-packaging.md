@@ -5,7 +5,7 @@ resource. The executable contains the Node runtime and bundled server dependenci
 not include the workspace, workspace CLI, external system tools, provider credentials, or
 user configuration.
 
-This is the Agent-Control application package, not yet the complete Agent Workspace Suite
+This is the DONWI Desk application package, not yet the complete DONWI Agent Suite
 installer. The component boundary, readiness contract, and future signed suite manifest are
 documented in [suite-architecture.md](suite-architecture.md).
 
@@ -30,7 +30,7 @@ pnpm run desktop:host:bundle-smoke
 
 The executable and intermediate SEA files are generated under the ignored
 `src-tauri/target/desktop-host/` directory. Tauri copies the executable into
-`Agent Control.app/Contents/Resources/agent-control-host`, the path resolved by the Rust
+`DONWI Desk.app/Contents/Resources/agent-control-host`, the path resolved by the Rust
 bootstrap. Cross-architecture builds are rejected; build the host with Node matching the
 Tauri target architecture.
 
@@ -47,7 +47,7 @@ Finder window uses the default layout. The app-only command is useful for valida
 
 ## Workspace selection
 
-On first launch, the app asks the user to choose the Agent-Workspace folder containing
+On first launch, the app asks the user to choose the DONWI Workspace folder containing
 `AGENTS.md` and `.agents/standards`. The canonical path is stored in
 `app_config_dir()/workspace.json`, separate from provider settings and secrets. The Settings
 drawer shows the active root and allows it to be changed. A change starts and authenticates a
@@ -60,6 +60,22 @@ does not fall back to the packaged app's working directory. When no valid root i
 host is not started and the onboarding screen remains available. The standalone browser
 server keeps its existing root-discovery behavior. Smoke/e2e fixtures create the workspace
 markers and pass the root explicitly.
+
+## Upgrading from the Agent Control name
+
+The application was called Agent Control before the DONWI rename; it is now DONWI Desk.
+
+- The bundle is `DONWI Desk.app`. An installed `Agent Control.app` is not replaced; delete it
+  after the first start of DONWI Desk.
+- The bundle identifier `dev.agentworkspace.control` is unchanged, so the saved workspace,
+  settings, and webview storage carry over.
+- tauri-plugin-autostart names the LaunchAgent after the product name. On first start,
+  `src-tauri/src/launch_agent_migration.rs` checks for `~/Library/LaunchAgents/Agent Control.plist`;
+  when it is the one this app wrote (label `Agent Control`, program
+  `….app/Contents/MacOS/agent-control`), launch at login is enabled under `DONWI Desk` first
+  and the old file is removed. A file with that name that this app did not write is left alone.
+- The host executable `agent-control-host`, the Cargo package `agent-control`, and the
+  config folder `~/.agent-control/` keep their names.
 
 ## Release boundary
 
