@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { ToolDependencyError, toolLocator } from '../tool-locator.js';
+import { allowlistedChildEnv } from '../child-env.js';
 
 /** Runs `ws <args>` with `input` on stdin and returns stdout; rejects with stderr. */
 export type WsInputRunner = (args: string[], input: string) => Promise<string>;
@@ -29,7 +30,7 @@ export function realWsInputRunner(workspaceRoot: string): WsInputRunner {
       cwd: workspaceRoot,
       timeout: 15_000,
       maxBuffer: 256 * 1024,
-      env: { ...process.env, PAGER: 'cat', WS_AGENT: 'agent-control' },
+      env: allowlistedChildEnv(process.env, { WS_AGENT: 'agent-control' }),
     }, (err, stdout, stderr) => {
       if (err?.code === 'ENOENT') reject(new ToolDependencyError('ws'));
       else if (err) reject(new Error(stripAnsi(stderr || err.message).trim()));

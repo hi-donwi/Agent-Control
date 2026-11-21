@@ -22,6 +22,30 @@ function withPolicy(root: string, project: string, policy: unknown): void {
 }
 
 describe('runCommand', () => {
+  it('runs child commands with only the environment allowlist', async () => {
+    const { root, cwd } = gitProject();
+    withPolicy(root, 'demo', { schema_version: 1, default: 'read', actions: {} });
+    const key = 'UNFILTERED_TEST_VALUE';
+    const previous = process.env[key];
+    process.env[key] = 'must-not-reach-child';
+    try {
+      const result = await runCommand({ root, project: 'demo', cwd }, {
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write(JSON.stringify(Object.keys(process.env).sort()))'],
+      });
+      assert.ok('content' in result);
+      const keys = JSON.parse(result.content) as string[];
+      assert.ok(!keys.includes(key));
+      const unexpected = keys.filter((name) => !['PATH', 'HOME', 'LANG', 'TERM'].includes(name) && !name.startsWith('WS_'));
+      assert.deepEqual(unexpected, process.platform === 'darwin' && keys.includes('__CF_USER_TEXT_ENCODING')
+        ? ['__CF_USER_TEXT_ENCODING']
+        : []);
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
+
   it('is refused with no project policy - never run', async () => {
     const { root, cwd } = gitProject();
     const result = await runCommand({ root, project: 'demo', cwd }, { command: 'echo', args: ['x'] });

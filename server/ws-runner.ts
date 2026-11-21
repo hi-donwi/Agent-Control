@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import type { SessionRunner } from './coding-sessions.js';
 import type { HandBackDeps } from './hand-back.js';
 import { ToolDependencyError, toolLocator } from './tool-locator.js';
+import { allowlistedChildEnv } from './child-env.js';
 
 /** The real `ws` CLI and `git`, for coding-sessions.ts outside its tests. */
 export function realSessionRunner(workspaceRoot: string): SessionRunner {
@@ -13,7 +14,7 @@ export function realSessionRunner(workspaceRoot: string): SessionRunner {
         cwd: workspaceRoot,
         timeout: 60_000,
         maxBuffer: 1024 * 1024,
-        env: { ...process.env, PAGER: 'cat', ...env },
+        env: allowlistedChildEnv(process.env, env),
       }, (err, stdout, stderr) => {
         if (err?.code === 'ENOENT') reject(new ToolDependencyError('ws'));
         else if (err) reject(new Error(stderr || err.message));
@@ -48,7 +49,7 @@ export function realHandBackDeps(workspaceRoot: string): HandBackDeps {
         cwd: workspaceRoot,
         timeout: 30 * 60_000,
         maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, PAGER: 'cat', ...env },
+        env: allowlistedChildEnv(process.env, env),
       }, (err, stdout, stderr) => {
         if (err?.code === 'ENOENT') {
           resolve({ code: 127, stdout: '', stderr: new ToolDependencyError('ws').message });

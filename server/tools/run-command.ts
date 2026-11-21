@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { gate } from './gate.js';
+import { allowlistedChildEnv } from '../child-env.js';
 
 export interface RunCommandDeps {
   root: string;
@@ -24,7 +25,12 @@ const MAX_OUTPUT = 32 * 1024;
 
 function execute(command: string, args: string[], cwd: string): Promise<{ content: string; exitCode: number }> {
   return new Promise((resolve) => {
-    execFile(command, args, { cwd, timeout: 30_000, maxBuffer: MAX_OUTPUT * 2 }, (err, stdout, stderr) => {
+    execFile(command, args, {
+      cwd,
+      timeout: 30_000,
+      maxBuffer: MAX_OUTPUT * 2,
+      env: allowlistedChildEnv(),
+    }, (err, stdout, stderr) => {
       const output = (stdout + stderr).slice(0, MAX_OUTPUT);
       const exitCode = typeof (err as { code?: number })?.code === 'number' ? (err as { code: number }).code : err ? 1 : 0;
       resolve({ content: output || (err ? err.message : '(no output)'), exitCode });
