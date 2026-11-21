@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Drawer } from './Drawer';
 import {
   apiFetch, chooseDesktopWorkspace, clearDesktopToolOverride, getDesktopHostStatus,
-  getDesktopTools, getDesktopWorkspaceRoot, refreshDesktopToolsFromLoginShell,
-  setDesktopToolOverride,
+  getDesktopAutostartStatus, getDesktopTools, getDesktopWorkspaceRoot,
+  refreshDesktopToolsFromLoginShell, setDesktopAutostart, setDesktopToolOverride,
 } from '../../lib/api';
 import type { DesktopToolName, DesktopToolStatus } from '../../lib/desktop-tools';
 import { BackIcon, ChevronIcon, CloseIcon } from '../icons';
@@ -255,11 +255,16 @@ function Settings({ theme, onTheme }: Props) {
   const [workspaceStatus, setWorkspaceStatus] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
   const [hostStatus, setHostStatus] = useState<DesktopHostStatus | null>(null);
+  const [desktopHostSupported, setDesktopHostSupported] = useState(false);
   const [tools, setTools] = useState<DesktopToolStatus[]>([]);
   const [toolPaths, setToolPaths] = useState<Partial<Record<DesktopToolName, string>>>({});
   const [toolError, setToolError] = useState('');
   const [toolMessage, setToolMessage] = useState('');
   const [toolPending, setToolPending] = useState(false);
+  const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
+  const [autostartSupported, setAutostartSupported] = useState(false);
+  const [autostartPending, setAutostartPending] = useState(false);
+  const [autostartError, setAutostartError] = useState('');
   const { manifest: suite, error: suiteError } = useSuiteManifest();
   const workspaceRoot = getDesktopWorkspaceRoot();
   const classic = new URL(window.location.href);
@@ -271,14 +276,37 @@ function Settings({ theme, onTheme }: Props) {
     const refresh = async () => {
       try {
         const status = await getDesktopHostStatus();
-        if (current && status) setHostStatus(status);
+        if (current && status) {
+          setDesktopHostSupported(true);
+          setHostStatus(status);
+        } else if (current) setDesktopHostSupported(false);
       } catch {
-        if (current) setHostStatus({ lifecycle: 'restarting', restartCount: 0, lastExitCode: null });
+        if (current) {
+          setDesktopHostSupported(true);
+          setHostStatus({ lifecycle: 'restarting', restartCount: 0, lastExitCode: null });
+        }
       }
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 1500);
     return () => { current = false; window.clearInterval(timer); };
+  }, [workspaceRoot]);
+
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    let current = true;
+    void getDesktopAutostartStatus().then((enabled) => {
+      if (current) {
+        setAutostartSupported(enabled !== null);
+        setAutostartEnabled(enabled);
+      }
+    }).catch(() => {
+      if (current) {
+        setAutostartSupported(true);
+        setAutostartError('Launch-at-login status is unavailable.');
+      }
+    });
+    return () => { current = false; };
   }, [workspaceRoot]);
 
   useEffect(() => {
@@ -346,6 +374,18 @@ function Settings({ theme, onTheme }: Props) {
     }
   }
 
+  async function changeAutostart(enabled: boolean) {
+    setAutostartPending(true);
+    setAutostartError('');
+    try {
+      setAutostartEnabled(await setDesktopAutostart(enabled));
+    } catch (cause) {
+      setAutostartError(cause instanceof Error ? cause.message : 'Could not update launch-at-login.');
+    } finally {
+      setAutostartPending(false);
+    }
+  }
+
   async function changeWorkspace() {
     setWorkspacePending(true);
     setWorkspaceError('');
@@ -386,7 +426,7 @@ function Settings({ theme, onTheme }: Props) {
         </div>
       </div>
       <BrainManagement />
-      {workspaceRoot && (
+      {workspaceRoot && desktopHostSupported && (
         <section className="suite-panel" aria-labelledby="desktop-host-title">
           <div className="suite-panel__heading">
             <h3 className="settings-label" id="desktop-host-title">Desktop host</h3>
@@ -397,7 +437,7 @@ function Settings({ theme, onTheme }: Props) {
           </p>
         </section>
       )}
-      {workspaceRoot && (
+      {workspaceRoot && desktopHostSupported && (
         <section className="suite-panel" aria-labelledby="tool-locator-title">
           <div className="suite-panel__heading">
             <h3 className="settings-label" id="tool-locator-title">Required tools</h3>
@@ -438,6 +478,24 @@ function Settings({ theme, onTheme }: Props) {
           </ul>
           {toolMessage && <p className="suite-panel__message" role="status" aria-live="polite">{toolMessage}</p>}
           {toolError && <p className="suite-panel__error" role="alert">{toolError}</p>}
+        </section>
+      )}
+      {workspaceRoot && autostartSupported && (
+        <section className="suite-panel" aria-labelledby="autostart-title">
+          <div className="suite-panel__heading">
+            <h3 className="settings-label" id="autostart-title">Launch at login</h3>
+            <p className="settings-hint">Optional. Off by default; enable only if you want Agent Control to start when you sign in.</p>
+          </div>
+          <label className="suite-autostart-toggle">
+            <input
+              type="checkbox"
+              checked={autostartEnabled ?? false}
+              disabled={autostartPending || autostartEnabled === null}
+              onChange={(event) => void changeAutostart(event.target.checked)}
+            />
+            <span>{autostartEnabled ? 'Enabled' : autostartEnabled === null ? 'Checking...' : 'Disabled'}</span>
+          </label>
+          {autostartError && <p className="suite-panel__error" role="alert">{autostartError}</p>}
         </section>
       )}
       <section className="suite-panel" aria-labelledby="suite-panel-title">

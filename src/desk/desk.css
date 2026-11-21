@@ -940,6 +940,8 @@
 .suite-component__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 100%; }
 .suite-component__actions input { min-width: min(18rem, 48vw); max-width: 100%; border: 1px solid var(--d-line); border-radius: 7px; padding: 6px 8px; background: var(--d-panel); color: var(--d-ink); font: inherit; font-size: 12px; }
 .suite-panel__error { margin: 0; color: var(--d-attn); font-size: 12px; overflow-wrap: anywhere; }
+.suite-autostart-toggle { display: inline-flex; align-items: center; gap: 9px; min-height: 40px; color: var(--d-ink); font-size: 13px; cursor: pointer; }
+.suite-autostart-toggle input { width: 18px; height: 18px; accent-color: var(--d-accent); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 700px) {
   .suite-component { grid-template-columns: 1fr; }

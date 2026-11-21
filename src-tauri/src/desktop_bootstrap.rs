@@ -112,6 +112,12 @@ impl DesktopHost {
             })
     }
 
+    pub(crate) fn stop(&self) {
+        if let Ok(mut running) = self.running.lock() {
+            running.take();
+        }
+    }
+
     pub(crate) fn workspace_root(&self) -> Option<String> {
         self.running
             .lock()
