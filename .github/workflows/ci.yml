@@ -65,3 +65,37 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm run build
+
+  # The desktop shell is Rust and ships for macOS only, so the ubuntu job above never
+  # compiles it. This job checks formatting, builds and tests the Tauri crate on macOS,
+  # and smokes the packaged Node host that the app bundles as a resource.
+  desktop:
+    name: desktop (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.4'
+      - name: Enable pinned pnpm
+        run: corepack enable && corepack prepare pnpm@10.18.1 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt
+          rustup default 1.99.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+      - name: Rust format
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      # tauri::generate_context! embeds ../dist and tauri-build requires the bundled host
+      # resource to exist, so both are built before the crate compiles.
+      - name: Build web client
+        run: pnpm run build
+      - name: Build packaged host
+        run: pnpm run desktop:host:build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Packaged host smoke
+        run: pnpm run desktop:host:smoke
