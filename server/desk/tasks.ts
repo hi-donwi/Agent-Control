@@ -2,7 +2,7 @@ import { KEY_RE } from './workspace-files.js';
 import { reportedLine, type WsInputRunner } from './ws-input.js';
 
 /**
- * Operator tasks from the desk, through `ws task` (Agent-Workspace `<context>/tasks/<key>/`).
+ * Operator tasks from the desk, through `ws task` (DONWI Workspace `<context>/tasks/<key>/`).
  * A run's plan rows are not tasks here: they stay with the run's owner.
  */
 export const TASK_STATUSES = ['backlog', 'ready', 'in_progress', 'review', 'done'] as const;

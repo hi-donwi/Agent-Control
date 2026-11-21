@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
 import type { CodingSession } from '../lib/types';
 
-/** The selected project's coding session (Agent-Workspace ADR-0019): a `ws agent start` worktree its mutating tools then work in. */
+/** The selected project's coding session (DONWI Workspace ADR-0019): a `ws agent start` worktree its mutating tools then work in. */
 export function useCodingSession(project: string | undefined) {
   const [session, setSession] = useState<CodingSession | null>(null);
   const [sessions, setSessions] = useState<CodingSession[]>([]);

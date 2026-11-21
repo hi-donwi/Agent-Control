@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Risk-based agent autonomy (Agent-Workspace ADR-0014): what a tool call may do before
+ * Risk-based agent autonomy (DONWI Workspace ADR-0014): what a tool call may do before
  * a human decides, read from the operator-owned policy outside every repository. This
  * mirrors `ws policy check` exactly, so the same policy file governs the CLI and the
  * agent host identically.

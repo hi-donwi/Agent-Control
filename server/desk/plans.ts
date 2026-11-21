@@ -2,7 +2,7 @@ import { KEY_RE } from './workspace-files.js';
 import { reportedLine, type WsInputRunner } from './ws-input.js';
 
 /**
- * A run's plan row from the desk, through `ws plan status --operator` (Agent-Workspace):
+ * A run's plan row from the desk, through `ws plan status --operator` (DONWI Workspace):
  * `ws` checks that the person at the desk owns the run, that one row at most is in
  * progress, and that the plan has not changed since the desk showed it.
  */

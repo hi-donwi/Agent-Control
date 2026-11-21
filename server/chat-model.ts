@@ -21,8 +21,8 @@ export interface ChatModelDeps {
 export type ChatModelResult = { model: ChatModel; locality: Locality } | { status: 400 | 403; error: string };
 
 /**
- * Chat inference runs only through Agent Brain (docs/specs/agent-brain-routed-sessions.md):
- * Brain owns provider accounts, credentials, and routing, so Agent-Control never calls a
+ * Chat inference runs only through DONWI Brain (docs/specs/agent-brain-routed-sessions.md):
+ * Brain owns provider accounts, credentials, and routing, so DONWI Desk never calls a
  * provider directly, not even when Brain is down. `mock` answers offline and sends nothing.
  */
 export function isChatEndpoint(endpoint: Endpoint): boolean {
@@ -31,7 +31,7 @@ export function isChatEndpoint(endpoint: Endpoint): boolean {
 
 /**
  * The endpoint and model a chat starts with when the client names none: the configured
- * default when it can chat, else the first Agent Brain endpoint, else `mock`.
+ * default when it can chat, else the first DONWI Brain endpoint, else `mock`.
  */
 export function chatDefaults(config: AppConfig, endpoints: Endpoint[]): { provider: string; model: string } {
   const configured = endpoints.find((e) => e.name === config.defaultProvider && isChatEndpoint(e));
@@ -57,7 +57,7 @@ function egressRefusal(target: Endpoint, request: ChatModelRequest, root: string
 }
 
 /**
- * The model for a chat request: an Agent Brain endpoint (or `mock`), checked against the
+ * The model for a chat request: a DONWI Brain endpoint (or `mock`), checked against the
  * project's egress policy before any request is made.
  */
 export function resolveChatModel(request: ChatModelRequest, deps: ChatModelDeps): ChatModelResult {
@@ -65,14 +65,14 @@ export function resolveChatModel(request: ChatModelRequest, deps: ChatModelDeps)
   if (!endpoint) {
     return {
       status: 400,
-      error: `Endpoint "${request.provider}" is not configured. Chat runs through an Agent Brain endpoint `
+      error: `Endpoint "${request.provider}" is not configured. Chat runs through a DONWI Brain endpoint `
         + '(purpose "agent-brain") in .local/agent/endpoints.json.',
     };
   }
   if (!isChatEndpoint(endpoint)) {
     return {
       status: 400,
-      error: `Endpoint "${endpoint.name}" is not an Agent Brain endpoint. Chat runs only through Agent Brain; `
+      error: `Endpoint "${endpoint.name}" is not a DONWI Brain endpoint. Chat runs only through DONWI Brain; `
         + 'provider accounts and keys belong in Brain.',
     };
   }
@@ -81,7 +81,7 @@ export function resolveChatModel(request: ChatModelRequest, deps: ChatModelDeps)
   try {
     const apiKey = resolveCredential(endpoint.credential, { env: deps.env ?? process.env, keychain: deps.keychain });
     if (endpoint.purpose === 'agent-brain' && !isBrainProfileCredential(apiKey)) {
-      throw new Error('Agent Brain requires a profile-scoped credential; issue one with `brain router credential`.');
+      throw new Error('DONWI Brain requires a profile-scoped credential; issue one with `brain router credential`.');
     }
     const routingHeaders = endpoint.routingProfile
       ? { 'X-Brain-Profile': endpoint.routingProfile.id, 'X-Brain-Revision': endpoint.routingProfile.revision }

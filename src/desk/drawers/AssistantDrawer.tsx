@@ -265,7 +265,7 @@ function AgentCard({ agent }: { agent: FloorAgent }) {
         {agent.detail && <p className="agent-card-detail">{agent.detail}</p>}
         {agent.source !== 'host' && (
           <p className="agent-card-note">
-            Works in its own {agent.tool} session. The chat below is Agent Control on {agent.project};
+            Works in its own {agent.tool} session. The chat below is DONWI Desk on {agent.project};
             it does not reach that session.
           </p>
         )}

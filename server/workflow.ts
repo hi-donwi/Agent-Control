@@ -2,7 +2,7 @@ import type { CodingSession } from './coding-sessions.js';
 import type { HandBackDeps } from './hand-back.js';
 
 /**
- * Workflow rules (Agent-Workspace ADR-0024): a task handed to an agent from the board
+ * Workflow rules (DONWI Workspace ADR-0024): a task handed to an agent from the board
  * follows its coding session. The session carries the card it was started for
  * (`cardKey: task:<id>`); when its work is verified the task waits for review, when it ships
  * the task is shipped, and when it is discarded the task is ready for an agent again. Each

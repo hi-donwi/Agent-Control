@@ -27,7 +27,7 @@ export const APPROVALS = {
 /** A revision the inbox prints as its first eight characters. */
 export const HEAD_SHA = 'a1b2c3d4' + '5'.repeat(32);
 
-/** Provider keys left in the legacy config from before chat went through Agent Brain; never used or shown. */
+/** Provider keys left in the legacy config from before chat went through DONWI Brain; never used or shown. */
 export const LEGACY_OPENAI_KEY = 'sk-fixture-openai-key';
 export const LEGACY_ANTHROPIC_KEY = 'sk-ant-fixture-key';
 
@@ -232,7 +232,7 @@ export function createWorkspace(): Workspace {
     `key\tclient\tgroup\tfolder\n${PROJECT}\tframework\t-\tprojects/mock/${PROJECT}\n`);
 
   // The legacy config lives outside the workspace, in the isolated home. Its keys are from
-  // before chat went through Agent Brain: the settings spec proves they never reach the page
+  // before chat went through DONWI Brain: the settings spec proves they never reach the page
   // and that nothing rewrites the file.
   mkdirSync(join(home, '.agent-control'), { recursive: true });
   writeFileSync(join(home, '.agent-control', 'config.json'), JSON.stringify({
@@ -241,7 +241,7 @@ export function createWorkspace(): Workspace {
     defaultModel: 'claude-sonnet-4-20250514',
   }, null, 2));
 
-  // `mock` answers offline; `remote` is an Agent Brain endpoint declared to prove the UI
+  // `mock` answers offline; `remote` is a DONWI Brain endpoint declared to prove the UI
   // disables it unless the project's policy allows it; `direct` is not Brain, so chat never
   // lists it. None is ever called with a credential.
   writeFileSync(join(root, '.local', 'agent', 'endpoints.json'), JSON.stringify({

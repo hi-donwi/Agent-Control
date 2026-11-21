@@ -139,7 +139,7 @@ describe('deskFloor and readCollection on a disposable workspace', () => {
     assert.deepEqual(floor.zones[0].rooms[0].agents, []);
   });
 
-  it('builds the floor from Agent-Control host sessions, not external agent clocks', () => {
+  it('builds the floor from DONWI Desk host sessions, not external agent clocks', () => {
     const activity = new ActivityRegistry();
     activity.set('alpha', 'reading', 'read_file');
     const floor = deskFloor(root, activity, new Date('2026-10-16T10:00:00Z'));

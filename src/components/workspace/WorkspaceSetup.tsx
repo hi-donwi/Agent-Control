@@ -3,7 +3,7 @@ import { chooseDesktopWorkspace } from '../../lib/api';
 
 export function WorkspaceSetup() {
   const [pending, setPending] = useState(false);
-  const [status, setStatus] = useState('Choose the Agent-Workspace folder to start Agent Control.');
+  const [status, setStatus] = useState('Choose the DONWI Workspace folder to start DONWI Desk.');
   const [error, setError] = useState('');
 
   async function chooseWorkspace() {
@@ -17,7 +17,7 @@ export function WorkspaceSetup() {
         window.location.reload();
         return;
       }
-      setStatus('No workspace was selected. Agent Control has not started.');
+      setStatus('No workspace was selected. DONWI Desk has not started.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'We could not select that workspace. Try again.');
       setStatus('Workspace selection needs attention.');
@@ -29,11 +29,11 @@ export function WorkspaceSetup() {
   return (
     <main className="workspace-setup">
       <section className="workspace-setup__card" aria-labelledby="workspace-setup-title">
-        <p className="workspace-setup__eyebrow">Agent Control Desktop</p>
+        <p className="workspace-setup__eyebrow">DONWI Desk Desktop</p>
         <h1 id="workspace-setup-title">Choose a workspace</h1>
         <p>
-          Select the Agent-Workspace folder that contains <code>AGENTS.md</code> and{' '}
-          <code>.agents/standards</code>. Agent Control uses this folder as its active workspace.
+          Select the DONWI Workspace folder that contains <code>AGENTS.md</code> and{' '}
+          <code>.agents/standards</code>. DONWI Desk uses this folder as its active workspace.
         </p>
         <button
           type="button"

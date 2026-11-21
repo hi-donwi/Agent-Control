@@ -19,6 +19,6 @@ if (root) {
       </StrictMode>,
     );
   }).catch(() => {
-    root.textContent = 'Unable to start the Agent-Control desktop host. Restart the application.';
+    root.textContent = 'Unable to start the DONWI Desk desktop host. Restart the application.';
   });
 }

@@ -6,7 +6,7 @@ import { PROJECT } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
- * The Missions board and the task drawer (Agent-Workspace ADR-0024), against the stub's
+ * The Missions board and the task drawer (DONWI Workspace ADR-0024), against the stub's
  * task store: every change the page makes is a `ws task` command with the revision it read.
  */
 

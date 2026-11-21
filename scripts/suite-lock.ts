@@ -99,7 +99,7 @@ export interface SuiteLock extends SuiteLockPayload {
 
 export type TrustedSuiteKeys = ReadonlyMap<string, SuitePublicKey>;
 
-/** Sign release metadata only when an Agent-Secure report is a complete pass with no findings. */
+/** Sign release metadata only when a DONWI Secure report is a complete pass with no findings. */
 export function signSuiteLockDraft(
   draft: unknown,
   keyId: string,
@@ -222,7 +222,7 @@ export function validateSuiteLockDraft(input: unknown): SuiteLockDraft {
     if (expectedId === 'agent-brain') {
       exactKeys(component, ['id', 'delivery', 'version', 'service_contract'], 'Brain service component');
       if (component.delivery !== 'service' || component.service_contract !== 'agent-brain-profile-v1') {
-        throw new Error('Agent-Brain must be declared as the supported external inference service.');
+        throw new Error('DONWI Brain must be declared as the supported external inference service.');
       }
       return { id: 'agent-brain', delivery: 'service', version: component.version, service_contract: 'agent-brain-profile-v1' };
     }
@@ -252,17 +252,17 @@ export function validateSuiteLockDraft(input: unknown): SuiteLockDraft {
 }
 
 function validateAgentSecureReport(reportInput: unknown, draft: SuiteLockDraft, scannerVersion: string): SuitePrivacyGate {
-  if (!SEMVER.test(scannerVersion)) throw new Error('Agent-Secure scanner version must be semantic versioning.');
+  if (!SEMVER.test(scannerVersion)) throw new Error('DONWI Secure scanner version must be semantic versioning.');
   const secureComponent = draft.components.find((component) => component.id === 'agent-secure');
   if (!secureComponent || secureComponent.version !== scannerVersion) {
-    throw new Error('Privacy scanner version must match the bundled Agent-Secure component.');
+    throw new Error('Privacy scanner version must match the bundled DONWI Secure component.');
   }
-  const report = requireRecord(reportInput, 'Agent-Secure report');
+  const report = requireRecord(reportInput, 'DONWI Secure report');
   const keys = ['version', 'root', 'policy_sha256', 'created', 'status', 'coverage', 'checks', 'findings'];
   const allowedKeys = [...keys, 'allowed'];
   const actual = Object.keys(report).sort();
   if (actual.some((key) => !allowedKeys.includes(key)) || keys.some((key) => !(key in report))) {
-    throw new Error('Agent-Secure report has an unsupported schema.');
+    throw new Error('DONWI Secure report has an unsupported schema.');
   }
   if (report.version !== 1 || report.status !== 'pass' || typeof report.root !== 'string'
     || report.root.length === 0 || typeof report.created !== 'string' || Number.isNaN(Date.parse(report.created))
@@ -270,12 +270,12 @@ function validateAgentSecureReport(reportInput: unknown, draft: SuiteLockDraft, 
     || typeof report.policy_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(report.policy_sha256)
     || !Array.isArray(report.findings) || report.findings.length !== 0
     || (report.allowed !== undefined && (!Array.isArray(report.allowed) || report.allowed.length !== 0))) {
-    throw new Error('Suite privacy gate requires a complete Agent-Secure pass with no findings or exceptions.');
+    throw new Error('Suite privacy gate requires a complete DONWI Secure pass with no findings or exceptions.');
   }
   if (!Array.isArray(report.checks)) throw new Error('Suite privacy gate report checks are invalid.');
   const checkScanners = new Set<string>();
   for (const rawCheck of report.checks) {
-    const check = requireRecord(rawCheck, 'Agent-Secure check');
+    const check = requireRecord(rawCheck, 'DONWI Secure check');
     const checkKeys = ['scanner', 'status', 'detail', 'tool_sha256'];
     if (Object.keys(check).some((key) => !checkKeys.includes(key))
       || (check.scanner !== 'gitleaks' && check.scanner !== 'osv-scanner') || check.status !== 'pass'
@@ -326,7 +326,7 @@ function validatePrivacyGate(value: unknown, draft: SuiteLockDraft): SuitePrivac
     || typeof gate.policy_sha256 !== 'string' || !SHA256.test(gate.policy_sha256)
     || typeof gate.attestation_sha256 !== 'string' || !SHA256.test(gate.attestation_sha256)
     || gate.coverage !== 'git-visible-working-files-only' || !Array.isArray(gate.checks) || gate.checks.length !== 2) {
-    throw new Error('Suite lock requires a passing Agent-Secure privacy attestation for its Secure release.');
+    throw new Error('Suite lock requires a passing DONWI Secure privacy attestation for its Secure release.');
   }
   const checks: SuitePrivacyGate['checks'] = gate.checks.map((item) => {
     const check = requireRecord(item, 'Suite privacy check');

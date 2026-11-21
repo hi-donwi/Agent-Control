@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 /**
- * Agent-Control's own preferences in ~/.agent-control/config.json: the endpoint and model a
- * new chat starts with. Provider accounts and keys belong in Agent Brain, never here; the
+ * DONWI Desk's own preferences in ~/.agent-control/config.json: the endpoint and model a
+ * new chat starts with. Provider accounts and keys belong in DONWI Brain, never here; the
  * file is read only, and the app never writes it.
  */
 export interface AppConfig {

@@ -106,7 +106,7 @@ async function main(args: string[]): Promise<void> {
       platform: values.platform as Parameters<typeof assembleSuiteBundle>[0]['platform'],
     });
     const bundledArtifacts = verified.components.filter((component) => component.delivery === 'artifact').length;
-    console.log(`Assembled Agent Workspace Suite ${verified.suite_version} for ${verified.platform} (${verified.components.length} components; ${bundledArtifacts} bundled artifacts).`);
+    console.log(`Assembled DONWI Agent Suite ${verified.suite_version} for ${verified.platform} (${verified.components.length} components; ${bundledArtifacts} bundled artifacts).`);
     return;
   }
 

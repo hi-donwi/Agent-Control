@@ -145,7 +145,7 @@ export async function apiFetch<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const ready = await initializeApi();
-  if (!ready) throw new Error('Choose a workspace to start Agent Control.');
+  if (!ready) throw new Error('Choose a workspace to start DONWI Desk.');
   const response = await fetch(apiUrl(path), {
     ...options,
     cache: 'no-store',
@@ -158,7 +158,7 @@ export async function apiFetch<T>(
 
   if (response.status === 401) {
     forgetToken();
-    throw new Error(desktopMode ? 'The desktop host rejected its session token. Restart Agent Control.' : SIGN_IN_HINT);
+    throw new Error(desktopMode ? 'The desktop host rejected its session token. Restart DONWI Desk.' : SIGN_IN_HINT);
   }
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as { error?: string };

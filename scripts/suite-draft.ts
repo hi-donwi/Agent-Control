@@ -129,7 +129,7 @@ function validateMetadata(input: unknown): SuiteLockMetadata {
     }
     if (expectedID === 'agent-brain') {
       if (component.delivery !== 'service' || component.service_contract !== 'agent-brain-profile-v1') {
-        throw new Error('Agent-Brain must be declared as the external profile-enabled service.');
+        throw new Error('DONWI Brain must be declared as the external profile-enabled service.');
       }
       return { id: 'agent-brain' as const, delivery: 'service' as const, version: component.version, service_contract: 'agent-brain-profile-v1' as const };
     }

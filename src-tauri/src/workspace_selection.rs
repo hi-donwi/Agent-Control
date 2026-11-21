@@ -13,7 +13,7 @@ struct WorkspaceConfig {
     workspace_root: String,
 }
 
-/// Resolve and validate a user-selected Agent-Workspace root.
+/// Resolve and validate a user-selected DONWI Workspace root.
 pub(crate) fn validate_workspace_root(candidate: &Path) -> Result<PathBuf, String> {
     let root = candidate
         .canonicalize()
@@ -23,7 +23,7 @@ pub(crate) fn validate_workspace_root(candidate: &Path) -> Result<PathBuf, Strin
         || !root.join(".agents").join("standards").is_dir()
     {
         return Err(
-            "Choose the Agent-Workspace folder containing AGENTS.md and .agents/standards."
+            "Choose the DONWI Workspace folder containing AGENTS.md and .agents/standards."
                 .to_string(),
         );
     }

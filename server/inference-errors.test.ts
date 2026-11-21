@@ -122,8 +122,8 @@ describe('chatSetupError', () => {
 
   it('answers a host error with a fixed message and keeps its cause for the log', () => {
     const { message, logLine } = chatSetupError(new Error('ENOENT: no such file, open \'/srv/workspace/.local/agent/x.json\''));
-    assert.equal(message, 'The chat turn could not start. The Agent-Control log has the cause.');
+    assert.equal(message, 'The chat turn could not start. The DONWI Desk log has the cause.');
     assert.equal(logLine, 'Chat error: ENOENT: no such file, open \'/srv/workspace/.local/agent/x.json\'');
-    assert.equal(chatSetupError('plain').message, 'The chat turn could not start. The Agent-Control log has the cause.');
+    assert.equal(chatSetupError('plain').message, 'The chat turn could not start. The DONWI Desk log has the cause.');
   });
 });

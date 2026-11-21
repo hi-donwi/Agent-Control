@@ -18,7 +18,7 @@ export interface ChatScope {
   /** The model is remote: host diagnostics do not leave the machine. */
   remote: boolean;
   /**
-   * The active coding session's worktree (Agent-Workspace ADR-0019), when one exists.
+   * The active coding session's worktree (DONWI Workspace ADR-0019), when one exists.
    * write_file/edit_file/git_diff operate here, never the primary checkout. read_file
    * and search_code still read the primary checkout, not this worktree's edits - until
    * that gap closes, tell the model to use git_diff, not read_file, to see its own work.
@@ -343,7 +343,7 @@ function bindToProject(tools: Record<string, PlainTool>, scope: ChatScope): Reco
     run_command: {
       description: 'Run a shell command in the project\'s own folder (or its coding session\'s worktree, if '
         + 'one is active). A project\'s operator policy decides whether this runs immediately or needs the '
-        + 'operator\'s approval first (Agent-Workspace ADR-0014/0020); if it does, this returns a request id '
+        + 'operator\'s approval first (DONWI Workspace ADR-0014/0020); if it does, this returns a request id '
         + 'instead of running - relay it to the person and call this again with the same command and approvalId '
         + 'once they approve it. Never retry without it.',
       parameters: {

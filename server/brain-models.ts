@@ -7,7 +7,7 @@ const MAX_MODEL_ID_LENGTH = 256;
 
 async function readModelList(response: Response): Promise<unknown> {
   const reader = response.body?.getReader();
-  if (!reader) throw new Error('Agent Brain returned an invalid model list');
+  if (!reader) throw new Error('DONWI Brain returned an invalid model list');
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -17,7 +17,7 @@ async function readModelList(response: Response): Promise<unknown> {
       size += value.byteLength;
       if (size > MAX_MODEL_RESPONSE_BYTES) {
         await reader.cancel();
-        throw new Error('Agent Brain returned an invalid model list');
+        throw new Error('DONWI Brain returned an invalid model list');
       }
       chunks.push(value);
     }
@@ -33,21 +33,21 @@ async function readModelList(response: Response): Promise<unknown> {
   try {
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch {
-    throw new Error('Agent Brain returned an invalid model list');
+    throw new Error('DONWI Brain returned an invalid model list');
   }
 }
 
-/** Reads redacted model IDs from an explicitly configured Agent Brain gateway. */
+/** Reads redacted model IDs from an explicitly configured DONWI Brain gateway. */
 export async function discoverBrainModels(
   endpoint: Endpoint,
   credential: string | undefined,
   fetcher: Fetcher = fetch,
 ): Promise<string[]> {
   if (endpoint.protocol !== 'openai-chat' || endpoint.purpose !== 'agent-brain' || !endpoint.baseUrl) {
-    throw new Error('Agent Brain model discovery is not enabled for this endpoint');
+    throw new Error('DONWI Brain model discovery is not enabled for this endpoint');
   }
-  if (!endpoint.routingProfile) throw new Error('Agent Brain endpoint has no routing profile');
-  if (!isBrainProfileCredential(credential)) throw new Error('Agent Brain model discovery requires a profile-scoped credential');
+  if (!endpoint.routingProfile) throw new Error('DONWI Brain endpoint has no routing profile');
+  if (!isBrainProfileCredential(credential)) throw new Error('DONWI Brain model discovery requires a profile-scoped credential');
 
   const url = new URL(endpoint.baseUrl);
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/models`;
@@ -62,18 +62,18 @@ export async function discoverBrainModels(
   try {
     response = await fetcher(url, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(5_000) });
   } catch {
-    throw new Error('Agent Brain model discovery request failed');
+    throw new Error('DONWI Brain model discovery request failed');
   }
-  if (!response.ok) throw new Error(`Agent Brain model discovery failed with HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`DONWI Brain model discovery failed with HTTP ${response.status}`);
 
   let body: unknown;
   try {
     body = await readModelList(response);
   } catch {
-    throw new Error('Agent Brain returned an invalid model list');
+    throw new Error('DONWI Brain returned an invalid model list');
   }
   if (!body || typeof body !== 'object' || !Array.isArray((body as { data?: unknown }).data)) {
-    throw new Error('Agent Brain returned an invalid model list');
+    throw new Error('DONWI Brain returned an invalid model list');
   }
 
   const ids = new Set<string>();

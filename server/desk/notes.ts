@@ -5,7 +5,7 @@ export { realWsInputRunner, type WsInputRunner } from './ws-input.js';
 
 /**
  * The desk's first write: a project note, written by `ws note` and never by this host
- * (Agent-Workspace ADR-0019 §2, ADR-0023). The body goes through stdin, not an argument.
+ * (DONWI Workspace ADR-0019 §2, ADR-0023). The body goes through stdin, not an argument.
  */
 export const NOTE_TITLE_MAX = 120;
 export const NOTE_BODY_MAX = 65_536;

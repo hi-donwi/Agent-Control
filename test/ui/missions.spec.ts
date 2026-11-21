@@ -5,7 +5,7 @@ import { PROJECT } from './workspace.js';
 import { STATE_FILE, type ServerState } from './state.js';
 
 /**
- * Missions (Agent-Workspace ADR-0024): the Inbox in the menu and the Today view. `ws today`
+ * Missions (DONWI Workspace ADR-0024): the Inbox in the menu and the Today view. `ws today`
  * and `ws alerts` are the stub's, answering with what each test writes to .local/stub/; the
  * real computation is the framework's and is tested there.
  */

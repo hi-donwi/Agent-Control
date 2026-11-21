@@ -8,8 +8,8 @@ export const LOKAL_DEFAULT_PORT = 52140;
 export const LOKAL_BASE_URL = `http://127.0.0.1:${LOKAL_DEFAULT_PORT}/v1`;
 
 /**
- * Auto-detects the Agent Brain gateway only after a profile-scoped credential manifest has
- * been written. The master serve token is never used for Agent-Control inference.
+ * Auto-detects the DONWI Brain gateway only after a profile-scoped credential manifest has
+ * been written. The master serve token is never used for DONWI Desk inference.
  */
 export function detectLokalEndpoint(home = homedir()): Endpoint | null {
   const tokenPath = join(home, '.lokal', 'agent-control.token');

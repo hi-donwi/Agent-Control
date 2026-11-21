@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Agent Workspace Suite lock draft metadata",
+  "title": "DONWI Agent Suite lock draft metadata",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "suite_version", "platform", "components"],

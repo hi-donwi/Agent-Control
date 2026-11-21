@@ -24,7 +24,7 @@ test('suite manifest reports local component readiness without exposing paths', 
     });
 
     assert.equal(manifest.schemaVersion, 1);
-    assert.equal(manifest.name, 'Agent Workspace Suite');
+    assert.equal(manifest.name, 'DONWI Agent Suite');
     assert.deepEqual(manifest.components.map(({ id }) => id), [
       'agent-control', 'agent-brain', 'agent-workspace', 'agent-skills', 'agent-secure',
     ]);

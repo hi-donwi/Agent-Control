@@ -17,7 +17,7 @@ const tokensOf = (usage: Usage): StreamFinish['tokens'] => ({
 });
 
 /**
- * Agent-Control's own line protocol, read by src/hooks/useChat.ts. It stays the same
+ * DONWI Desk's own line protocol, read by src/hooks/useChat.ts. It stays the same
  * whichever AI SDK major produces the stream, so a server upgrade never breaks the UI:
  *
  *   0:"text delta"                          9:{"toolCallId","toolName","args"}

@@ -1,12 +1,12 @@
-# Agent-Control
+# DONWI Desk
 
 A standalone AI-powered workspace assistant. This is a product repo — it does
-not modify the Agent-Workspace framework.
+not modify the DONWI Workspace framework.
 
 ## Stack
 
 React 19 + Vite + TypeScript frontend, Hono + Vercel AI SDK backend.
-Model inference runs only through Agent Brain (`purpose: "agent-brain"` endpoints, plus the
+Model inference runs only through DONWI Brain (`purpose: "agent-brain"` endpoints, plus the
 offline `mock`). Streaming chat with markdown rendering and syntax highlighting.
 
 ## Rules
@@ -15,9 +15,9 @@ offline `mock`). Streaming chat with markdown rendering and syntax highlighting.
 - The host's own API lives under `/api/agent/*`. `/api/*` is reserved: in agent mode
   (`WS_AGENT_MODE=1`) the host serves the desk and proxies `/api/*` to the control plane,
   so a new own endpoint never goes under bare `/api/`.
-- Chat inference goes only to an Agent Brain endpoint or `mock` (`isChatEndpoint()` in
+- Chat inference goes only to a DONWI Brain endpoint or `mock` (`isChatEndpoint()` in
   `server/chat-model.ts`). Never add a direct provider path, a fallback to one, or an API
-  key field: provider accounts and keys belong in Agent Brain.
+  key field: provider accounts and keys belong in DONWI Brain.
 - Endpoint credentials MUST live outside every repository, as `env:`/`keychain:`/`file:`
   references in `<workspace>/.local/agent/endpoints.json`. Never in source, and never as a
   literal in endpoints.json.

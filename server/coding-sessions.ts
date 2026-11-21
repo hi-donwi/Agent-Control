@@ -8,7 +8,7 @@ const ANSI_RE = /\u001b\[[0-9;]*m/g;
 
 /**
  * A chat's coding session: a `ws agent start` worktree its mutating tools operate in
- * instead of the primary checkout (Agent-Workspace ADR-0019). One per project at a
+ * instead of the primary checkout (DONWI Workspace ADR-0019). One per project at a
  * time - starting again while one is active returns it unchanged.
  */
 export interface CodingSession {
