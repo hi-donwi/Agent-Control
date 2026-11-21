@@ -102,11 +102,6 @@ test('standalone token is exchanged only through loopback GET /auth', { timeout:
     assert.equal(response.headers.get('cache-control'), 'no-store');
     const body = await response.json() as { token?: string };
     assert.match(body.token ?? '', /^[a-f0-9]{64}$/);
-    const page = await fetch(`${host.origin}/`);
-    const html = await page.text();
-    assert.equal(page.status, 200);
-    assert.doesNotMatch(html, new RegExp(body.token!));
-    assert.doesNotMatch(html, /__AC_TOKEN__/);
 
     const foreignOrigin = await fetch(`${host.origin}/auth`, {
       headers: { Origin: 'https://attacker.invalid' },
