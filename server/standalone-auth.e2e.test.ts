@@ -63,7 +63,7 @@ async function stopHost(child: ChildProcess): Promise<void> {
   await exit;
 }
 
-test('standalone startup refuses a non-loopback HOST before workspace discovery', { timeout: 10_000 }, async () => {
+test('standalone startup refuses a non-loopback HOST before workspace discovery', { timeout: 30_000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), 'desk-host-rejection-'));
   const child = spawn(process.execPath, ['--import', 'tsx', serverEntry], {
     cwd: repoRoot,
@@ -81,7 +81,9 @@ test('standalone startup refuses a non-loopback HOST before workspace discovery'
 
   try {
     const exit = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    // The full suite runs many TypeScript workers in parallel, so leave startup
+    // enough time to load the server before treating it as hung.
+    const timer = setTimeout(() => child.kill('SIGKILL'), 20_000);
     const code = await exit;
     clearTimeout(timer);
     assert.notEqual(code, 0);
