@@ -47,7 +47,7 @@ export default async function globalSetup(): Promise<() => void> {
   const port = await freePort();
   const env: NodeJS.ProcessEnv = {
     ...process.env, HOME: workspace.home, WS_WORKSPACE_ROOT: workspace.root, HOST: '127.0.0.1', PORT: String(port),
-    NODE_ENV: 'production', AC_STUB_WORKTREE: workspace.worktree,
+    NODE_ENV: 'production',
     // Every spec loads the page afresh; the whole suite passes the default 120 requests a minute.
     AC_RATE_LIMIT_PER_MINUTE: '1000',
   };
@@ -70,9 +70,12 @@ export default async function globalSetup(): Promise<() => void> {
 
   const origin = `http://127.0.0.1:${port}`;
   await waitForUi(child, origin, () => log);
-
-  const token = log.match(/Open: http:\/\/\S+\?token=([a-f0-9]{64})/)?.[1];
-  if (!token) throw new Error(`server did not print its token:\n${log}`);
+  const auth = await fetch(`${origin}/auth`, { headers: { Origin: origin } });
+  if (!auth.ok) throw new Error(`server refused loopback authentication (${auth.status}):\n${log}`);
+  const body = await auth.json() as { token?: string };
+  const token = body.token;
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new Error(`server returned an invalid loopback authentication response:\n${log}`);
+  if (log.includes(token)) throw new Error('server printed its process token');
 
   mkdirSync(dirname(STATE_FILE), { recursive: true });
   writeFileSync(STATE_FILE, JSON.stringify({ origin, token, home: workspace.home, root: workspace.root } satisfies ServerState) + '\n');

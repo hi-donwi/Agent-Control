@@ -62,8 +62,7 @@ function approvalRequest(id: string, action: string, now: number, ttlMs: number,
  * `agent stop` succeeds. `note`, `task`, and `plan` write the files the real commands
  * would, without their revision checks. `today`, `alerts`, and `client show` answer from
  * JSON a spec writes to .local/stub/, and log their arguments to .local/stub/calls.log.
- * `AC_STUB_WORKTREE` reaches it through the
- * server's environment.
+ * `agent start` resolves its fixture worktree from the disposable workspace layout.
  */
 /**
  * A task store for the Missions specs: when a spec writes .local/stub/tasks.json, `ws task
@@ -130,7 +129,7 @@ if [ "$1" = "task" ] && [ -f "$stubroot/.local/stub/tasks.json" ] && python3 "$(
 fi
 if [ "$1" = "agent" ]; then
   if [ "$2" = "start" ]; then
-    printf 'cd %s\\n' "$AC_STUB_WORKTREE"
+    printf 'cd %s\\n' "$stubroot/.local/worktrees/$3/fixture"
   else
     echo "session stopped"
   fi

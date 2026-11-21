@@ -5,6 +5,7 @@ import { lstat, readFile, realpath, stat } from 'node:fs/promises';
 import { parseProjectList } from '../projects.js';
 import { locateInside } from './path-sandbox.js';
 import { ToolDependencyError, toolLocator, type ToolLocator } from '../tool-locator.js';
+import { allowlistedChildEnv } from '../child-env.js';
 
 export class WorkspaceSearchError extends Error {
   readonly code = 'SEARCH_PATH_UNAVAILABLE';
@@ -77,7 +78,7 @@ export class WorkspaceBridge {
         cwd: this.workspaceRoot,
         timeout: 30_000,
         maxBuffer: 1024 * 1024,
-        env: { ...process.env, PAGER: 'cat' },
+        env: allowlistedChildEnv(),
       }, (err, stdout, stderr) => {
         if (err?.code === 'ENOENT') fail(new ToolDependencyError('ws'));
         else if (err) fail(new Error(`ws ${args.join(' ')} failed: ${stderr || err.message}`));
@@ -446,11 +447,7 @@ export class WorkspaceBridge {
         cwd: this.workspaceRoot,
         timeout: 60_000,
         maxBuffer: 2 * 1024 * 1024,
-        env: {
-          ...process.env,
-          ...(secureBin ? { WS_SECURE_BIN: secureBin } : {}),
-          PAGER: 'cat',
-        },
+        env: allowlistedChildEnv(process.env, secureBin ? { WS_SECURE_BIN: secureBin } : {}),
       }, (err, stdout, stderr) => {
         if (stdout && stdout.trim()) {
           ok(stdout);

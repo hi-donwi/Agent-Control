@@ -6,6 +6,7 @@ import { ToolDependencyError, toolLocator } from '../tool-locator.js';
 
 /** The same cap `WorkspaceBridge.readProjectFile()` applies to the primary checkout. */
 const MAX_FILE = 512 * 1024;
+const MAX_DIFF_OUTPUT_BYTES = 1024 * 1024;
 
 /** The absolute path of `relPath` inside `worktree`, refusing anything that climbs out. */
 function resolveInside(worktree: string, relPath: string): string {
@@ -61,9 +62,11 @@ export async function editWorktreeFile(worktree: string, relPath: string, oldStr
 
 function runGit(worktree: string, args: string[]): Promise<string> {
   return new Promise((resolve_, reject) => {
-    execFile(toolLocator.resolve('git'), args, { cwd: worktree, timeout: 15_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+    execFile(toolLocator.resolve('git'), args, { cwd: worktree, timeout: 15_000, maxBuffer: MAX_DIFF_OUTPUT_BYTES }, (err, stdout) => {
       if (err?.code === 'ENOENT') reject(new ToolDependencyError('git'));
-      else if (err && !stdout) reject(err);
+      else if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') reject(new Error('Git output exceeds 1024KB.'));
+      else if (err?.code === 1 && args[0] === 'diff' && args.includes('--no-index')) resolve_(stdout);
+      else if (err) reject(err);
       else resolve_(stdout);
     });
   });
@@ -74,16 +77,32 @@ function runGit(worktree: string, args: string[]): Promise<string> {
  * tree. `async` so a path outside the worktree rejects the returned promise rather than
  * throwing synchronously before one exists - the same contract every caller expects.
  *
- * A plain `git diff` never shows a file write_file just created - it is untracked, not
- * modified. `git add -N` (intent-to-add) marks new paths for the diff without staging
- * their content, so a newly written file appears as entirely added, the same as one
- * that was edited.
+ * Tracked changes come from `git diff`; new files come from `git ls-files --others` and
+ * `git diff --no-index`. Reading changes never alters the caller's Git index.
  */
 export async function gitDiff(worktree: string, relPath?: string): Promise<string> {
   if (relPath) resolveInside(worktree, relPath); // throws on a path outside the worktree
-  await runGit(worktree, ['add', '-A', '-N', '--', relPath ?? '.']).catch(() => '');
-  const args = relPath ? ['diff', '--', relPath] : ['diff'];
-  return runGit(worktree, args);
+  const trackedArgs = relPath ? ['diff', '--', relPath] : ['diff'];
+  const untrackedArgs = ['ls-files', '--others', '--exclude-standard', '-z'];
+  if (relPath) untrackedArgs.push('--', relPath);
+
+  const tracked = await runGit(worktree, trackedArgs);
+  const untrackedOutput = await runGit(worktree, untrackedArgs);
+  const untrackedPaths = untrackedOutput.split('\0').filter(Boolean);
+  const diffs = tracked ? [tracked] : [];
+  let outputBytes = Buffer.byteLength(tracked);
+  for (const path of untrackedPaths) {
+    // Keep both subprocess and captured output growth bounded by the worktree's file count.
+    const diff = await runGit(worktree, ['diff', '--no-index', '--', '/dev/null', path]);
+    if (!diff) continue;
+    const additionBytes = Buffer.byteLength(diff) + (diffs.length ? 1 : 0);
+    if (outputBytes + additionBytes > MAX_DIFF_OUTPUT_BYTES) {
+      throw new Error('Git output exceeds 1024KB.');
+    }
+    outputBytes += additionBytes;
+    diffs.push(diff);
+  }
+  return diffs.join('\n');
 }
 
 export { MAX_FILE };

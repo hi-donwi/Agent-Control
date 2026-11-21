@@ -6,33 +6,22 @@ import { STATE_FILE, type ServerState } from './state.js';
 
 /**
  * The address carries where the desk is, so reload, Back, and Forward land in the same place;
- * and a tab keeps a token the server accepted, so a page that rewrites the address - the
- * project's visual context does - no longer signs it out.
+ * and each page load obtains a fresh in-memory token through the loopback auth endpoint.
  */
 
 const workspaceRoot = () => (JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as ServerState).root;
-const TOKEN_KEY = 'agent-control:token';
-
-/** Serves the page without the token the server injects - as the Vite dev server does - so only the address or the tab's own copy can sign it in. */
-async function withoutInjectedToken(page: Page): Promise<void> {
-  await page.route((url) => url.pathname === '/', async (route) => {
-    const response = await route.fetch();
-    const body = (await response.text()).replace(/<script nonce="[^"]*">window\.__AC_TOKEN__="[^"]*";<\/script>/, '');
-    await route.fulfill({ response, body });
-  });
-}
 
 const query = (page: Page) => new URL(page.url()).searchParams;
 
-test('a tab keeps the token the server accepted, and takes it out of the address', async ({ page, deskUrl }) => {
-  await withoutInjectedToken(page);
-  await page.goto(deskUrl);
+test('the page ignores stale URL tokens and authenticates again after reload', async ({ page, deskUrl }) => {
+  await page.goto(`${deskUrl}?token=${'f'.repeat(64)}`);
   const table = page.getByRole('article', { name: `Project ${PROJECT}` });
   await expect(table).toBeVisible();
   expect(await page.evaluate(() => (globalThis as { __AC_TOKEN__?: string }).__AC_TOKEN__)).toBeUndefined();
+  expect(await page.evaluate(() => sessionStorage.getItem('agent-control:token'))).toBeNull();
   await expect.poll(() => query(page).has('token')).toBe(false);
 
-  // A reload has nothing in the address to sign in with: the tab's copy does it.
+  // A reload performs a new loopback exchange instead of reading a browser token store.
   await page.reload();
   await expect(table).toBeVisible();
 
@@ -51,16 +40,15 @@ test('a tab keeps the token the server accepted, and takes it out of the address
   await expect.poll(() => new URL(page.url()).search).toBe('');
 });
 
-test('a refused token is forgotten, and the desk says how to sign in again', async ({ page, deskUrl }) => {
-  await withoutInjectedToken(page);
+test('a refused loopback exchange prevents the desk from rendering', async ({ page, deskUrl }) => {
+  await page.route('**/auth', (route) => route.fulfill({
+    status: 403,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'Loopback authentication is required.' }),
+  }));
   await page.goto(deskUrl);
-  await expect(page.getByRole('article', { name: `Project ${PROJECT}` })).toBeVisible();
-
-  // The server restarted with a new token; the one this tab kept no longer works.
-  await page.evaluate((key) => sessionStorage.setItem(key, 'f'.repeat(64)), TOKEN_KEY);
-  await page.reload();
-  await expect(page.getByRole('status').filter({ hasText: 'did not accept this page\'s token' })).toBeVisible();
-  expect(await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY)).toBeNull();
+  await expect(page.getByText('Unable to authenticate with the local DONWI Desk host. Reload or restart it.')).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
 });
 
 test('the address keeps the desk position through reload, back, and forward', async ({ page, deskUrl }) => {

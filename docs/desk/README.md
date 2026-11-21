@@ -57,11 +57,11 @@ the floor's levels and pages replaces the current entry; opening any other view 
 The hash, not the query, because the room's visual context writes its selection into the
 query and keeps only the hash.
 
-The token comes from the server's injected script, else the `?token=` of the link the host
-printed, else the tab's own copy. Once the server accepts it, the tab keeps it in
-`sessionStorage` (not `localStorage`: a dev origin is shared with other local apps) and
-drops it from the address. A refused token is forgotten, and the floor says to open the
-printed link again.
+In standalone browser mode, the frontend requests `GET /auth` from the loopback host and
+keeps the returned process token in memory only. The peer address must be loopback, the
+response is not cacheable, and the token is never included in HTML, a URL, or browser
+storage. Reloading the page performs a new exchange. The desktop app receives its token
+through the native bootstrap command instead.
 
 ## Project room
 
