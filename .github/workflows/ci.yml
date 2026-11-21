@@ -25,11 +25,15 @@ jobs:
       # Tauri 2 pulls the GTK3 stack (glib 0.18, proc-macro-error) for Linux only; the
       # desktop app ships for macOS, which never compiles it, and Tauri has no gtk4 release
       # yet. Revisit when Tauri moves to gtk4 or on the expiry date, whichever comes first.
+      # chrono is flagged unmaintained (no vulnerability) and reaches us only through
+      # tauri-utils -> serde_with; Agent-Control does not depend on it directly. Revisit
+      # when Tauri drops serde_with's chrono feature or on the expiry date.
       allow_json: |
         [
           {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0429", "reason": "glib 0.18.5 VariantStrIter unsoundness (src-tauri/Cargo.lock); transitive Linux-only GTK3 dependency of Tauri 2, not compiled for macOS", "expires": "2027-02-06"},
           {"scanner": "osv-scanner", "id": "GHSA-wrw7-89jp-8q8g", "reason": "same glib 0.18.5 advisory under its GHSA alias; Linux-only, not compiled for macOS", "expires": "2027-02-06"},
-          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0370", "reason": "proc-macro-error unmaintained (build-time macro); transitive Linux-only GTK3 dependency of Tauri 2", "expires": "2027-02-06"}
+          {"scanner": "osv-scanner", "id": "RUSTSEC-2024-0370", "reason": "proc-macro-error unmaintained (build-time macro); transitive Linux-only GTK3 dependency of Tauri 2", "expires": "2027-02-06"},
+          {"scanner": "osv-scanner", "id": "RUSTSEC-2026-0543", "reason": "chrono 0.4.45 unmaintained, no known vulnerability (src-tauri/Cargo.lock); transitive via tauri-utils -> serde_with, not a direct dependency", "expires": "2027-02-21"}
         ]
 
   test:
