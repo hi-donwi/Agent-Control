@@ -79,10 +79,16 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   let directCalls = 0;
   let serverLog = '';
 
+  const authHeaders = (extra: Record<string, string> = {}) => ({
+    Origin: origin,
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  });
+
   const post = (body: unknown) =>
     fetch(`${origin}/api/agent/chat`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     });
 
@@ -260,7 +266,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   it('reports suite component status without probing Brain or returning workspace paths', async () => {
     const beforeBrainCalls = brainCalls;
     const beforeBrainChatCalls = brainChatCalls;
-    const response = await fetch(`${origin}/api/agent/suite`, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`${origin}/api/agent/suite`, { headers: authHeaders() });
     assert.equal(response.status, 200);
     const body = await response.json() as {
       name: string;
@@ -281,7 +287,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     const response = await post({ messages: [{ role: 'user', content: 'hello' }], provider: 'mock', model: 'echo', project: 'mockproj' });
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal(answerText(await protocolLines(response)), 'mock(echo): hello');
-    const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+    const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: authHeaders() });
     const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: unknown[] }> }> };
     const room = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj');
     assert.deepEqual(room?.agents, []);
@@ -292,7 +298,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     const first = await post({ messages: [{ role: 'user', content: 'remember me' }], provider: 'mock', model: 'echo', project: 'mockproj', conversation });
     assert.equal(answerText(await protocolLines(first)), 'mock(echo): remember me');
 
-    const latest = await fetch(`${origin}/api/agent/conversations/latest?scope=mockproj`, { headers: { Authorization: `Bearer ${token}` } });
+    const latest = await fetch(`${origin}/api/agent/conversations/latest?scope=mockproj`, { headers: authHeaders() });
     const body = await latest.json() as { id: string; messages: Array<{ role: string; content: string }> };
     assert.equal(body.id, conversation);
     assert.deepEqual(body.messages.map((m) => [m.role, m.content]), [['user', 'remember me'], ['assistant', 'mock(echo): remember me']]);
@@ -323,7 +329,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
   });
 
   it('lists only DONWI Brain and mock endpoints, and ignores legacy provider keys', async () => {
-    const response = await fetch(`${origin}/api/agent/providers`, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`${origin}/api/agent/providers`, { headers: authHeaders() });
     assert.equal(response.status, 200);
     const body = await response.json() as { providers: Array<{ id: string }>; defaultProvider: string; defaultModel: string };
     assert.deepEqual(body.providers.map((p) => p.id), ['mock', 'brain', 'brain-slow', 'brain-down']);
@@ -332,14 +338,14 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.equal(body.defaultModel, 'fallback-model');
     assert.doesNotMatch(JSON.stringify(body), /sk-legacy|sk-ant-legacy/);
 
-    const config = await fetch(`${origin}/api/agent/config`, { headers: { Authorization: `Bearer ${token}` } });
+    const config = await fetch(`${origin}/api/agent/config`, { headers: authHeaders() });
     assert.equal(config.status, 404);
     assert.match(serverLog, /config\.json holds API keys for openai, anthropic/);
     assert.doesNotMatch(serverLog, /sk-legacy-openai-key|sk-ant-legacy-key/);
   });
 
   it('exposes only configured DONWI Brain origins for the embedded management UI', async () => {
-    const response = await fetch(`${origin}/api/agent/brain-management-targets`, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(`${origin}/api/agent/brain-management-targets`, { headers: authHeaders() });
     assert.equal(response.status, 200);
     const body = await response.json() as { targets: Array<{ id: string; managementUrl: string }> };
     assert.deepEqual(body.targets, [
@@ -354,7 +360,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
 
   it('discovers Brain models only for a registered project whose policy allows the gateway', async () => {
     const getProviders = (query = '') => fetch(`${origin}/api/agent/providers${query}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeaders(),
     });
 
     const unscoped = await getProviders();
@@ -398,7 +404,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.ok(Array.isArray(brainChatBodies[0].tools) && brainChatBodies[0].tools.length > 0);
     const followUpMessages = brainChatBodies[1].messages as Array<{ role: string }>;
     assert.ok(followUpMessages.some((message) => message.role === 'tool'));
-    const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+    const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: authHeaders() });
     const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: Array<{ tool: string }> }> }> };
     const room = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj');
     assert.deepEqual(room?.agents.map((agent) => agent.tool), ['agent-control']);
@@ -410,7 +416,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     const browser = new AbortController();
     const response = await fetch(`${origin}/api/agent/chat`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ messages: [{ role: 'user', content: 'stop me' }], provider: 'brain', model: 'hang', project: 'mockproj', conversation }),
       signal: browser.signal,
     });
@@ -430,9 +436,9 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     assert.notEqual(closed, timedOut, 'the Brain request stayed open after the browser stopped the turn');
 
     const settled = await eventually(async () => {
-      const latest = await fetch(`${origin}/api/agent/conversations/latest?scope=mockproj`, { headers: { Authorization: `Bearer ${token}` } });
+      const latest = await fetch(`${origin}/api/agent/conversations/latest?scope=mockproj`, { headers: authHeaders() });
       const history = await latest.json() as { id: string; messages: Array<{ role: string; content: string }> };
-      const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+      const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: authHeaders() });
       const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: Array<{ state: string; detail: string }> }> }> };
       const agent = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj')?.agents[0];
       const done = history.id === conversation && history.messages.at(-1)?.role === 'assistant' && agent?.state === 'idle';
@@ -486,7 +492,7 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
 
     // A model that went silent is a warning on the floor, not a turn the operator stopped.
     const agent = await eventually(async () => {
-      const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+      const floor = await fetch(`${origin}/api/agent/desk/floor`, { headers: authHeaders() });
       const body = await floor.json() as { zones: Array<{ rooms: Array<{ key: string; agents: Array<{ state: string; detail: string }> }> }> };
       const found = body.zones.flatMap((zone) => zone.rooms).find((row) => row.key === 'mockproj')?.agents[0];
       return found?.state === 'warning' ? found : undefined;

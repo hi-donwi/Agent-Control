@@ -35,7 +35,9 @@ async function withRaisedHand(id: string, body: () => Promise<void>): Promise<vo
  */
 async function routeFloorWithCrew(page: Page, crew: FloorAgent[]): Promise<void> {
   const { origin, token } = serverState();
-  const response = await fetch(`${origin}/api/agent/desk/floor`, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(`${origin}/api/agent/desk/floor`, {
+    headers: { Origin: origin, Authorization: `Bearer ${token}` },
+  });
   expect(response.ok).toBe(true);
   const floor = await response.json() as Floor;
   const room = floor.zones.flatMap((zone) => zone.rooms).find((row) => row.key === PROJECT);

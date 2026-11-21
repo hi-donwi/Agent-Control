@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import { contentSecurityPolicy, desktopOriginOnly, isLoopbackBindHost, tokenAuth } from './security.js';
+import { apiOriginOnly, contentSecurityPolicy, desktopOriginOnly, isLoopbackBindHost, tokenAuth } from './security.js';
 
 describe('standalone bind host', () => {
   it('accepts only the required loopback listener address', () => {
@@ -123,5 +123,33 @@ describe('desktopOriginOnly', () => {
       },
     });
     assert.equal(denied.status, 403);
+  });
+});
+
+describe('apiOriginOnly', () => {
+  function standaloneApp() {
+    const app = new Hono();
+    app.use('*', apiOriginOnly({ allowedOrigins: ['http://127.0.0.1:5173'] }));
+    app.get('/api/health', (c) => c.json({ ok: true }));
+    app.get('/page', (c) => c.text('ok'));
+    return app;
+  }
+
+  it('checks Origin on every API path and permits only same-origin or the local dev origin', async () => {
+    const app = standaloneApp();
+    assert.equal((await app.request('/api/health', { headers: { Origin: 'http://localhost' } })).status, 200);
+    assert.equal((await app.request('/api/health', { headers: { Origin: 'http://127.0.0.1:5173' } })).status, 200);
+    assert.equal((await app.request('/api/health')).status, 403);
+    assert.equal((await app.request('/api/health', { headers: { Origin: 'https://attacker.invalid' } })).status, 403);
+    assert.equal((await app.request('/api', { headers: { Origin: 'https://attacker.invalid' } })).status, 403);
+    assert.equal((await app.request('/page')).status, 200);
+  });
+
+  it('uses the desktop origin policy for the full API namespace', async () => {
+    const app = new Hono();
+    app.use('*', apiOriginOnly({ desktopOrigins: ['tauri://localhost'] }));
+    app.get('/api/health', (c) => c.json({ ok: true }));
+    assert.equal((await app.request('/api/health', { headers: { Origin: 'tauri://localhost' } })).status, 200);
+    assert.equal((await app.request('/api/health')).status, 403);
   });
 });

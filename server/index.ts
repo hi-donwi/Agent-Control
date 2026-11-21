@@ -26,7 +26,7 @@ import { chatSetupError, inferenceErrorLogLine } from './inference-errors.js';
 import { recordUsage } from './usage.js';
 import {
   generateToken,
-  desktopOriginOnly,
+  apiOriginOnly,
   isLoopbackBindHost,
   loopbackOnly,
   tokenAuth,
@@ -166,13 +166,14 @@ const app = new Hono();
 app.use('*', loopbackOnly());
 app.use('*', securityHeaders(brainManagementOrigins));
 
-// API routes require token
-if (DESKTOP_MODE) {
-  app.use('/api/agent/*', desktopOriginOnly([
+// Check Origin on every API route, including the control-plane proxy and unmatched paths.
+app.use('*', apiOriginOnly(DESKTOP_MODE
+  ? { desktopOrigins: [
     'tauri://localhost',
     'http://127.0.0.1:5173',
-  ]));
-}
+  ] }
+  : { allowedOrigins: ['http://127.0.0.1:5173'] }));
+// The host's own API routes require a bearer token.
 app.use('/api/agent/*', tokenAuth(TOKEN, { allowQueryToken: !DESKTOP_MODE }));
 // A ceiling against a runaway page, not a quota: one operator's desk stays far below it. The
 // browser suite loads the desk dozens of times a minute, so it raises the ceiling.

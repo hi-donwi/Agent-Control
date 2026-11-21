@@ -88,6 +88,31 @@ export function desktopOriginOnly(allowedOrigins: readonly string[]) {
   };
 }
 
+/** Check Origin on the entire API namespace, including `/api` and unmatched routes. */
+export function apiOriginOnly(options: {
+  allowedOrigins?: readonly string[];
+  desktopOrigins?: readonly string[];
+} = {}) {
+  const desktopGuard = options.desktopOrigins ? desktopOriginOnly(options.desktopOrigins) : undefined;
+  const allowedOrigins = new Set(options.allowedOrigins ?? []);
+
+  return async (c: Context, next: Next) => {
+    const pathname = new URL(c.req.url).pathname;
+    if (pathname !== '/api' && !pathname.startsWith('/api/')) {
+      await next();
+      return;
+    }
+    if (desktopGuard) return desktopGuard(c, next);
+
+    const origin = c.req.header('origin');
+    const requestOrigin = new URL(c.req.url).origin;
+    if (!origin || (origin !== requestOrigin && !allowedOrigins.has(origin))) {
+      return c.json({ error: 'Request origin is not allowed.' }, 403);
+    }
+    await next();
+  };
+}
+
 /**
  * Context key for a per-response script nonce (`index.ts` sets it when it injects the token
  * into HTML). Without it, `script-src 'self'` would block the injection and the page would

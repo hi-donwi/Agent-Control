@@ -52,11 +52,12 @@ test('the key API is gone, and the legacy config is left as it was', async ({ pa
   const token = new URL(deskUrl).searchParams.get('token') ?? '';
 
   const saved = await page.request.post(`${origin}/api/agent/config?token=${token}`, {
+    headers: { Origin: origin },
     data: { providers: { google: { apiKey: 'AIza-should-not-be-saved' } } },
   });
   expect(saved.status()).toBe(404);
   // A GET of a path with no route falls through to the page itself; it carries no config.
-  const read = await page.request.get(`${origin}/api/agent/config?token=${token}`);
+  const read = await page.request.get(`${origin}/api/agent/config?token=${token}`, { headers: { Origin: origin } });
   expect(read.headers()['content-type'] ?? '').not.toContain('application/json');
   const body = await read.text();
   expect(body).not.toContain(LEGACY_OPENAI_KEY.slice(0, 8));
