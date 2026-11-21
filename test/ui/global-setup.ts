@@ -47,7 +47,7 @@ export default async function globalSetup(): Promise<() => void> {
   const port = await freePort();
   const env: NodeJS.ProcessEnv = {
     ...process.env, HOME: workspace.home, WS_WORKSPACE_ROOT: workspace.root, HOST: '127.0.0.1', PORT: String(port),
-    NODE_ENV: 'production', AC_STUB_WORKTREE: workspace.worktree,
+    NODE_ENV: 'production',
     // Every spec loads the page afresh; the whole suite passes the default 120 requests a minute.
     AC_RATE_LIMIT_PER_MINUTE: '1000',
   };
