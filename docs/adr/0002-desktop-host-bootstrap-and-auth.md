@@ -27,9 +27,11 @@ It generates its process token in memory, serves it only from `GET /auth` after 
 that the peer address is loopback, and sends it with `Cache-Control: no-store`. Its static
 HTML never contains the token, the startup URL is token-free, and API requests require an
 exact same-origin match or the fixed local Vite dev origin. Query-token authentication is
-disabled in every mode. Desktop CORS is limited to the app origin and the fixed Vite dev
-origin, with no credentialed CORS; the desktop token continues to arrive through the
-validated native bootstrap command.
+disabled in every mode. Desktop CORS is limited to the exact Tauri webview origins
+(`tauri://localhost` on macOS/Linux and `http://tauri.localhost` on Windows with the default
+scheme) and the fixed Vite dev origin, with no credentialed CORS. Configured Brain endpoint
+origins are used by the desktop `frame-src` policy, not by Desk API CORS; the desktop token
+continues to arrive through the validated native bootstrap command.
 
 Development starts the checked-out TypeScript host through the local Node runtime. Release
 startup expects a bundled `agent-control-host` resource; producing, signing, and distributing

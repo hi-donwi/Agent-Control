@@ -170,6 +170,7 @@ app.use('*', securityHeaders(brainManagementOrigins));
 app.use('*', apiOriginOnly(DESKTOP_MODE
   ? { desktopOrigins: [
     'tauri://localhost',
+    'http://tauri.localhost',
     'http://127.0.0.1:5173',
   ] }
   : { allowedOrigins: ['http://127.0.0.1:5173'] }));
