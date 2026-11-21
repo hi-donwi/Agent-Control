@@ -11,6 +11,15 @@ export function isLoopbackBindHost(host: string): boolean {
   return host === '127.0.0.1';
 }
 
+/** Recognize IPv4 and IPv6 loopback peer addresses, including IPv4-mapped IPv6. */
+export function isLoopbackRemoteAddress(address: string): boolean {
+  const normalized = address.toLowerCase().startsWith('::ffff:') ? address.slice(7) : address;
+  if (normalized === '::1') return true;
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalized)) return false;
+  const octets = normalized.split('.').map(Number);
+  return octets[0] === 127 && octets.every((octet) => octet >= 0 && octet <= 255);
+}
+
 /** Middleware: reject non-loopback connections. */
 export function loopbackOnly() {
   return async (c: Context, next: Next) => {
@@ -25,9 +34,8 @@ export function loopbackOnly() {
 }
 
 /** Middleware: verify bearer token. */
-export function tokenAuth(token: string, options: { allowQueryToken?: boolean } = {}) {
+export function tokenAuth(token: string) {
   return async (c: Context, next: Next) => {
-    const queryToken = options.allowQueryToken === false ? undefined : c.req.query('token');
     const authHeader = c.req.header('authorization');
     const bearerToken = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)
@@ -41,7 +49,7 @@ export function tokenAuth(token: string, options: { allowQueryToken?: boolean } 
       return crypto.timingSafeEqual(candidateBytes, tokenBytes);
     };
 
-    if (matches(queryToken) || matches(bearerToken)) {
+    if (matches(bearerToken)) {
       await next();
     } else {
       return c.json({ error: 'Invalid or missing token.' }, 401);
@@ -113,27 +121,8 @@ export function apiOriginOnly(options: {
   };
 }
 
-/**
- * Context key for a per-response script nonce (`index.ts` sets it when it injects the token
- * into HTML). Without it, `script-src 'self'` would block the injection and the page would
- * only work when its URL carries `?token=`.
- */
-const SCRIPT_NONCE = 'scriptNonce';
-
-type NonceContext = Context<{ Variables: Record<string, string> }>;
-
-/** Record the nonce the inline script in this response carries. */
-export function setScriptNonce(c: Context, nonce: string): void {
-  (c as NonceContext).set(SCRIPT_NONCE, nonce);
-}
-
-/** The nonce recorded for this response, if the handler set one. */
-function scriptNonceOf(c: Context): string | undefined {
-  return (c as NonceContext).get(SCRIPT_NONCE);
-}
-
-/** Build the Content-Security-Policy, optionally allowing one nonce'd inline script. */
-export function contentSecurityPolicy(scriptNonce?: string, brainFrameOrigins: readonly string[] = []): string {
+/** Build the Content-Security-Policy without inline scripts. */
+export function contentSecurityPolicy(brainFrameOrigins: readonly string[] = []): string {
   const origins = [...new Set(brainFrameOrigins.filter((origin) => {
     try {
       const parsed = new URL(origin);
@@ -144,7 +133,7 @@ export function contentSecurityPolicy(scriptNonce?: string, brainFrameOrigins: r
   }))];
   return [
     "default-src 'self'",
-    scriptNonce ? `script-src 'self' 'nonce-${scriptNonce}'` : "script-src 'self'",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "connect-src 'self'",
@@ -164,7 +153,7 @@ export function securityHeaders(brainFrameOrigins: readonly string[] = []) {
     c.header('X-Frame-Options', 'DENY');
     c.header('Referrer-Policy', 'no-referrer');
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    c.header('Content-Security-Policy', contentSecurityPolicy(scriptNonceOf(c), brainFrameOrigins));
+    c.header('Content-Security-Policy', contentSecurityPolicy(brainFrameOrigins));
   };
 }
 

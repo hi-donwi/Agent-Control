@@ -1,4 +1,4 @@
-import { TOKEN_KEY, resolveToken, withoutToken } from './token';
+import { parseAuthToken, withoutToken } from './token';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
   validateDesktopBootstrap,
@@ -8,23 +8,13 @@ import {
 } from './desktop-bootstrap';
 import { validateDesktopTools, type DesktopToolName, type DesktopToolStatus } from './desktop-tools';
 
-/** Shown when the server refuses the token: a restarted server has made a new one. */
-export const SIGN_IN_HINT = 'The server did not accept this page\'s token. Open the desk with the link the server printed (it ends in ?token=...).';
+/** Shown when the process token is rejected; reload performs a new local exchange. */
+export const SIGN_IN_HINT = 'The local host rejected its session token. Reload DONWI Desk to authenticate again.';
 
-function storedToken(): string {
-  try { return sessionStorage.getItem(TOKEN_KEY) ?? ''; } catch { return ''; }
-}
-
-/** Token is injected into HTML by the server, passed as ?token= query param, or kept by the tab. */
-let token = resolveToken({
-  injected: (window as unknown as Record<string, string>).__AC_TOKEN__,
-  search: window.location.search,
-  stored: storedToken(),
-});
+let token = '';
 let apiBaseUrl = '';
 let desktopMode = false;
 let desktopWorkspaceRoot: string | null = null;
-let kept = false;
 let initialization: Promise<boolean> | undefined;
 let lastBootstrapRefresh = 0;
 let bootstrapRefresh: Promise<void> | undefined;
@@ -48,12 +38,28 @@ async function refreshDesktopBootstrap(force = false): Promise<void> {
   }
 }
 
+async function exchangeStandaloneToken(): Promise<void> {
+  const search = withoutToken(window.location.search);
+  if (search !== window.location.search) {
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search}${window.location.hash}`);
+  }
+  const response = await fetch('/auth', {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error('The local host refused authentication. Open DONWI Desk from its loopback address.');
+  token = parseAuthToken(await response.json());
+}
+
 /** Initialize the native host connection before rendering any UI that can call the API. */
 export function initializeApi(): Promise<boolean> {
   if (desktopMode) return refreshDesktopBootstrap().then(() => true);
   if (!initialization) {
     initialization = (async () => {
-      if (!isTauri()) return true;
+      if (!isTauri()) {
+        await exchangeStandaloneToken();
+        return true;
+      }
       desktopWorkspaceRoot = validateDesktopWorkspaceRoot(
         await invoke<unknown>('desktop_workspace_root'),
       );
@@ -117,28 +123,6 @@ export function apiUrl(path: string): string {
   return `${apiBaseUrl}/api/agent/${path}`;
 }
 
-/** The server took the token: keep it for this tab, and take it out of the address and its history. */
-function keepToken(): void {
-  if (desktopMode) return;
-  if (kept) return;
-  kept = true;
-  try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* it lasts this page */ }
-  const search = withoutToken(window.location.search);
-  if (search !== window.location.search) {
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search}${window.location.hash}`);
-  }
-}
-
-/** The server refused the token: forget it, so a reload does not offer it again. */
-function forgetToken(): void {
-  if (desktopMode) {
-    token = '';
-    return;
-  }
-  kept = false;
-  try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* nothing was kept */ }
-}
-
 /** Fetch wrapper with auth token. */
 export async function apiFetch<T>(
   path: string,
@@ -157,7 +141,7 @@ export async function apiFetch<T>(
   });
 
   if (response.status === 401) {
-    forgetToken();
+    token = '';
     throw new Error(desktopMode ? 'The desktop host rejected its session token. Restart DONWI Desk.' : SIGN_IN_HINT);
   }
   if (!response.ok) {
@@ -165,7 +149,6 @@ export async function apiFetch<T>(
     throw new Error(data.error ?? `Request failed (${response.status})`);
   }
 
-  keepToken();
   return response.json() as Promise<T>;
 }
 

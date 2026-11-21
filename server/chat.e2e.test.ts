@@ -232,18 +232,32 @@ describe('chat end to end with the mock provider (ADR-0019 follow-up)', { timeou
     });
     // Kept so a test can prove what the server never logs (prompts, upstream error bodies).
     child.stderr?.on('data', (chunk: Buffer) => { serverLog += chunk.toString('utf8'); });
-
-    token = await new Promise<string>((resolve, reject) => {
-      let buffer = '';
-      const timer = setTimeout(() => reject(new Error(`server did not print a token:\n${buffer}`)), 20_000);
-      child.stdout?.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
-        const match = buffer.match(/Open: http:\/\/\S+\?token=([a-f0-9]+)/);
-        if (match) { clearTimeout(timer); resolve(match[1]); }
-      });
-      child.on('exit', (code) => { clearTimeout(timer); reject(new Error(`server exited early (code ${code}):\n${buffer}`)); });
-    });
     origin = `http://127.0.0.1:${port}`;
+    token = await new Promise<string>((resolve, reject) => {
+      const deadline = Date.now() + 20_000;
+      const attempt = async () => {
+        if (child.exitCode !== null) {
+          reject(new Error(`server exited early (code ${child.exitCode}):\n${serverLog}`));
+          return;
+        }
+        try {
+          const response = await fetch(`${origin}/auth`, { headers: { Origin: origin } });
+          if (response.ok) {
+            const body = await response.json() as { token: string };
+            resolve(body.token);
+            return;
+          }
+        } catch {
+          // The loopback listener is still starting.
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error(`server did not expose loopback authentication:\n${serverLog}`));
+          return;
+        }
+        setTimeout(() => { void attempt(); }, 50);
+      };
+      void attempt();
+    });
   });
 
   after(() => {

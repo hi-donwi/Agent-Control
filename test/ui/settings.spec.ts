@@ -47,17 +47,18 @@ test('the classic layout has no Settings button and lists no legacy provider', a
   expect(html).not.toContain(LEGACY_ANTHROPIC_KEY);
 });
 
-test('the key API is gone, and the legacy config is left as it was', async ({ page, deskUrl, origin, home }) => {
+test('the key API is gone, and the legacy config is left as it was', async ({ page, origin, home, token }) => {
   const before = readFileSync(configPath(home), 'utf-8');
-  const token = new URL(deskUrl).searchParams.get('token') ?? '';
 
-  const saved = await page.request.post(`${origin}/api/agent/config?token=${token}`, {
-    headers: { Origin: origin },
+  const saved = await page.request.post(`${origin}/api/agent/config`, {
+    headers: { Origin: origin, Authorization: `Bearer ${token}` },
     data: { providers: { google: { apiKey: 'AIza-should-not-be-saved' } } },
   });
   expect(saved.status()).toBe(404);
   // A GET of a path with no route falls through to the page itself; it carries no config.
-  const read = await page.request.get(`${origin}/api/agent/config?token=${token}`, { headers: { Origin: origin } });
+  const read = await page.request.get(`${origin}/api/agent/config`, {
+    headers: { Origin: origin, Authorization: `Bearer ${token}` },
+  });
   expect(read.headers()['content-type'] ?? '').not.toContain('application/json');
   const body = await read.text();
   expect(body).not.toContain(LEGACY_OPENAI_KEY.slice(0, 8));

@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import { apiOriginOnly, contentSecurityPolicy, desktopOriginOnly, isLoopbackBindHost, tokenAuth } from './security.js';
+import {
+  apiOriginOnly, contentSecurityPolicy, desktopOriginOnly, isLoopbackBindHost, isLoopbackRemoteAddress, tokenAuth,
+} from './security.js';
 
 describe('standalone bind host', () => {
   it('accepts only the required loopback listener address', () => {
@@ -11,30 +13,31 @@ describe('standalone bind host', () => {
   });
 });
 
+describe('loopback peer address', () => {
+  it('accepts loopback peers and rejects non-loopback peers', () => {
+    assert.equal(isLoopbackRemoteAddress('127.0.0.1'), true);
+    assert.equal(isLoopbackRemoteAddress('::1'), true);
+    assert.equal(isLoopbackRemoteAddress('::ffff:127.0.0.1'), true);
+    assert.equal(isLoopbackRemoteAddress('192.0.2.10'), false);
+    assert.equal(isLoopbackRemoteAddress(''), false);
+  });
+});
+
 describe('contentSecurityPolicy', () => {
-  it('allows only same-origin scripts when the response has no nonce', () => {
+  it('allows only same-origin scripts with no inline script nonce', () => {
     const csp = contentSecurityPolicy();
     assert.match(csp, /script-src 'self';/);
     assert.doesNotMatch(csp, /nonce-/);
   });
 
-  it('adds the one nonce the injected token script carries', () => {
-    assert.match(contentSecurityPolicy('abc123'), /script-src 'self' 'nonce-abc123'/);
-  });
-
   it('allows only explicitly configured Brain origins for the embedded management UI', () => {
-    const csp = contentSecurityPolicy(undefined, ['https://brain.example', 'http://127.0.0.1:52140', 'https://evil.invalid/path', 'javascript:alert(1)']);
+    const csp = contentSecurityPolicy(['https://brain.example', 'http://127.0.0.1:52140', 'https://evil.invalid/path', 'javascript:alert(1)']);
     assert.match(csp, /frame-src 'self' https:\/\/brain\.example http:\/\/127\.0\.0\.1:52140/);
     assert.doesNotMatch(csp, /evil\.invalid|javascript:/);
   });
 
-  it('keeps the rest of the policy identical either way', () => {
-    const withoutNonce = contentSecurityPolicy();
-    const withNonce = contentSecurityPolicy('abc123');
-    assert.equal(
-      withNonce.replace("script-src 'self' 'nonce-abc123'", "script-src 'self'"),
-      withoutNonce,
-    );
+  it('keeps the rest of the policy restrictive', () => {
+    const csp = contentSecurityPolicy();
     for (const directive of [
       "default-src 'self'",
       "connect-src 'self'",
@@ -42,41 +45,31 @@ describe('contentSecurityPolicy', () => {
       "object-src 'none'",
       "base-uri 'self'",
     ]) {
-      assert.ok(withNonce.includes(directive), directive);
+      assert.ok(csp.includes(directive), directive);
     }
   });
 });
 
 describe('tokenAuth', () => {
-  function protectedApp(allowQueryToken?: boolean) {
+  function protectedApp() {
     const app = new Hono();
-    app.use('*', tokenAuth('secret-token', { allowQueryToken }));
+    app.use('*', tokenAuth('secret-token'));
     app.get('/api/agent/health', (c) => c.json({ ok: true }));
     return app;
   }
 
   it('accepts a bearer token in desktop mode', async () => {
-    const response = await protectedApp(false).request('/api/agent/health', {
+    const response = await protectedApp().request('/api/agent/health', {
       headers: { Authorization: 'Bearer secret-token' },
     });
     assert.equal(response.status, 200);
   });
 
-  it('rejects a query token when desktop mode disables URL credentials', async () => {
-    const response = await protectedApp(false).request('/api/agent/health?token=secret-token');
-    assert.equal(response.status, 401);
-  });
-
-  it('rejects same-character-count Unicode tokens without throwing', async () => {
-    const token = 'a'.repeat(62) + '😀';
-    const response = await protectedApp().request(`/api/agent/health?token=${encodeURIComponent(token)}`);
-    assert.equal(response.status, 401);
-  });
-
-  it('preserves query-token login for the existing browser host by default', async () => {
+  it('rejects a query token in every mode', async () => {
     const response = await protectedApp().request('/api/agent/health?token=secret-token');
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 401);
   });
+
 });
 
 describe('desktopOriginOnly', () => {

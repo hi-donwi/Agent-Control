@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveToken, withoutToken } from './token';
+import { parseAuthToken, withoutToken } from './token';
 
-test('the injected token wins, then the address, then the copy the tab kept', () => {
-  assert.equal(resolveToken({ injected: 'served', search: '?token=linked', stored: 'kept' }), 'served');
-  assert.equal(resolveToken({ injected: '', search: '?ui=classic&token=linked', stored: 'kept' }), 'linked');
-  assert.equal(resolveToken({ search: '?project=x&view=modules', stored: 'kept' }), 'kept');
-  assert.equal(resolveToken({ search: '', stored: null }), '');
+test('extracts the process token from the loopback auth response', () => {
+  assert.equal(parseAuthToken({ token: 'a'.repeat(64) }), 'a'.repeat(64));
+});
+
+test('rejects malformed loopback auth responses', () => {
+  for (const response of [null, {}, { token: 'short' }, { token: 'g'.repeat(64) }, { token: 'a'.repeat(64), extra: true }]) {
+    assert.throws(() => parseAuthToken(response), /invalid authentication response/);
+  }
 });
 
 test('taking the token out of the address keeps every other parameter', () => {

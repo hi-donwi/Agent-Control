@@ -2,9 +2,8 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { stepCountIs, streamText, type ModelMessage } from 'ai';
+import { existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
-import crypto from 'node:crypto';
 
 import { CONFIG_PATH, loadConfig } from './config.js';
 import { chatTimeouts, loadEndpoints, resolveCredential, type Endpoint } from './endpoints.js';
@@ -32,8 +31,9 @@ import {
   tokenAuth,
   securityHeaders,
   rateLimit,
-  setScriptNonce,
 } from './middleware/security.js';
+import { standaloneAuthOnly } from './standalone-auth.js';
+import { registerStaticAssets } from './static-assets.js';
 import { createDesktopReadyLine } from './desktop-protocol.js';
 import { attachDesktopShutdown } from './desktop-shutdown.js';
 import { isToolName, toolLocator } from './tool-locator.js';
@@ -174,11 +174,13 @@ app.use('*', apiOriginOnly(DESKTOP_MODE
   ] }
   : { allowedOrigins: ['http://127.0.0.1:5173'] }));
 // The host's own API routes require a bearer token.
-app.use('/api/agent/*', tokenAuth(TOKEN, { allowQueryToken: !DESKTOP_MODE }));
+app.use('/api/agent/*', tokenAuth(TOKEN));
 // A ceiling against a runaway page, not a quota: one operator's desk stays far below it. The
 // browser suite loads the desk dozens of times a minute, so it raises the ceiling.
 const RATE_LIMIT = Math.max(1, parseInt(process.env.AC_RATE_LIMIT_PER_MINUTE ?? '', 10) || 120);
 app.use('/api/agent/*', rateLimit(RATE_LIMIT, 60_000));
+
+if (!DESKTOP_MODE) app.get('/auth', standaloneAuthOnly(TOKEN));
 
 app.get(`${AGENT_API}/tools`, (c) => {
   if (!DESKTOP_MODE) return c.json({ error: 'Desktop dependency settings are unavailable.' }, 404);
@@ -841,40 +843,7 @@ if (process.env.NODE_ENV === 'production' && !DESKTOP_MODE) {
   // serves its own UI. Falls back to its own dist if the desk build is missing.
   const deskDist = AGENT_MODE && DESK_DIST && existsSync(DESK_DIST) ? DESK_DIST : '';
   const distPath = deskDist || ownDist;
-  if (existsSync(distPath)) {
-    app.get('*', (c) => {
-      const url = new URL(c.req.url);
-      let filePath = join(distPath, url.pathname === '/' ? 'index.html' : url.pathname);
-      if (!existsSync(filePath)) filePath = join(distPath, 'index.html');
-      // Inject token into HTML
-      if (filePath.endsWith('.html')) {
-        let html = readFileSync(filePath, 'utf-8');
-        // The inline script needs a nonce to run under the response's own CSP, which
-        // `securityHeaders()` reads back from here. A fresh one per response, and the HTML
-        // is not cacheable: a cached copy would carry a stale nonce and lose the token.
-        const nonce = crypto.randomBytes(16).toString('base64');
-        setScriptNonce(c, nonce);
-        html = html.replace(
-          '</head>',
-          `<script nonce="${nonce}">window.__AC_TOKEN__="${TOKEN}";</script></head>`
-        );
-        c.header('Cache-Control', 'no-store');
-        return c.html(html);
-      }
-      const content = readFileSync(filePath);
-      const ext = filePath.split('.').pop() ?? '';
-      const mimeTypes: Record<string, string> = {
-        js: 'application/javascript',
-        css: 'text/css',
-        svg: 'image/svg+xml',
-        png: 'image/png',
-        ico: 'image/x-icon',
-        woff2: 'font/woff2',
-      };
-      c.header('Content-Type', mimeTypes[ext] || 'application/octet-stream');
-      return c.body(content);
-    });
-  }
+  if (existsSync(distPath)) registerStaticAssets(app, distPath);
 }
 
 // ── Start server ───────────────────────────────────────────────────────
@@ -889,7 +858,7 @@ const hostServer = serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info
     process.stdout.write(createDesktopReadyLine({ port: info.port, token: TOKEN }));
     return;
   }
-  const url = `http://${HOST}:${PORT}?token=${TOKEN}`;
+  const url = `http://${HOST}:${info.port}`;
   console.log('');
   console.log('  ╭──────────────────────────────────────────╮');
   console.log('  │                                          │');

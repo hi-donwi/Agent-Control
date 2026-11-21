@@ -19,6 +19,6 @@ if (root) {
       </StrictMode>,
     );
   }).catch(() => {
-    root.textContent = 'Unable to start the DONWI Desk desktop host. Restart the application.';
+    root.textContent = 'Unable to authenticate with the local DONWI Desk host. Reload or restart it.';
   });
 }
