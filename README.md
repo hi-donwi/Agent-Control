@@ -1,16 +1,16 @@
-# Agent-Control
+# DONWI Desk
 
-Agent-Control is the host and operator UI for the Agent Workspace Suite. Model inference
-runs through Agent Brain.
+DONWI Desk is the host and operator UI for the DONWI Agent Suite. Model inference
+runs through DONWI Brain.
 
-A loopback-only assistant and workspace control surface that understands your Agent-Workspace
-projects, context, memory, and runs. Every model call goes through the Agent Brain
-gateway, which owns the provider accounts, keys, and routing; Agent-Control never calls a
+A loopback-only assistant and workspace control surface that understands your DONWI Workspace
+projects, context, memory, and runs. Every model call goes through the DONWI Brain
+gateway, which owns the provider accounts, keys, and routing; DONWI Desk never calls a
 provider directly.
 
 Suite boundaries and the phased packaging plan are in
 [docs/suite-architecture.md](docs/suite-architecture.md). The current desktop build includes
-the Agent-Control host only; component readiness is visible in Settings, but installation and
+the DONWI Desk host only; component readiness is visible in Settings, but installation and
 updates remain operator-managed.
 
 ## Desk
@@ -37,7 +37,7 @@ pnpm run dev
 
 ## Features
 
-- **Inference through Agent Brain** — every chat turn goes to the Brain gateway; providers, accounts, and keys live in Brain, not here
+- **Inference through DONWI Brain** — every chat turn goes to the Brain gateway; providers, accounts, and keys live in Brain, not here
 - **Brain operator settings** — Settings embeds the Brain-origin console to inspect provider capabilities, manage API-key/OAuth/native account records, run provider checks/model refresh, and edit routing profiles
 - **Brain code-intelligence MCP** — project-bound Brain chats can use repo-map, symbol lookup, code search, and project-command metadata through a short-lived allowlisted stdio MCP client rooted at the selected project/worktree
 
@@ -46,7 +46,7 @@ configured for the server. It is started only for project-bound Brain chats; the
 chooses its executable, arguments, or root. See ADR-0007.
 - **Workspace-aware** — knows your projects, context, memory, and runs via `ws` CLI
 - **Tool-Calling Diagnostic Suite** — integrated with `dbakit` (PostgreSQL), `opskit` (Linux/Docker/K8s), and `agent-secure` (security audits)
-- **Authoritative Skill Retrieval** — `get_skill` reads the Agent-Skills catalog synchronized into the selected workspace
+- **Authoritative Skill Retrieval** — `get_skill` reads the DONWI Skills catalog synchronized into the selected workspace
 - **Generative UIDL UI Preview** — live in-chat interactive rendering of UIDL documents (`uidl-runtime`) for metrics, forms, and cards
 - **Studio Handoff** — one-click `Studio ↗` direct export into `UIDL-Builder` for visual drag-and-drop customization
 - **Streaming chat** — real-time SSE streaming with markdown rendering
@@ -55,26 +55,26 @@ chooses its executable, arguments, or root. See ADR-0007.
 
 ## Configuration
 
-### Agent Brain is the only chat path
+### DONWI Brain is the only chat path
 
-Chat inference runs only through Agent Brain
+Chat inference runs only through DONWI Brain
 ([docs/specs/agent-brain-routed-sessions.md](docs/specs/agent-brain-routed-sessions.md)).
-Brain owns provider accounts, credentials, local models, and routing; Agent-Control sends
+Brain owns provider accounts, credentials, local models, and routing; DONWI Desk sends
 it the conversation and runs the tools itself. There is no direct provider path and no API
 key field: when Brain is down or refuses a request, the chat shows the error and never
 falls back to a provider SDK.
 
-Settings embeds the Brain-origin management console from a configured Agent Brain
+Settings embeds the Brain-origin management console from a configured DONWI Brain
 endpoint. A separate credential is issued by `brain router management-credential`;
 provider keys and OAuth consent remain inside Brain's origin. Neither the management
-credential nor provider keys pass through Agent-Control's backend or workspace
+credential nor provider keys pass through DONWI Desk's backend or workspace
 configuration. Brain supports API-key/no-auth account setup, managed Antigravity/Codex
 OAuth sign-in, no-inference credential checks/model refresh, and routing profiles.
 The console also reports hardware/backend status, selects an already-configured backend or
 installed hardware profile, and confirms catalog-only Ollama model pulls/unloads/removals with
 disk, active-request, and active-role safeguards. Registered-root RAG indexing and citation
 search also run inside Brain's origin; the root path is registered with the Brain CLI and never
-enters the Agent-Control page or backend. Native client login and OS service installation remain
+enters the DONWI Desk page or backend. Native client login and OS service installation remain
 in the official local CLI. Settings can list, inspect, validate, and remove Brain-user skills and
 show the read-only MCP tool inventory; skill installation, project/configured skill sources,
 MCP process lifecycle/tool invocation remain CLI/stdio-owned. Settings imports only a single
@@ -90,7 +90,7 @@ gateway is reachable. Installing or uninstalling the OS service remains `brain s
 or `brain service uninstall` in a local Brain terminal; the console does not issue OS service
 commands because uninstall may stop the gateway serving the request.
 
-An Agent Brain endpoint is declared in `<workspace>/.local/agent/endpoints.json` (outside
+A DONWI Brain endpoint is declared in `<workspace>/.local/agent/endpoints.json` (outside
 every repository) with `"purpose": "agent-brain"`. A `mock` endpoint answers
 deterministically and offline, for tests and demos:
 
@@ -109,17 +109,17 @@ deterministically and offline, for tests and demos:
 a token file that only its owner can read (`chmod 600`; an absolute path or `~/...`). A
 literal key is rejected. For Brain, issue a profile-scoped credential on the Brain host
 with `brain router credential agent-control --protocol chat`; it writes the token and a
-non-secret profile manifest under `~/.lokal/`. Never use `serve.token` as an Agent-Control
+non-secret profile manifest under `~/.lokal/`. Never use `serve.token` as a DONWI Desk
 credential. The profile ID/revision must match both Brain's current `routing_profiles`
 configuration and this workspace's project policy below. The file may also list endpoints of other protocols
 (`openai-chat`, `openai-responses`, `anthropic-messages`) for other workspace tools; the
 chat lists none of them and refuses a request that names one.
 
 **Brain is remote.** `brain serve` listens on loopback but forwards requests to cloud
-accounts, so an Agent Brain endpoint must be declared `"locality": "remote"`; a project's
+accounts, so a DONWI Brain endpoint must be declared `"locality": "remote"`; a project's
 context then reaches it only when that project's policy lists it (below). When
 `~/.lokal/agent-control.token` and its `.json` profile manifest exist and no endpoint is
-named `lokal`, the host adds that gateway as `lokal`, remote and with the Agent Brain purpose.
+named `lokal`, the host adds that gateway as `lokal`, remote and with the DONWI Brain purpose.
 List real model ids from
 `GET /v1/models`; a project-bound chat also asks Brain for them once the project's policy
 allows it.
@@ -131,7 +131,7 @@ the app reads it and never writes it:
 { "defaultProvider": "brain", "defaultModel": "antigravity/gemini-3-flash" }
 ```
 
-A default that is not an Agent Brain endpoint falls back to the first one. Provider keys
+A default that is not a DONWI Brain endpoint falls back to the first one. Provider keys
 left in that file from earlier versions are ignored; the server names the providers once
 at startup (never the keys) so the entry can be removed.
 
@@ -150,7 +150,7 @@ Model errors reach the browser and the server log as a fixed message with the HT
 only (for example "The model endpoint is rate limited (HTTP 429)"); the upstream body, URL,
 and the prompt are never shown or logged.
 
-**Egress per project (Agent-Workspace ADR-0021).** Locality is derived from the URL:
+**Egress per project (DONWI Workspace ADR-0021).** Locality is derived from the URL:
 loopback is `local`, everything else `remote`, and a loopback gateway that forwards to the
 cloud is declared remote. A local endpoint is always allowed. A remote endpoint is called
 only for a chat that names a `project` whose operator policy lists it, in
@@ -175,7 +175,7 @@ missing profile grant, or stale revision is refused with 403 before network egre
 `"project": "<key>"` next to `provider` and `model`; the sidebar's **Project** selector
 sends it, and disables endpoints the project may not use.
 
-**A chat bound to a project sees only that project** (Agent-Workspace ADR-0011). Its
+**A chat bound to a project sees only that project** (DONWI Workspace ADR-0011). Its
 tools cannot list other projects, load another project's context pack, or read outside
 the project's folder, its memory and runs, and the framework (`.agents`, `docs`,
 `AGENTS.md`); search stays in the project folder; host diagnostics are not offered to a
@@ -190,7 +190,7 @@ start/end, finish reason, and token totals - never the prompt or the answer.
 
 A project-bound chat can run a command in its own project folder with the `run_command`
 tool. What it may do without a human is decided by the project's operator policy
-(`.local/agent/policies/<project>.json`, Agent-Workspace ADR-0014):
+(`.local/agent/policies/<project>.json`, DONWI Workspace ADR-0014):
 
 ```json
 { "schema_version": 1, "default": "approval-required", "actions": { "run_command": "change" } }
@@ -203,14 +203,14 @@ tool. What it may do without a human is decided by the project's operator policy
   told to relay the id and wait, then call the tool again with `approvalId` set.
 - Before running, the approval is re-verified against the command, the project
   repository's current `HEAD`, and the policy file's hash *as they are right now*
-  (Agent-Workspace ADR-0020). Any of the three changing since the request voids it; a
+  (DONWI Workspace ADR-0020). Any of the three changing since the request voids it; a
   decided approval runs at most once.
 - A missing or invalid policy refuses the action - it is never run on uncertain footing.
 
 ### Coding sessions
 
 A chat can work inside a `ws agent start` worktree instead of the project's primary
-checkout (Agent-Workspace ADR-0019):
+checkout (DONWI Workspace ADR-0019):
 
 ```
 POST /api/agent/coding-sessions/<project>/start   -> starts one, or returns the active one
@@ -233,7 +233,7 @@ depth. A search query is always a pattern, never a ripgrep option.
 
 ## Web control desk mode
 
-`ws web --agent` starts this host beside the Agent-Workspace control plane (ADR-0019) and
+`ws web --agent` starts this host beside the DONWI Workspace control plane (ADR-0019) and
 makes it the single browser-facing origin:
 
 - `/` serves the workspace control desk (`WS_DESK_DIST`).
@@ -250,7 +250,7 @@ answers its API at `/api/agent/*`.
 
 - **Frontend**: React 19 + Vite + TypeScript + Vanilla CSS
 - **Backend**: Hono (Node.js) with SSE streaming
-- **LLM**: Vercel AI SDK 7; the chat streams Agent-Control's own line protocol (`server/stream-protocol.ts`)
+- **LLM**: Vercel AI SDK 7; the chat streams DONWI Desk's own line protocol (`server/stream-protocol.ts`)
 - **Workspace**: `ws` CLI bridge for project/context awareness
 
 ## Testing
@@ -291,7 +291,7 @@ typechecked all the same, since `tsc -b` covers `test/ui`.
 - File reads sandboxed to workspace root
 - CSP headers prevent script injection; the one injected token script runs behind a fresh
   per-response nonce, and the HTML that carries it is not cacheable
-- No provider keys at all: Agent Brain holds them; endpoint credentials are references, never literals
+- No provider keys at all: DONWI Brain holds them; endpoint credentials are references, never literals
 
 ## License
 
