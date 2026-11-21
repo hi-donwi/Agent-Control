@@ -1,7 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import { contentSecurityPolicy, desktopOriginOnly, tokenAuth } from './security.js';
+import { contentSecurityPolicy, desktopOriginOnly, isLoopbackBindHost, tokenAuth } from './security.js';
+
+describe('standalone bind host', () => {
+  it('accepts only the required loopback listener address', () => {
+    assert.equal(isLoopbackBindHost('127.0.0.1'), true);
+    assert.equal(isLoopbackBindHost('0.0.0.0'), false);
+    assert.equal(isLoopbackBindHost('192.0.2.10'), false);
+  });
+});
 
 describe('contentSecurityPolicy', () => {
   it('allows only same-origin scripts when the response has no nonce', () => {

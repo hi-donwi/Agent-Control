@@ -6,6 +6,11 @@ export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/** The host contract pins the server listener to IPv4 loopback. */
+export function isLoopbackBindHost(host: string): boolean {
+  return host === '127.0.0.1';
+}
+
 /** Middleware: reject non-loopback connections. */
 export function loopbackOnly() {
   return async (c: Context, next: Next) => {

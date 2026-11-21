@@ -27,6 +27,7 @@ import { recordUsage } from './usage.js';
 import {
   generateToken,
   desktopOriginOnly,
+  isLoopbackBindHost,
   loopbackOnly,
   tokenAuth,
   securityHeaders,
@@ -48,18 +49,21 @@ import {
 } from './desk/pm.js';
 import { PlanConflictError, setPlanStatus } from './desk/plans.js';
 
+const DESKTOP_MODE = process.env.AC_DESKTOP_MODE === '1';
+const REQUESTED_HOST = process.env.HOST ?? '127.0.0.1';
+if (!isLoopbackBindHost(REQUESTED_HOST)) {
+  const mode = DESKTOP_MODE ? 'Desktop' : 'Standalone';
+  throw new Error(`${mode} host must bind to 127.0.0.1.`);
+}
+
 // ── Resolve workspace root ─────────────────────────────────────────────
 const WORKSPACE_ROOT = findWorkspaceRoot();
 const { config, ignoredKeys } = loadConfig();
-const DESKTOP_MODE = process.env.AC_DESKTOP_MODE === '1';
 const inheritedDesktopToken = process.env.AC_DESKTOP_TOKEN;
 if (DESKTOP_MODE && inheritedDesktopToken && !/^[a-f0-9]{64}$/.test(inheritedDesktopToken)) {
   throw new Error('Invalid desktop host session token.');
 }
 const TOKEN = DESKTOP_MODE && inheritedDesktopToken ? inheritedDesktopToken : generateToken();
-if (DESKTOP_MODE && process.env.HOST && process.env.HOST !== '127.0.0.1') {
-  throw new Error('Desktop host must bind to 127.0.0.1.');
-}
 const bridge = new WorkspaceBridge(WORKSPACE_ROOT);
 // What each project-bound chat is doing right now; the desk floor shows it as a pose.
 const activity = new ActivityRegistry();
@@ -877,7 +881,7 @@ const PORT = Number(process.env.PORT ?? (DESKTOP_MODE ? '0' : '3141'));
 if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
   throw new Error('Invalid local DONWI Desk host port.');
 }
-const HOST = DESKTOP_MODE ? '127.0.0.1' : process.env.HOST ?? '127.0.0.1';
+const HOST = DESKTOP_MODE ? '127.0.0.1' : REQUESTED_HOST;
 
 const hostServer = serve({ fetch: app.fetch, hostname: HOST, port: PORT }, (info) => {
   if (DESKTOP_MODE) {
