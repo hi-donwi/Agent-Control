@@ -63,6 +63,35 @@ async function stopHost(child: ChildProcess): Promise<void> {
   await exit;
 }
 
+test('standalone startup refuses a non-loopback HOST before workspace discovery', { timeout: 10_000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), 'desk-host-rejection-'));
+  const child = spawn(process.execPath, ['--import', 'tsx', serverEntry], {
+    cwd: repoRoot,
+    env: {
+      PATH: process.env.PATH ?? '',
+      HOME: home,
+      HOST: '0.0.0.0',
+      PORT: '3141',
+    },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string) => { stderr += chunk; });
+
+  try {
+    const exit = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    const code = await exit;
+    clearTimeout(timer);
+    assert.notEqual(code, 0);
+    assert.match(stderr, /Standalone host must bind to 127\.0\.0\.1/);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test('standalone token is exchanged only through loopback GET /auth', { timeout: 20_000 }, async () => {
   const host = await startStandaloneHost();
   try {
