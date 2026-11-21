@@ -146,6 +146,14 @@ describe('gitDiff', () => {
     assert.deepEqual(readFileSync(indexPath), before);
   });
 
+  it('refuses diffs that exceed the bounded Git output size', async () => {
+    const wt = tmpWorktree();
+    execFileSync('git', ['init', '-q'], { cwd: wt });
+    writeFileSync(join(wt, 'large.txt'), 'x'.repeat(1024 * 1024));
+
+    await assert.rejects(() => gitDiff(wt), /1024KB/);
+  });
+
   it('is empty text for a clean worktree, not an error', async () => {
     const wt = tmpWorktree();
     execFileSync('git', ['init', '-q'], { cwd: wt });
