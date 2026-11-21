@@ -74,16 +74,24 @@ function runGit(worktree: string, args: string[]): Promise<string> {
  * tree. `async` so a path outside the worktree rejects the returned promise rather than
  * throwing synchronously before one exists - the same contract every caller expects.
  *
- * A plain `git diff` never shows a file write_file just created - it is untracked, not
- * modified. `git add -N` (intent-to-add) marks new paths for the diff without staging
- * their content, so a newly written file appears as entirely added, the same as one
- * that was edited.
+ * Tracked changes come from `git diff`; new files come from `git ls-files --others` and
+ * `git diff --no-index`. Reading changes never alters the caller's Git index.
  */
 export async function gitDiff(worktree: string, relPath?: string): Promise<string> {
   if (relPath) resolveInside(worktree, relPath); // throws on a path outside the worktree
-  await runGit(worktree, ['add', '-A', '-N', '--', relPath ?? '.']).catch(() => '');
-  const args = relPath ? ['diff', '--', relPath] : ['diff'];
-  return runGit(worktree, args);
+  const trackedArgs = relPath ? ['diff', '--', relPath] : ['diff'];
+  const untrackedArgs = ['ls-files', '--others', '--exclude-standard', '-z'];
+  if (relPath) untrackedArgs.push('--', relPath);
+
+  const [tracked, untrackedOutput] = await Promise.all([
+    runGit(worktree, trackedArgs),
+    runGit(worktree, untrackedArgs),
+  ]);
+  const untrackedPaths = untrackedOutput.split('\0').filter(Boolean);
+  const untrackedDiffs = await Promise.all(untrackedPaths.map((path) =>
+    runGit(worktree, ['diff', '--no-index', '--', '/dev/null', path]),
+  ));
+  return [tracked, ...untrackedDiffs].filter(Boolean).join('\n');
 }
 
 export { MAX_FILE };

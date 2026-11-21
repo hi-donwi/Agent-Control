@@ -130,6 +130,22 @@ describe('gitDiff', () => {
     assert.match(diff, /\+export const x = 1;/);
   });
 
+  it('does not modify the Git index while showing untracked files', async () => {
+    const wt = tmpWorktree();
+    execFileSync('git', ['init', '-q'], { cwd: wt });
+    writeFileSync(join(wt, 'tracked.txt'), 'tracked\n');
+    execFileSync('git', ['add', 'tracked.txt'], { cwd: wt });
+    execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '-m', 'init'], { cwd: wt });
+    const indexPath = join(wt, '.git', 'index');
+    const before = readFileSync(indexPath);
+    writeFileSync(join(wt, 'brand-new.txt'), 'new content\n');
+
+    const diff = await gitDiff(wt);
+
+    assert.match(diff, /brand-new\.txt/);
+    assert.deepEqual(readFileSync(indexPath), before);
+  });
+
   it('is empty text for a clean worktree, not an error', async () => {
     const wt = tmpWorktree();
     execFileSync('git', ['init', '-q'], { cwd: wt });
