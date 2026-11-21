@@ -64,6 +64,10 @@ describe('desktop host bootstrap', () => {
       const endpoint = `http://${ready.host}:${ready.port}/api/agent/providers`;
       assert.equal((await fetch(endpoint, { headers: { Origin: origin } })).status, 401);
       assert.equal((await fetch(`${endpoint}?token=${ready.token}`, { headers: { Origin: origin } })).status, 401);
+      const windowsOrigin = 'http://tauri.localhost';
+      const windowsResponse = await fetch(endpoint, { headers: { Origin: windowsOrigin } });
+      assert.equal(windowsResponse.status, 401);
+      assert.equal(windowsResponse.headers.get('access-control-allow-origin'), windowsOrigin);
       assert.equal((await fetch(endpoint, {
         headers: { Origin: 'https://attacker.invalid', Authorization: `Bearer ${ready.token}` },
       })).status, 403);
